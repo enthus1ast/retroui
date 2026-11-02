@@ -1,0 +1,20 @@
+{"searchQuery":{"forceSpecificAssetId":false,"category":[],"assetId":[],"dataType":["Material"],"creationMethod":null,"queryString":"wood","sort":"Popular","createdUsingAssetId":null,"basedOnAssetId":null,"variationsOfAssetId":null,"limit":2,"offset":0},
+ "numberOfResults":131,
+ "nextPageHttp":"https://ambientcg.com/api/v2/full_json?type=Material&q=wood&sort=popular&limit=2&offset=2&include=labelData%2CpreviewData%2CfileData",
+ "currentPageHttp":"https://ambientcg.com/api/v2/full_json?type=Material&q=wood&sort=popular&limit=2&offset=0&include=labelData%2CpreviewData%2CfileData",
+ "foundAssets":[
+  {"assetId":"Wood096","releaseDate":"2023-11-22 18:00:00","dataType":"Material","creationMethod":"PBRApproximated","downloadCount":51234,"popularityScore":877,
+   "tags":["wood","fine","grain","light","oak","natural"],"displayName":"Wood 096","displayDescription":"Light fine-grained wood.","displayCategory":"Wood",
+   "shortLink":"https://ambientcg.com/a/Wood096","dimensionX":100,"dimensionY":100,
+   "downloadFolders":{"default":{"title":"default","downloadFiletypeCategories":{"zip":{"title":"zip","downloads":[
+     {"fullDownloadPath":"https://ambientcg.com/get?file=Wood096_1K-JPG.zip","downloadLink":"https://ambientcg.com/get?file=Wood096_1K-JPG.zip","fileName":"Wood096_1K-JPG.zip","size":5358165,"filetype":"zip","attribute":"1K-JPG","zipContent":["Wood096.png","Wood096_1K-JPG.mtlx","Wood096_1K-JPG.usdc","Wood096_1K-JPG_Color.jpg","Wood096_1K-JPG_Displacement.jpg","Wood096_1K-JPG_NormalDX.jpg","Wood096_1K-JPG_NormalGL.jpg","Wood096_1K-JPG_Roughness.jpg"]},
+     {"fullDownloadPath":"https://ambientcg.com/get?file=Wood096_1K-PNG.zip","downloadLink":"https://ambientcg.com/get?file=Wood096_1K-PNG.zip","fileName":"Wood096_1K-PNG.zip","size":13311234,"filetype":"zip","attribute":"1K-PNG","zipContent":[]},
+     {"fullDownloadPath":"https://ambientcg.com/get?file=Wood096_2K-JPG.zip","downloadLink":"https://ambientcg.com/get?file=Wood096_2K-JPG.zip","fileName":"Wood096_2K-JPG.zip","size":19873350,"filetype":"zip","attribute":"2K-JPG","zipContent":[]},
+     {"fullDownloadPath":"https://ambientcg.com/get?file=Wood096_4K-JPG.zip","downloadLink":"https://ambientcg.com/get?file=Wood096_4K-JPG.zip","fileName":"Wood096_4K-JPG.zip","size":76663012,"filetype":"zip","attribute":"4K-JPG","zipContent":[]}]}}}},
+   "previewImage":{"64-PNG":"https://acg-media.struffelproductions.com/file/ambientCG-Web/media/thumbnail/64-PNG/Wood096.png","256-PNG":"https://acg-media.struffelproductions.com/file/ambientCG-Web/media/thumbnail/256-PNG/Wood096.png","256-JPG-FFFFFF":"https://acg-media.struffelproductions.com/file/ambientCG-Web/media/thumbnail/256-JPG-FFFFFF/Wood096.jpg","1024-JPG-FFFFFF":"https://acg-media.struffelproductions.com/file/ambientCG-Web/media/thumbnail/1024-JPG-FFFFFF/Wood096.jpg","2048-PNG":"https://acg-media.struffelproductions.com/file/ambientCG-Web/media/thumbnail/2048-PNG/Wood096.png"}},
+  {"assetId":"WoodFloor051","releaseDate":"2021-03-02 18:00:00","dataType":"Material","creationMethod":"PBRPhotogrammetry","downloadCount":40211,"popularityScore":610,
+   "tags":["wood","floor","parquet","herringbone"],"displayName":"Wood Floor 051","displayCategory":"Wood Floor","shortLink":"https://ambientcg.com/a/WoodFloor051",
+   "downloadFolders":{"default":{"title":"default","downloadFiletypeCategories":{"zip":{"title":"zip","downloads":[
+     {"fullDownloadPath":"https://ambientcg.com/get?file=WoodFloor051_1K-JPG.zip","downloadLink":"https://ambientcg.com/get?file=WoodFloor051_1K-JPG.zip","fileName":"WoodFloor051_1K-JPG.zip","size":4521334,"filetype":"zip","attribute":"1K-JPG","zipContent":[]}]}}}},
+   "previewImage":{"256-PNG":"https://acg-media.struffelproductions.com/file/ambientCG-Web/media/thumbnail/256-PNG/WoodFloor051.png"}}
+ ]}

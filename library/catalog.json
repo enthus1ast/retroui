@@ -1,0 +1,1187 @@
+{
+  "version": 1,
+  "name": "Retro Photo Library",
+  "license": "CC0",
+  "items": [
+    {
+      "id": "bokeh",
+      "title": "Bokeh",
+      "kind": "brush",
+      "category": "Light & Sparkle",
+      "thumb": "thumbs/brush-bokeh.png",
+      "file": "brushes/bokeh.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "bokeh",
+        "lights",
+        "blur",
+        "circles"
+      ]
+    },
+    {
+      "id": "sparkle",
+      "title": "Sparkle",
+      "kind": "brush",
+      "category": "Light & Sparkle",
+      "thumb": "thumbs/brush-sparkle.png",
+      "file": "brushes/sparkle.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "sparkle",
+        "glitter",
+        "star",
+        "shine"
+      ]
+    },
+    {
+      "id": "snowflake",
+      "title": "Snowflake",
+      "kind": "brush",
+      "category": "Nature",
+      "thumb": "thumbs/brush-snowflake.png",
+      "file": "brushes/snowflake.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "snow",
+        "winter",
+        "flake"
+      ]
+    },
+    {
+      "id": "heart",
+      "title": "Heart",
+      "kind": "brush",
+      "category": "Shapes",
+      "thumb": "thumbs/brush-heart.png",
+      "file": "brushes/heart.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "heart",
+        "love",
+        "valentine"
+      ]
+    },
+    {
+      "id": "rain",
+      "title": "Rain",
+      "kind": "brush",
+      "category": "Nature",
+      "thumb": "thumbs/brush-rain.png",
+      "file": "brushes/rain.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "rain",
+        "drops",
+        "weather"
+      ]
+    },
+    {
+      "id": "cloud",
+      "title": "Cloud Puff",
+      "kind": "brush",
+      "category": "Nature",
+      "thumb": "thumbs/brush-cloud.png",
+      "file": "brushes/cloud.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "cloud",
+        "sky",
+        "fog",
+        "smoke"
+      ]
+    },
+    {
+      "id": "stipple",
+      "title": "Stipple",
+      "kind": "brush",
+      "category": "Texture",
+      "thumb": "thumbs/brush-stipple.png",
+      "file": "brushes/stipple.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "dots",
+        "stipple",
+        "pointillism",
+        "ink"
+      ]
+    },
+    {
+      "id": "hatching",
+      "title": "Hatching",
+      "kind": "brush",
+      "category": "Texture",
+      "thumb": "thumbs/brush-hatching.png",
+      "file": "brushes/hatching.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "hatching",
+        "lines",
+        "sketch",
+        "pencil"
+      ]
+    },
+    {
+      "id": "grunge",
+      "title": "Grunge",
+      "kind": "brush",
+      "category": "Texture",
+      "thumb": "thumbs/brush-grunge.png",
+      "file": "brushes/grunge.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "grunge",
+        "dirty",
+        "distress",
+        "texture"
+      ]
+    },
+    {
+      "id": "paper",
+      "title": "Paper Grain",
+      "kind": "brush",
+      "category": "Texture",
+      "thumb": "thumbs/brush-paper.png",
+      "file": "brushes/paper.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "paper",
+        "grain",
+        "noise",
+        "texture"
+      ]
+    },
+    {
+      "id": "khatam",
+      "title": "Khatam Star",
+      "kind": "brush",
+      "category": "Arabic & Islamic",
+      "thumb": "thumbs/brush-khatam.png",
+      "file": "brushes/khatam.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "islamic",
+        "arabic",
+        "star",
+        "geometric",
+        "khatam"
+      ]
+    },
+    {
+      "id": "crescent",
+      "title": "Crescent",
+      "kind": "brush",
+      "category": "Arabic & Islamic",
+      "thumb": "thumbs/brush-crescent.png",
+      "file": "brushes/crescent.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "crescent",
+        "moon",
+        "ramadan",
+        "eid"
+      ]
+    },
+    {
+      "id": "nib",
+      "title": "Calligraphy Nib",
+      "kind": "brush",
+      "category": "Ink & Pen",
+      "thumb": "thumbs/brush-nib.png",
+      "file": "brushes/nib.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "calligraphy",
+        "arabic",
+        "nib",
+        "ink"
+      ]
+    },
+    {
+      "id": "inkpen",
+      "title": "Ink Pen",
+      "kind": "brush",
+      "category": "Ink & Pen",
+      "thumb": "thumbs/brush-inkpen.png",
+      "file": "brushes/inkpen.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "ink",
+        "pen",
+        "line art"
+      ]
+    },
+    {
+      "id": "dots",
+      "title": "Polka Dots",
+      "kind": "pattern",
+      "category": "Classic",
+      "thumb": "thumbs/pattern-dots.png",
+      "file": "patterns/dots.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "dots",
+        "polka",
+        "retro"
+      ]
+    },
+    {
+      "id": "stripes",
+      "title": "Diagonal Stripes",
+      "kind": "pattern",
+      "category": "Classic",
+      "thumb": "thumbs/pattern-stripes.png",
+      "file": "patterns/stripes.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "stripes",
+        "diagonal",
+        "lines"
+      ]
+    },
+    {
+      "id": "chevron",
+      "title": "Chevron",
+      "kind": "pattern",
+      "category": "Classic",
+      "thumb": "thumbs/pattern-chevron.png",
+      "file": "patterns/chevron.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "chevron",
+        "zigzag"
+      ]
+    },
+    {
+      "id": "hexagons",
+      "title": "Honeycomb",
+      "kind": "pattern",
+      "category": "Geometric",
+      "thumb": "thumbs/pattern-hexagons.png",
+      "file": "patterns/hexagons.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "hexagon",
+        "honeycomb",
+        "geometric"
+      ]
+    },
+    {
+      "id": "grid",
+      "title": "Graph Paper",
+      "kind": "pattern",
+      "category": "Classic",
+      "thumb": "thumbs/pattern-grid.png",
+      "file": "patterns/grid.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "grid",
+        "graph",
+        "paper"
+      ]
+    },
+    {
+      "id": "waves",
+      "title": "Waves",
+      "kind": "pattern",
+      "category": "Classic",
+      "thumb": "thumbs/pattern-waves.png",
+      "file": "patterns/waves.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "waves",
+        "sea",
+        "water"
+      ]
+    },
+    {
+      "id": "khatam",
+      "title": "Khatam Stars",
+      "kind": "pattern",
+      "category": "Arabic & Islamic",
+      "thumb": "thumbs/pattern-khatam.png",
+      "file": "patterns/khatam.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "islamic",
+        "arabic",
+        "star",
+        "tile",
+        "geometric"
+      ]
+    },
+    {
+      "id": "arabesque",
+      "title": "Arabesque Circles",
+      "kind": "pattern",
+      "category": "Arabic & Islamic",
+      "thumb": "thumbs/pattern-arabesque.png",
+      "file": "patterns/arabesque.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "arabesque",
+        "circles",
+        "islamic",
+        "lattice"
+      ]
+    },
+    {
+      "id": "herringbone",
+      "title": "Herringbone",
+      "kind": "pattern",
+      "category": "Classic",
+      "thumb": "thumbs/pattern-herringbone.png",
+      "file": "patterns/herringbone.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "herringbone",
+        "wood",
+        "floor"
+      ]
+    },
+    {
+      "id": "triangles",
+      "title": "Triangles",
+      "kind": "pattern",
+      "category": "Geometric",
+      "thumb": "thumbs/pattern-triangles.png",
+      "file": "patterns/triangles.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "triangles",
+        "geometric"
+      ]
+    },
+    {
+      "id": "argyle",
+      "title": "Argyle",
+      "kind": "pattern",
+      "category": "Classic",
+      "thumb": "thumbs/pattern-argyle.png",
+      "file": "patterns/argyle.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "argyle",
+        "diamonds"
+      ]
+    },
+    {
+      "id": "stars",
+      "title": "Starry Night",
+      "kind": "pattern",
+      "category": "Geometric",
+      "thumb": "thumbs/pattern-stars.png",
+      "file": "patterns/stars.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "stars",
+        "night",
+        "sky"
+      ]
+    },
+    {
+      "id": "trellis",
+      "title": "Moroccan Trellis",
+      "kind": "pattern",
+      "category": "Arabic & Islamic",
+      "thumb": "thumbs/pattern-trellis.png",
+      "file": "patterns/trellis.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "moroccan",
+        "trellis",
+        "quatrefoil"
+      ]
+    },
+    {
+      "id": "bricks",
+      "title": "Bricks",
+      "kind": "pattern",
+      "category": "Classic",
+      "thumb": "thumbs/pattern-bricks.png",
+      "file": "patterns/bricks.png",
+      "ext": "png",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "bricks",
+        "wall"
+      ]
+    },
+    {
+      "id": "sunset",
+      "title": "Sunset",
+      "kind": "gradient",
+      "category": "Warm",
+      "thumb": "thumbs/gradient-sunset.png",
+      "file": "gradients/sunset.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "sunset"
+      ]
+    },
+    {
+      "id": "desert",
+      "title": "Desert Sand",
+      "kind": "gradient",
+      "category": "Warm",
+      "thumb": "thumbs/gradient-desert.png",
+      "file": "gradients/desert.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "desert sand"
+      ]
+    },
+    {
+      "id": "peach",
+      "title": "Peach",
+      "kind": "gradient",
+      "category": "Warm",
+      "thumb": "thumbs/gradient-peach.png",
+      "file": "gradients/peach.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "peach"
+      ]
+    },
+    {
+      "id": "ocean",
+      "title": "Ocean",
+      "kind": "gradient",
+      "category": "Cool",
+      "thumb": "thumbs/gradient-ocean.png",
+      "file": "gradients/ocean.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "ocean"
+      ]
+    },
+    {
+      "id": "mint",
+      "title": "Mint",
+      "kind": "gradient",
+      "category": "Cool",
+      "thumb": "thumbs/gradient-mint.png",
+      "file": "gradients/mint.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "mint"
+      ]
+    },
+    {
+      "id": "royal",
+      "title": "Royal Night",
+      "kind": "gradient",
+      "category": "Cool",
+      "thumb": "thumbs/gradient-royal.png",
+      "file": "gradients/royal.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "royal night"
+      ]
+    },
+    {
+      "id": "gold",
+      "title": "Gold Foil",
+      "kind": "gradient",
+      "category": "Metal",
+      "thumb": "thumbs/gradient-gold.png",
+      "file": "gradients/gold.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "gold foil"
+      ]
+    },
+    {
+      "id": "silver",
+      "title": "Silver",
+      "kind": "gradient",
+      "category": "Metal",
+      "thumb": "thumbs/gradient-silver.png",
+      "file": "gradients/silver.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "silver"
+      ]
+    },
+    {
+      "id": "rosegold",
+      "title": "Rose Gold",
+      "kind": "gradient",
+      "category": "Metal",
+      "thumb": "thumbs/gradient-rosegold.png",
+      "file": "gradients/rosegold.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "rose gold"
+      ]
+    },
+    {
+      "id": "neon",
+      "title": "Neon Night",
+      "kind": "gradient",
+      "category": "Colors",
+      "thumb": "thumbs/gradient-neon.png",
+      "file": "gradients/neon.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "neon night"
+      ]
+    },
+    {
+      "id": "oman",
+      "title": "Oman Flag",
+      "kind": "gradient",
+      "category": "Colors",
+      "thumb": "thumbs/gradient-oman.png",
+      "file": "gradients/oman.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "oman flag"
+      ]
+    },
+    {
+      "id": "rainbow",
+      "title": "Soft Rainbow",
+      "kind": "gradient",
+      "category": "Colors",
+      "thumb": "thumbs/gradient-rainbow.png",
+      "file": "gradients/rainbow.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "soft rainbow"
+      ]
+    },
+    {
+      "id": "oman",
+      "title": "Oman Flag",
+      "kind": "swatches",
+      "category": "Flags & Brands",
+      "thumb": "thumbs/swatches-oman.png",
+      "file": "swatches/oman.ase",
+      "ext": "ase",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "oman flag"
+      ]
+    },
+    {
+      "id": "desert",
+      "title": "Desert Earth",
+      "kind": "swatches",
+      "category": "Nature",
+      "thumb": "thumbs/swatches-desert.png",
+      "file": "swatches/desert.ase",
+      "ext": "ase",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "desert earth"
+      ]
+    },
+    {
+      "id": "hotel",
+      "title": "Luxury Hotel",
+      "kind": "swatches",
+      "category": "Business",
+      "thumb": "thumbs/swatches-hotel.png",
+      "file": "swatches/hotel.ase",
+      "ext": "ase",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "luxury hotel"
+      ]
+    },
+    {
+      "id": "corporate",
+      "title": "Corporate Blues",
+      "kind": "swatches",
+      "category": "Business",
+      "thumb": "thumbs/swatches-corporate.png",
+      "file": "swatches/corporate.ase",
+      "ext": "ase",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "corporate blues"
+      ]
+    },
+    {
+      "id": "pastel",
+      "title": "Pastel Spring",
+      "kind": "swatches",
+      "category": "Nature",
+      "thumb": "thumbs/swatches-pastel.png",
+      "file": "swatches/pastel.ase",
+      "ext": "ase",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "pastel spring"
+      ]
+    },
+    {
+      "id": "sea",
+      "title": "Sea and Sand",
+      "kind": "swatches",
+      "category": "Nature",
+      "thumb": "thumbs/swatches-sea.png",
+      "file": "swatches/sea.ase",
+      "ext": "ase",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "sea and sand"
+      ]
+    },
+    {
+      "id": "goldfoil",
+      "title": "Gold Foil",
+      "kind": "style",
+      "category": "Metal",
+      "thumb": "thumbs/style-goldfoil.png",
+      "file": "styles/goldfoil.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "gold foil"
+      ]
+    },
+    {
+      "id": "rosegold",
+      "title": "Rose Gold",
+      "kind": "style",
+      "category": "Metal",
+      "thumb": "thumbs/style-rosegold.png",
+      "file": "styles/rosegold.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "rose gold"
+      ]
+    },
+    {
+      "id": "silver",
+      "title": "Brushed Silver",
+      "kind": "style",
+      "category": "Metal",
+      "thumb": "thumbs/style-silver.png",
+      "file": "styles/silver.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "brushed silver"
+      ]
+    },
+    {
+      "id": "neonpink",
+      "title": "Neon Pink",
+      "kind": "style",
+      "category": "Glow",
+      "thumb": "thumbs/style-neonpink.png",
+      "file": "styles/neonpink.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "neon pink"
+      ]
+    },
+    {
+      "id": "iceglow",
+      "title": "Ice Glow",
+      "kind": "style",
+      "category": "Glow",
+      "thumb": "thumbs/style-iceglow.png",
+      "file": "styles/iceglow.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "ice glow"
+      ]
+    },
+    {
+      "id": "softglow",
+      "title": "Soft White Glow",
+      "kind": "style",
+      "category": "Glow",
+      "thumb": "thumbs/style-softglow.png",
+      "file": "styles/softglow.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "soft white glow"
+      ]
+    },
+    {
+      "id": "letterpress",
+      "title": "Letterpress",
+      "kind": "style",
+      "category": "Classic",
+      "thumb": "thumbs/style-letterpress.png",
+      "file": "styles/letterpress.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "letterpress"
+      ]
+    },
+    {
+      "id": "retro3d",
+      "title": "Retro 3D",
+      "kind": "style",
+      "category": "Classic",
+      "thumb": "thumbs/style-retro3d.png",
+      "file": "styles/retro3d.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "retro 3d"
+      ]
+    },
+    {
+      "id": "sticker",
+      "title": "Die-Cut Sticker",
+      "kind": "style",
+      "category": "Classic",
+      "thumb": "thumbs/style-sticker.png",
+      "file": "styles/sticker.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "die-cut sticker"
+      ]
+    },
+    {
+      "id": "embossed",
+      "title": "Embossed Paper",
+      "kind": "style",
+      "category": "Classic",
+      "thumb": "thumbs/style-embossed.png",
+      "file": "styles/embossed.json",
+      "ext": "json",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "embossed paper"
+      ]
+    },
+    {
+      "id": "event-flyer",
+      "title": "Event Flyer",
+      "kind": "design",
+      "category": "Print",
+      "thumb": "thumbs/design-event-flyer.png",
+      "file": "template:Event Flyer",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "event flyer",
+        "print"
+      ]
+    },
+    {
+      "id": "employee-of-the-month",
+      "title": "Employee of the Month",
+      "kind": "design",
+      "category": "Print",
+      "thumb": "thumbs/design-employee-of-the-month.png",
+      "file": "template:Employee of the Month",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "employee of the month",
+        "print"
+      ]
+    },
+    {
+      "id": "certificate",
+      "title": "Certificate",
+      "kind": "design",
+      "category": "Print",
+      "thumb": "thumbs/design-certificate.png",
+      "file": "template:Certificate",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "certificate",
+        "print"
+      ]
+    },
+    {
+      "id": "staff-notice",
+      "title": "Staff Notice",
+      "kind": "design",
+      "category": "Print",
+      "thumb": "thumbs/design-staff-notice.png",
+      "file": "template:Staff Notice",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "staff notice",
+        "print"
+      ]
+    },
+    {
+      "id": "business-card",
+      "title": "Business Card",
+      "kind": "design",
+      "category": "Print",
+      "thumb": "thumbs/design-business-card.png",
+      "file": "template:Business Card",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "business card",
+        "print"
+      ]
+    },
+    {
+      "id": "announcement-post",
+      "title": "Announcement Post",
+      "kind": "design",
+      "category": "Social",
+      "thumb": "thumbs/design-announcement-post.png",
+      "file": "template:Announcement Post",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "announcement post",
+        "social"
+      ]
+    },
+    {
+      "id": "event-story",
+      "title": "Event Story",
+      "kind": "design",
+      "category": "Social",
+      "thumb": "thumbs/design-event-story.png",
+      "file": "template:Event Story",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "event story",
+        "social"
+      ]
+    },
+    {
+      "id": "eid-greeting",
+      "title": "Eid Greeting",
+      "kind": "design",
+      "category": "Social",
+      "thumb": "thumbs/design-eid-greeting.png",
+      "file": "template:Eid Greeting",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "eid greeting",
+        "social"
+      ]
+    },
+    {
+      "id": "facebook-cover",
+      "title": "Facebook Cover",
+      "kind": "design",
+      "category": "Social",
+      "thumb": "thumbs/design-facebook-cover.png",
+      "file": "template:Facebook Cover",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "facebook cover",
+        "social"
+      ]
+    },
+    {
+      "id": "youtube-thumbnail",
+      "title": "YouTube Thumbnail",
+      "kind": "design",
+      "category": "Social",
+      "thumb": "thumbs/design-youtube-thumbnail.png",
+      "file": "template:YouTube Thumbnail",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "youtube thumbnail",
+        "social"
+      ]
+    },
+    {
+      "id": "photo-collage",
+      "title": "Photo Collage",
+      "kind": "design",
+      "category": "Photo",
+      "thumb": "thumbs/design-photo-collage.png",
+      "file": "template:Photo Collage",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "photo collage",
+        "photo"
+      ]
+    },
+    {
+      "id": "before-and-after",
+      "title": "Before and After",
+      "kind": "design",
+      "category": "Photo",
+      "thumb": "thumbs/design-before-and-after.png",
+      "file": "template:Before and After",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "before and after",
+        "photo"
+      ]
+    },
+    {
+      "id": "title-card",
+      "title": "Title Card",
+      "kind": "design",
+      "category": "Film & Video",
+      "thumb": "thumbs/design-title-card.png",
+      "file": "template:Title Card",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "title card",
+        "film & video"
+      ]
+    },
+    {
+      "id": "national-day-greeting",
+      "title": "National Day Greeting",
+      "kind": "design",
+      "category": "Social",
+      "thumb": "thumbs/design-national-day-greeting.png",
+      "file": "template:National Day Greeting",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "national day greeting",
+        "social"
+      ]
+    },
+    {
+      "id": "ramadan-kareem",
+      "title": "Ramadan Kareem",
+      "kind": "design",
+      "category": "Social",
+      "thumb": "thumbs/design-ramadan-kareem.png",
+      "file": "template:Ramadan Kareem",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "ramadan kareem",
+        "social"
+      ]
+    },
+    {
+      "id": "were-hiring",
+      "title": "We're Hiring",
+      "kind": "design",
+      "category": "Social",
+      "thumb": "thumbs/design-were-hiring.png",
+      "file": "template:We're Hiring",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "we're hiring",
+        "social"
+      ]
+    },
+    {
+      "id": "quote-post",
+      "title": "Quote Post",
+      "kind": "design",
+      "category": "Social",
+      "thumb": "thumbs/design-quote-post.png",
+      "file": "template:Quote Post",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "quote post",
+        "social"
+      ]
+    },
+    {
+      "id": "wi-fi-card",
+      "title": "Wi-Fi Card",
+      "kind": "design",
+      "category": "Print",
+      "thumb": "thumbs/design-wi-fi-card.png",
+      "file": "template:Wi-Fi Card",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "wi-fi card",
+        "print"
+      ]
+    },
+    {
+      "id": "thank-you-card",
+      "title": "Thank You Card",
+      "kind": "design",
+      "category": "Print",
+      "thumb": "thumbs/design-thank-you-card.png",
+      "file": "template:Thank You Card",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "thank you card",
+        "print"
+      ]
+    },
+    {
+      "id": "restaurant-menu",
+      "title": "Restaurant Menu",
+      "kind": "design",
+      "category": "Print",
+      "thumb": "thumbs/design-restaurant-menu.png",
+      "file": "template:Restaurant Menu",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "restaurant menu",
+        "print"
+      ]
+    },
+    {
+      "id": "welcome-card",
+      "title": "Welcome Card",
+      "kind": "design",
+      "category": "Print",
+      "thumb": "thumbs/design-welcome-card.png",
+      "file": "template:Welcome Card",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "welcome card",
+        "print"
+      ]
+    },
+    {
+      "id": "web-banner",
+      "title": "Web Banner",
+      "kind": "design",
+      "category": "Web",
+      "thumb": "thumbs/design-web-banner.png",
+      "file": "template:Web Banner",
+      "ext": "template",
+      "author": "Sultan Al Isaiee (@foxoman)",
+      "license": "CC0",
+      "tags": [
+        "web banner",
+        "web"
+      ]
+    }
+  ]
+}

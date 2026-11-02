@@ -1,0 +1,11 @@
+{"version":1,"items":[
+ {"id":"brush-ink-dry","title":"Dry Ink","kind":"brush","thumb":"brushes/dry-ink.png","file":"brushes/dry-ink.abr","ext":"abr","author":"Retro Photo","license":"CC0","tags":["ink","dry","texture"],"category":"Ink"},
+ {"id":"brush-chalk","title":"Soft Chalk","kind":"brush","thumb":"brushes/chalk.png","file":"brushes/chalk.abr","author":"Retro Photo","license":"CC0","tags":["chalk"],"category":"Dry Media"},
+ {"id":"pattern-girih","title":"Girih Tiles","kind":"pattern","thumb":"patterns/girih.png","file":"https://cdn.example.org/retro/girih.pat","ext":"pat","author":"Retro Photo","license":"CC BY 4.0","tags":["islamic","geometric","girih"],"category":"Islamic Geometry"},
+ {"id":"grad-desert","title":"Desert Dusk","kind":"gradient","thumb":"gradients/desert.png","file":"gradients/desert.grd","author":"Retro Photo","license":"CC0","tags":["warm","sunset"],"category":"Warm"},
+ {"id":"swatch-oman","title":"Omani Heritage","kind":"swatches","thumb":"swatches/oman.png","file":"swatches/oman.aco","author":"Retro Photo","license":"CC0","tags":["heritage","earth"],"category":"Heritage"},
+ {"id":"design-poster","title":"Pool Poster","kind":"design","thumb":"designs/pool.jpg","file":"designs/pool.rpd","author":"Retro Photo","license":"CC0","tags":["poster","summer"],"category":"Posters"},
+ {"id":"tex-paper","title":"Recycled Paper","kind":"texture","thumb":"textures/paper.jpg","file":"textures/paper.jpg","author":"Retro Photo","license":"CC0","tags":["paper"],"category":"Paper"},
+ {"id":"broken","title":"No kind"},
+ {"id":"style-gold","title":"Gold Text","kind":"style","thumb":"./styles/gold.png","file":"styles/gold.asl","author":"Retro Photo","license":"CC0","tags":["gold","text"],"category":"Text Effects"}
+]}

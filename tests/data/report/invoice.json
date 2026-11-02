@@ -1,0 +1,16 @@
+{
+  "number": "INV-2026-0042",
+  "date": "27/10/2026",
+  "due": "26/11/2026",
+  "currency": "OMR",
+  "company": {"name": "Acme Trading LLC", "address": "Building 12, Way 3021", "city": "Muscat, Oman",
+              "phone": "+968 2400 0000", "web": "https://acme.example"},
+  "customer": {"name": "Sohar Steel & Co. <Head Office>", "address": "Sohar Industrial Estate"},
+  "items": [
+    {"name": "Paper A4, 80 g, box of 5 reams", "qty": 10, "price": 4.5, "amount": 45.0},
+    {"name": "Toner cartridge", "note": "for the HP LaserJet in room 4", "qty": 2, "price": 31.25, "amount": 62.5},
+    {"name": "Desk chair", "qty": 1, "price": 119.0, "amount": 119.0}
+  ],
+  "subtotal": 226.5, "vatRate": 5, "vat": 11.325, "total": 237.825,
+  "notes": ["Goods remain ours until paid in full.", "Bank: Bank Muscat, account 0123-456789-001"]
+}

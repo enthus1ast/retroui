@@ -1,0 +1,52 @@
+<html>
+<head><title>Invoice {{number}}</title></head>
+<body>
+<header><span>{{company.name}}</span><span>Invoice {{number}}</span></header>
+<footer><span>{{company.web}}</span><span>Page {page} of {pages}</span></footer>
+
+<table class="plain">
+<tr>
+  <td width="60%"><h1>{{company.name}}</h1>
+    {{company.address}}<br>{{company.city}}<br>Tel. {{company.phone}}</td>
+  <td align="right"><h2>INVOICE</h2>
+    No. <b>{{number}}</b><br>Date: {{date}}<br>Due: {{due}}</td>
+</tr>
+</table>
+
+<h3>Bill to</h3>
+<p><b>{{customer.name}}</b><br>{{customer.address}}</p>
+
+<table>
+<thead>
+<tr><th width="45%">Description</th><th align="right">Qty</th>
+    <th align="right">Unit price</th><th align="right">Amount</th></tr>
+</thead>
+<tbody>
+{{#items}}
+<tr><td>{{name}}{{#note}}<br><small style="color: gray">{{note}}</small>{{/note}}</td>
+    <td>{{qty}}</td><td>{{price|n2}}</td><td>{{amount|n2}}</td></tr>
+{{/items}}
+{{^items}}
+<tr><td colspan="4"><i>Nothing ordered.</i></td></tr>
+{{/items}}
+</tbody>
+<tfoot>
+<tr><td colspan="3" align="right">Subtotal</td><td>{{subtotal|n2}}</td></tr>
+<tr><td colspan="3" align="right">VAT {{vatRate}}%</td><td>{{vat|n2}}</td></tr>
+<tr><td colspan="3" align="right">Total ({{currency}})</td><td>{{total|n2}}</td></tr>
+</tfoot>
+</table>
+
+<p style="text-align: right"><span style="color: #a00000">Please pay by {{due}}.</span></p>
+
+<h3>Notes</h3>
+<ul>
+{{#notes}}<li>{{.}}</li>{{/notes}}
+</ul>
+
+<p dir="rtl">شكراً لتعاملكم معنا. يرجى ذكر رقم الفاتورة {{number}} عند الدفع.</p>
+
+<hr>
+<p style="text-align: center"><small>{{company.name}} &middot; <a href="{{company.web}}">{{company.web}}</a></small></p>
+</body>
+</html>

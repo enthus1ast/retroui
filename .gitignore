@@ -1,0 +1,37 @@
+# build output (nimble apps / photoapk / dist put everything in build/)
+build/
+nimcache/
+*.exe
+*.apk
+*.so
+*.dll
+*.dylib
+*.o
+__pycache__/
+
+# compiled examples and tests (any file without an extension there)
+examples/*
+!examples/*.nim
+!examples/*.nims
+!examples/*/
+examples/build/
+tests/*
+!tests/*.nim
+!tests/*.nims
+!tests/*/
+tests/fuzz/fuzz
+tests/fuzz/fuzzui
+tests/android_mock/*.out
+src/retroapk
+src/retroios
+src/retrokit
+tools/shots
+tools/appimage
+tools/winicon
+
+# local settings
+.vscode/
+.idea/
+*.swp
+.DS_Store
+docs/api/

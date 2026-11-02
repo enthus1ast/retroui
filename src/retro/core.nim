@@ -1,0 +1,2393 @@
+## The heart of the toolkit: the context `ui` (window, input of the frame,
+## focus, the widget under the mouse), widget ids and their memory
+## (`state`), the layout (`place`, `row`, `col`, `adaptive`, `group`),
+## layers (dialogs, popups), drag and drop, the color schemes, and the main
+## loop (`startApp`, `beginFrame`, `endFrame`).
+##
+## Widgets are made of: `place` (a cell of the layout), `interact` (mouse,
+## finger and focus), `state(id)` (what the widget keeps between frames) and
+## the drawing procs of `gfx`. An app usually only needs `app` (in `retro`)
+## and the widgets.
+
+import std/[tables, unicode, os, math, strutils, monotimes, times]
+import uirelays
+import uirelays/services
+import gfx, busy
+export busy
+
+const RetroVersion* = "0.16.3"
+const
+  RetroDeveloper* = "Sultan Al Isaiee"
+    ## Who made Retro Nim UI (and its apps): every About box says so.
+  RetroHandle* = "@foxoman"
+  RetroWebsite* = "www.foxoman.net"
+  RetroEmail* = "sultan@foxoman.net"
+  RetroCredit* = "Developed by " & RetroDeveloper & " " & RetroHandle
+    ## "Developed by Sultan Al Isaiee @foxoman"
+  ## The version of Retro Nim UI.
+
+export gfx
+export KeyCode, Modifier, CursorKind
+
+type
+  Id* = uint32
+    ## A widget's identity (see `idOf`, `makeId`), stable from frame to frame.
+
+  Theme* = object
+    ## The colors everything is drawn in (`ui.theme`; see `builtinThemes`).
+    window*, text*: Color        ## client area and its text
+    face*, light*, shadow*: Color ## button face and its 3D edges
+    frame*: Color                ## black outlines
+    select*, selectText*: Color  ## highlight (menus, lists, title bars)
+    gray*: Color                 ## disabled text
+    field*, fieldText*: Color    ## edit and list background
+    scroll*: Color               ## scroll bar track
+    tip*, tipText*: Color        ## tooltips
+    line*: Color                 ## group box and separator lines
+    edge*: Color                 ## borders of fields, lists, tabs, menus
+    link*: Color                 ## hyperlinks
+    hover*: Color                ## rows under the mouse (alpha 0: derived)
+    face2*: Color                ## the softer inner highlight of raised faces
+                                 ## (alpha 0: between `face` and `light`)
+    inactiveTitle*, inactiveTitleText*: Color
+      ## title bars of windows that are not in front (alpha 0: `window`, `text`)
+
+  Hit* = object
+    ## What happened to a widget this frame (`interact`).
+    hover*: bool           ## the pointer is over it (also a finger's, see `showsHover`)
+    down*: bool            ## pressed and the pointer still over it
+    clicked*: bool         ## released over it: a click or a tap
+    focused*: bool         ## it has the keyboard focus
+
+  WState* = object
+    ## Per-widget memory kept between frames (caret, scroll, ...).
+    caret*, anchor*: int          ## text: the caret and the other end of the selection
+    scrollX*, scrollY*: int       ## how far its content is scrolled
+    aux*, aux2*: int              ## anything else the widget keeps
+    buf*: string                  ## text being typed (number fields, editors)
+    lines*: seq[int32]            ## measured line heights (rows that wrap)
+    seen: int                    ## last frame it was used
+
+  Metrics* = object
+    ## Sizes in logical pixels. Touch screens get bigger targets.
+    pad*, gap*: int        ## window/group padding, space between widgets
+    ctrlH*, editH*: int    ## push button and edit/combo heights
+    itemH*, menuH*: int    ## list and menu item height, menu bar height
+    sbW*: int              ## scroll bar thickness
+
+  LayoutKind = enum lkCol, lkRow, lkGroup
+  LFrame = object
+    kind: LayoutKind
+    x, y, w: int
+    cx, cy: int
+    lineH, rowH, bottom: int
+    natMax, prevH: int             ## rows: tallest content now / last frame
+    lineNo: int                    ## rows: which line (rows wrap)
+    lineNat: array[32, int32]      ## ... the tallest content of each line
+    prevLines: seq[int32]          ## ... last frame
+    limitY: int                    ## bottom of a pane, for `remainingH`
+    dy: int                        ## how far the page is scrolled (root's kids)
+    reserve: int                   ## room its box needs below the content
+    fixed: bool                    ## a bar's row: not in the scrolling page
+    springX, tailPrev, tailNow: int ## rows: where `spring` jumped to; how
+                                    ## wide what follows it is (last frame, now)
+    id: Id
+    widths: array[16, int]
+    nw, idx: int
+    zeroNow: int                   ## rows: how wide its own-width (0) columns
+                                   ## are on the first line (they come off the
+                                   ## room the shares (-n) take, next frame)
+    title: string
+
+const
+  Classic* = Theme(
+    window: color(255, 255, 255), text: color(0, 0, 0),
+    face: color(192, 192, 192), light: color(255, 255, 255),
+    shadow: color(128, 128, 128), frame: color(0, 0, 0),
+    select: color(0, 0, 128), selectText: color(255, 255, 255),
+    gray: color(128, 128, 128), field: color(255, 255, 255),
+    fieldText: color(0, 0, 0), scroll: color(192, 192, 192),
+    tip: color(255, 255, 225), tipText: color(0, 0, 0),
+    line: color(128, 128, 128), edge: color(0, 0, 0), link: color(0, 0, 128),
+    face2: color(223, 223, 223))
+    ## Windows 3.1 out of the box: white windows, gray buttons, navy title
+    ## bars, white title bars for the windows behind.
+  Gray* = Theme(
+    window: color(192, 192, 192), text: color(0, 0, 0),
+    face: color(192, 192, 192), light: color(255, 255, 255),
+    shadow: color(128, 128, 128), frame: color(0, 0, 0),
+    select: color(0, 0, 128), selectText: color(255, 255, 255),
+    gray: color(128, 128, 128), field: color(255, 255, 255),
+    fieldText: color(0, 0, 0), scroll: color(224, 224, 224),
+    tip: color(255, 255, 225), tipText: color(0, 0, 0),
+    line: color(128, 128, 128), edge: color(0, 0, 0), link: color(0, 0, 255))
+    ## The gray "3D" dialogs late 3.1 applications used.
+  Dark* = Theme(
+    window: color(32, 32, 32), text: color(232, 232, 232),
+    face: color(69, 69, 69), light: color(119, 119, 119),
+    shadow: color(26, 26, 26), frame: color(0, 0, 0),
+    select: color(0, 128, 128), selectText: color(255, 255, 255),
+    gray: color(122, 122, 122), field: color(17, 17, 17),
+    fieldText: color(232, 232, 232), scroll: color(51, 51, 51),
+    tip: color(74, 70, 48), tipText: color(232, 232, 232),
+    line: color(138, 138, 138), edge: color(138, 138, 138),
+    link: color(110, 170, 255))
+    ## A dark color scheme in the same style.
+  Ocean* = Theme(
+    window: color(255, 255, 255), text: color(0, 0, 0),
+    face: color(160, 208, 208), light: color(224, 255, 255),
+    shadow: color(0, 128, 128), frame: color(0, 0, 0),
+    select: color(0, 128, 128), selectText: color(255, 255, 255),
+    gray: color(64, 128, 128), field: color(240, 255, 255),
+    fieldText: color(0, 0, 0), scroll: color(128, 192, 192),
+    tip: color(255, 255, 225), tipText: color(0, 0, 0),
+    line: color(0, 128, 128), edge: color(0, 0, 0), link: color(0, 0, 255))
+    ## Teal and sea green, as the color schemes of the early 1990s had.
+  Desert* = Theme(
+    window: color(255, 255, 232), text: color(0, 0, 0),
+    face: color(208, 192, 152), light: color(248, 240, 216),
+    shadow: color(128, 96, 48), frame: color(0, 0, 0),
+    select: color(128, 64, 0), selectText: color(255, 255, 255),
+    gray: color(128, 112, 80), field: color(255, 255, 240),
+    fieldText: color(0, 0, 0), scroll: color(224, 208, 168),
+    tip: color(255, 255, 225), tipText: color(0, 0, 0),
+    line: color(128, 96, 48), edge: color(0, 0, 0), link: color(0, 0, 192))
+    ## Sand and terracotta.
+  Plum* = Theme(
+    window: color(255, 248, 255), text: color(0, 0, 0),
+    face: color(200, 184, 208), light: color(248, 240, 255),
+    shadow: color(104, 72, 120), frame: color(0, 0, 0),
+    select: color(128, 0, 128), selectText: color(255, 255, 255),
+    gray: color(120, 104, 128), field: color(255, 255, 255),
+    fieldText: color(0, 0, 0), scroll: color(224, 208, 232),
+    tip: color(255, 255, 225), tipText: color(0, 0, 0),
+    line: color(104, 72, 120), edge: color(0, 0, 0), link: color(0, 0, 255))
+    ## Purple and lilac.
+  HotDog* = Theme(
+    window: color(255, 255, 0), text: color(0, 0, 0),
+    face: color(255, 0, 0), light: color(255, 160, 160),
+    shadow: color(128, 0, 0), frame: color(0, 0, 0),
+    select: color(0, 0, 0), selectText: color(255, 255, 0),
+    gray: color(128, 64, 0), field: color(255, 255, 255),
+    fieldText: color(0, 0, 0), scroll: color(255, 128, 0),
+    tip: color(255, 255, 255), tipText: color(0, 0, 0),
+    line: color(0, 0, 0), edge: color(0, 0, 0), link: color(0, 0, 255))
+    ## Red and yellow, loud on purpose -- every color picker of the time had
+    ## one of these.
+  Paper* = Theme(
+    window: color(255, 255, 255), text: color(0, 0, 0),
+    face: color(255, 255, 255), light: color(255, 255, 255),
+    shadow: color(0, 0, 0), frame: color(0, 0, 0),
+    select: color(0, 0, 0), selectText: color(255, 255, 255),
+    gray: color(96, 96, 96), field: color(255, 255, 255),
+    fieldText: color(0, 0, 0), scroll: color(255, 255, 255),
+    tip: color(255, 255, 255), tipText: color(0, 0, 0),
+    line: color(0, 0, 0), edge: color(0, 0, 0), link: color(0, 0, 0))
+    ## Black on white only, as a monochrome LCD showed it (and e-paper).
+  Oled* = Theme(
+    window: color(0, 0, 0), text: color(214, 214, 214),
+    face: color(0, 0, 0), light: color(72, 72, 72),
+    shadow: color(0, 0, 0), frame: color(96, 96, 96),
+    select: color(0, 72, 144), selectText: color(255, 255, 255),
+    gray: color(110, 110, 110), field: color(0, 0, 0),
+    fieldText: color(214, 214, 214), scroll: color(18, 18, 18),
+    tip: color(28, 28, 20), tipText: color(214, 214, 214),
+    line: color(88, 88, 88), edge: color(120, 120, 120),
+    link: color(100, 160, 240))
+    ## True black for OLED screens: their pixels are off where it is black
+    ## (no glow, less power, nothing to burn in), bevels kept as faint lines.
+  builtinThemes* = [(name: "Classic", theme: Classic), (name: "Gray", theme: Gray),
+                    (name: "Dark", theme: Dark), (name: "OLED Black", theme: Oled),
+                    (name: "Ocean", theme: Ocean),
+                    (name: "Desert", theme: Desert), (name: "Plum", theme: Plum),
+                    (name: "Hot Dog", theme: HotDog), (name: "Paper", theme: Paper)]
+    ## The color schemes that come with the toolkit, by name.
+
+  DesktopMetrics* = Metrics(pad: 8, gap: 6, ctrlH: 23, editH: 20,
+                            itemH: 15, menuH: 20, sbW: 17)
+    ## The sizes of Windows 3.1 dialogs.
+  TouchMetrics* = Metrics(pad: 8, gap: 8, ctrlH: 32, editH: 30,
+                          itemH: 28, menuH: 30, sbW: 22)
+    ## The same look with targets a finger can hit.
+  LayerBase* = 0         ## the window's content and its bars
+  LayerDialog* = 1       ## dialogs (over the content)
+  LayerPopup* = 2        ## menus, drop-down lists, calendars (over dialogs)
+  LayerTip* = 3          ## tooltips, balloons, the dragged label (over all)
+
+type
+  DragInfo* = object
+    ## What is being dragged (see `startDrag`).
+    active*: bool                ## a drag is going on
+    kind*: string                ## what it is ("files"...): targets take kinds they know
+    items*: seq[string]          ## the payload (paths, ids...)
+    label*: string               ## shown at the pointer
+    glyph*: string               ## an icon-font glyph before the label
+    source*: Id                  ## the widget it came from
+  DropState* = enum
+    ## Where a drag stands for a drop target (`dropTarget`).
+    dsNone                       ## no drag of that kind is over the target
+    dsOver                       ## it is over the target (draw it highlighted)
+    dsDropped                    ## it was dropped on the target this frame
+
+type ControlSizes* = enum
+  ## How big the controls are: for a mouse or for fingers.
+  csAuto = "Automatic"     ## finger-sized on phones; desktop-sized on tablets and desktops
+  csDesktop = "Desktop"    ## Windows 3.1's sizes, for a mouse or a pen (also on tablets)
+  csTouch = "Touch"        ## targets a finger can hit, everywhere
+
+type Ctx* = object
+  ## Everything the toolkit knows about the window and this frame: `ui`.
+  ## Apps read a few fields (`w`, `h`, `touch`, `theme`, `mods`...);
+  ## widgets use the rest.
+  running*: bool                 ## false once the app is ending
+  closeAsked, closeCancelled: bool
+  frameNo*: int                  ## frames run so far
+  w*, h*: int                    ## window size in logical pixels
+  devW, devH, zoomWanted: int
+  theme*: Theme                  ## the colors in use (set it to change them)
+  m*: Metrics                    ## sizes; see `DesktopMetrics`
+  metricsSet: bool
+  touch*: bool                   ## a touch screen (phone, tablet): how input works
+  sizes*: ControlSizes           ## how big controls are (see `setControlSizes`)
+  roomy: bool                    ## a big screen: its shorter side 600 dp or more
+  k*: float                      ## sizes are `k` times the 100% design
+  density: float                 ## the screen's scale left after `zoom`
+  uiScale: int                   ## the user's size, percent (100)
+  textScale: int                 ## the user's text size, percent (100)
+  baseEm: float                  ## text size at 100%
+  paused*: bool                  ## mobile app in the background
+  safe*: tuple[top, left, bottom, right: int]
+    ## margins a notch or system bars cover, in logical pixels
+  title*: string                 ## the window's title
+  ownCaption*: bool              ## phones: the app draws its own title bar
+  captionH*: int                 ## its height (0 on the desktop)
+  pageY*: int                    ## how far the window's content is scrolled
+  pageMax*: int                  ## ... at most
+  pageOn*: bool                  ## the content is taller than the window
+  pageView*: Rect                ## where the content shows (last frame)
+  blockers*: seq[Rect]           ## parts covered by windows over what is drawn now
+                                 ## (overlapping windows: `mdiWindow`)
+  pageX*: int                    ## how far the content is scrolled sideways
+  pageMaxX*: int                 ## ... at most (content wider than the window)
+  contentRight: int              # the right end of the widest row this frame
+  contentTop: int
+  # input of this frame
+  mx*, my*: int                  ## the mouse (or finger) in logical pixels
+  mouseDown*: bool               ## the left button (or a finger) is down
+  pressed*: bool                 ## ... went down this frame
+  released*: bool                ## ... was let go this frame
+  rpressed*: bool                ## a right click (or a long press, or the menu key) this frame
+  rmouseDown*: bool              ## the right button is held (a drag with it: Alt + right in Photoshop)
+  pressUsed*: bool               ## a widget took this frame's press (`takePress`)
+  mpressed*: bool                ## the middle button went down this frame
+  navBack, navForward: bool      ## the mouse's side buttons this frame
+  menuKey*: bool                 ## this frame's right click is the menu key's
+  mouseMoved*: bool              ## the mouse moved this frame
+  active31*: bool                ## the window has the keyboard focus
+  clicks*: int                   ## 1 a click, 2 a double click... (this frame's press)
+  wheel*: int                    ## wheel notches this frame (> 0: up / away)
+  wheelUsed*: bool               ## a widget scrolled with them already
+  doubleClick*: bool             ## a list/edit/grid got a double click
+  doubleClickId*: Id             ## ... namely this one
+  # touch gestures
+  pressAt, pressX, pressY: int
+  longFired, panning, backPending: bool
+  lift, lifted: bool           # a held finger moved: a touch drag starts
+  longX, longY: int
+  byBack, byBackNow: bool        ## the close request came from Back
+  hovering: bool                 ## a mouse (not a finger) is over the window
+  fingerDown: bool               ## the press now is a finger's (drags scroll)
+  dragsActive*: bool             ## the pressed widget wants drags itself
+  panX*, panY*: int              ## pixels a finger dragged content this frame
+  panFrom*: Point                ## where that drag began
+  panUsed*: bool                 ## a widget scrolled with it already
+  key*: KeyCode                  ## the key pressed this frame (KeyNone: none)
+  mods*: set[Modifier]           ## Ctrl, Alt, Shift held now
+  keyUp*: KeyCode                ## the key let go this frame
+  keyUsed*: bool                 ## a widget handled `key` already
+  typed*: string                 ## the text typed this frame (UTF-8)
+  mnemonic*: char                ## Alt + this letter was pressed ('\0': none)
+  textOk: bool
+  now*: int                      ## the time of this frame, in milliseconds
+  force: bool
+  # interaction
+  hot*: Id                       ## the widget under the mouse
+  active*: Id                    ## the widget being pressed (or dragged)
+  focus*: Id                     ## the widget with the keyboard focus
+  prevHot: Id
+  hoverSince: int
+  lastId*: Id                    ## the widget drawn last (for `tooltip`, `contextMenu`...)
+  lastRect*: Rect                ## ... and where it was
+  focusRect*: Rect               ## where the focused widget was drawn
+  focusMoved*: int               ## frame the keyboard last moved focus
+  tabOrder: seq[Id]
+  takesEnter*, prevTakesEnter*: bool  ## the focused widget uses Enter itself (no default button)
+  takesText*, prevTakesText: bool     ## the focused widget takes typing (keyboard on phones)
+  focusWanted: bool
+  textFocusWanted*: bool         ## the next text box takes the focus (`focusFirstText`)
+  textFocusInDialog*: bool       ## ... the next one in a dialog
+  wakeAt*: int                   ## when to run a frame without input (see `wakeIn`)
+  redraw*: bool                  ## run another frame right away (something changed)
+  redrawCount, lastPresent: int
+  spaceDown*: bool               ## Space is holding a button down
+  # ids
+  idStack: seq[uint32]
+  occ: array[512, tuple[k, gen: uint32; n: uint16]]
+  gen: uint32
+  # layout
+  frames: seq[LFrame]
+  lastFault*: string             ## the last fault `guarded` caught ("": none since it was shown)
+  rtl*: bool                     ## the interface mirrored, right to left (an Arabic one: `setUiLanguage`)
+  pen*: bool                     ## the pointer is a pen (a stylus), and these say how it is held:
+  pressure*: float               ## ... how hard it presses (0 .. 1; 1 for a mouse or a finger)
+  pinch*: float                  ## two fingers this frame: how much nearer or further apart
+                                 ## (1: not at all; 2: twice as far) -- zoom by it, round
+  pinchX*, pinchY*: int          ## ... their middle
+  panDX*, panDY*: float          ## ... how far their middle moved (logical pixels)
+  gesturing*: bool               ## two fingers are down (a pinch or a two-finger drag)
+  tilt*: float                   ## ... how far it leans (0 upright .. 1 lying flat)
+  azimuth*: float                ## ... which way it leans (radians, 0 to the right, clockwise)
+  twist*: float                  ## ... turned on its own axis (degrees, where the pen says)
+  eraser*: bool                  ## ... its eraser end is down
+  barY*: int                     ## where the content starts under the bars at the top
+  bottom*: int                   ## where it ends above the bars at the bottom
+  prevBottom*: int               ## ... last frame
+  # layers
+  inputLayer*: int               ## the layer that gets the input (the top one open)
+  popup*: Id                     ## the open menu or drop-down (0: none)
+  popupRect*, popupRectNow*, popupOwner*: Rect  ## where it is (last frame, now) and what opened it
+  popupHi*: int                  ## its highlighted item
+  menuOpen*: bool                ## the open popup belongs to the menu bar
+  dialogTop*: Id                 ## the dialog on top (last frame; 0: none)
+  dialogTopNow*: Id              ## ... this frame
+  curDialog*: Id                 ## the dialog being drawn now
+  focusBeforeDialog: Id
+  tip*: string                   ## the tooltip of the widget under the mouse
+  tipKey, prevTipKey: uint32
+  cursor*: CursorKind            ## mouse pointer wanted this frame
+  shownCursor: CursorKind
+  popupRect2Now*: Rect           ## an open submenu
+  popupOpened*: bool             ## a menu opened this frame after it was drawn (F10, Alt): kept
+  altTapped*: bool               ## Alt pressed and let go alone: the menu bar, as on Windows
+  altArmed: bool                 # (Alt is down, nothing else pressed since)
+  overlay*, overlayNow*: Rect    ## a drop-down drawn by a widget itself
+  overlayLayer*, overlayLayerNow*: int  ## ... the layer that widget is on
+  overlayOwner*: bool            ## that widget is handling its drop-down
+  drag*: DragInfo                ## what is being dragged
+  dragDropping: bool             ## ... and it was let go this frame
+  dragClaimed: bool              ## ... and a target took it
+  dragOver: bool                 ## ... a target is under it this frame
+  states: Table[Id, WState]
+
+var ui*: Ctx
+
+ui.theme = Classic
+ui.m = DesktopMetrics
+ui.k = 1
+ui.density = 1
+ui.uiScale = 100
+ui.textScale = 100
+
+template Pad*: int = ui.m.pad
+  ## Window and group padding (`Metrics.pad`).
+template Gap*: int = ui.m.gap
+  ## Space between widgets (`Metrics.gap`).
+template CtrlH*: int = ui.m.ctrlH
+  ## A push button's height (`Metrics.ctrlH`).
+template EditH*: int = ui.m.editH
+  ## An edit or combo box's height (`Metrics.editH`).
+template ItemH*: int = ui.m.itemH
+  ## A list or menu item's height (`Metrics.itemH`).
+template MenuH*: int = ui.m.menuH
+  ## The menu bar's height (`Metrics.menuH`).
+template SbW*: int = ui.m.sbW
+  ## A scroll bar's thickness (`Metrics.sbW`).
+
+proc setMetrics*(m: Metrics) =
+  ## Use your own sizes (bigger items, wider scroll bars...).
+  ui.m = m
+  ui.metricsSet = true
+
+proc dp*(v: int): int =
+  ## `v` design pixels in logical pixels: sizes follow the screen's density
+  ## and the user's UI size (`setUiScale`). 1 stays 1.
+  if v <= 1 and v >= -1: v
+  else: int(round(float(v) * ui.k))
+
+proc dpf*(v: float): float = v * ui.k
+  ## `dp` for fractions: `v` design pixels in logical pixels, not rounded.
+
+proc fingers*(): bool {.inline.} =
+  ## Controls are finger-sized: on a phone (automatic sizes), or always
+  ## (`csTouch`). A tablet has desktop sizes unless the user asks: the
+  ## screen holds a desktop app's layout, and a finger still taps it.
+  case ui.sizes
+  of csTouch: true
+  of csDesktop: false
+  of csAuto: ui.touch and not ui.roomy
+
+proc fitMetrics() =
+  ## Every size from the text size: a bigger font makes bigger controls.
+  let em = (if ui.baseEm > 0: ui.baseEm
+            elif fingers(): 15.0 else: 12.0) * ui.k * float(ui.textScale) / 100
+  setTextSize(em)
+  if ui.metricsSet: return
+  let L = FontH
+  ui.m =
+    if fingers():
+      Metrics(pad: dp(8), gap: dp(8), ctrlH: L + dp(16), editH: L + dp(14),
+              itemH: L + dp(12), menuH: L + dp(14), sbW: dp(22))
+    else:
+      Metrics(pad: dp(8), gap: dp(6), ctrlH: L + dp(9), editH: L + dp(6),
+              itemH: L + dp(2), menuH: L + dp(6), sbW: dp(17))
+
+# ---- ids --------------------------------------------------------------------
+
+proc fnv*(s: string; h = 2166136261'u32): uint32 =
+  ## A 32-bit FNV-1a hash of `s` (widget ids are made from them).
+  result = h
+  for c in s:
+    result = (result xor ord(c).uint32) * 16777619'u32
+
+proc mixId*(a, b: uint32): uint32 {.inline.} =
+  ## Two ids (or hashes) mixed into one.
+  var h = (a xor (b + 0x9e3779b9'u32 + (a shl 6) + (a shr 2)))
+  h = h xor (h shr 15)
+  h * 0x2c1b3c6d'u32
+
+proc makeId*(seed: uint32): Id =
+  ## A widget id: `seed` within the current id scope, plus how many times
+  ## the same seed was already used this frame (two "OK" buttons differ).
+  var h = mixId(seed, if ui.idStack.len > 0: ui.idStack[^1] else: 0)
+  var slot = int(h and 511)
+  for _ in 0 ..< 512:
+    if ui.occ[slot].gen != ui.gen:
+      ui.occ[slot] = (h, ui.gen, 1'u16)
+      break
+    if ui.occ[slot].k == h:
+      inc ui.occ[slot].n
+      h = mixId(h, ui.occ[slot].n.uint32)
+      break
+    slot = (slot + 1) and 511
+  result = if h == 0: 1 else: h
+
+proc idOf*(label: string): Id = makeId(fnv(label))
+  ## Id of a widget by its label (the same label twice in a frame: two ids).
+proc idOf*[T](v: var T; extra = ""): Id =
+  ## Id of a widget bound to a variable: its address.
+  let a = uint64(cast[uint](addr v))
+  makeId(fnv(extra, mixId(uint32(a and 0xFFFFFFFF'u64), uint32(a shr 32))))
+
+proc pushId*(key: string) =
+  ## Widgets made until `popId` get ids of their own under `key` (rows of a
+  ## list drawn with the same code; see `withId`).
+  ui.idStack.add mixId(fnv(key), if ui.idStack.len > 0: ui.idStack[^1] else: 0)
+proc pushId*(key: int) = pushId($key)
+  ## `pushId` with a number (a row's index).
+proc popId*() =
+  ## Ends a `pushId`.
+  if ui.idStack.len > 0: discard ui.idStack.pop()
+
+template withId*(key: typed; body: untyped) =
+  ## Give the widgets in `body` their own id scope (e.g. per list row).
+  pushId(key)
+  body
+  popId()
+
+proc state*(id: Id): var WState =
+  ## The memory of widget `id`, created on first use. Memory of widgets
+  ## that are gone is dropped after a while.
+  ui.states.mgetOrPut(id, WState()).seen = ui.frameNo
+  ui.states[id]
+
+# ---- input routing -----------------------------------------------------------
+
+proc canInput*(): bool =
+  ## Whether widgets drawn now receive mouse and keyboard input: only the
+  ## topmost layer (an open menu, else the top dialog, else the window) does.
+  layer() == ui.inputLayer and
+    (ui.inputLayer != LayerDialog or ui.curDialog == ui.dialogTop)
+
+proc blocked(p: Point): bool {.inline.} =
+  for b in ui.blockers:
+    if b.contains(p): return true
+
+proc mouseIn*(r: Rect): bool =
+  ## The mouse (or finger) is over `r`, inside the clip and not under a
+  ## drop-down or another window. (`hover` also asks that the widget's
+  ## layer takes input.)
+  let p = point(ui.mx, ui.my)
+  r.contains(p) and clipRect().contains(p) and
+    (ui.overlayOwner or layer() > ui.overlayLayer or ui.overlay.w == 0 or
+     not ui.overlay.contains(p)) and
+    (ui.blockers.len == 0 or layer() > 0 or not blocked(p))
+
+proc hover*(r: Rect): bool = canInput() and mouseIn(r)
+  ## The mouse is over `r` and its layer takes input (see `mouseIn`).
+
+proc longPressed*(): bool = ui.longFired
+  ## The press now (or the last one) was held long enough to become a right
+  ## click (a menu): its release is not a click.
+
+proc finger*(): bool = ui.fingerDown
+  ## The press now (or the last one) is a finger's on a touch screen, not a
+  ## mouse's: taps open, drags scroll, a long press is a right click.
+
+proc canHover*(): bool = ui.hovering or not ui.touch
+  ## A mouse is over the window (hover effects make sense); false on a
+  ## touch screen between touches.
+
+proc showsHover*(h: Hit): bool {.inline.} = h.hover and canHover()
+  ## Draw `h`'s widget lit up as "under the mouse": only with a mouse, so
+  ## nothing stays lit where a finger was lifted.
+
+proc hovered*(r: Rect): bool =
+  ## The mouse rests over `r` (no button down): for hover highlights.
+  canHover() and not ui.mouseDown and hover(r)
+
+proc markDouble*(id: Id) =
+  ## Widget `id` got a double click (or Enter) this frame.
+  ui.doubleClick = true
+  ui.doubleClickId = id
+
+proc takePress*(): bool =
+  ## The left button went down this frame and nobody took it yet.
+  if ui.pressed and not ui.pressUsed:
+    ui.pressUsed = true
+    true
+  else: false
+
+proc takePanX*(r: Rect): int =
+  ## Touch: the pixels a finger dragged sideways over `r` this frame (tab
+  ## strips, carousels); 0 when there is nothing to take.
+  if ui.panX != 0 and not ui.panUsed and canInput() and r.contains(ui.panFrom):
+    ui.panUsed = true
+    ui.panX
+  else: 0
+
+proc middleClicked*(r: Rect): bool =
+  ## The middle mouse button went down over `r` this frame (open in a new
+  ## tab, close a tab); uses the press.
+  if ui.mpressed and canInput() and mouseIn(r):
+    ui.mpressed = false
+    true
+  else: false
+
+proc mouseBack*(): bool =
+  ## The mouse's back side button (X1) was pressed this frame; uses it.
+  result = ui.navBack and canInput()
+  if result: ui.navBack = false
+
+proc mouseForward*(): bool =
+  ## The mouse's forward side button (X2) was pressed this frame; uses it.
+  result = ui.navForward and canInput()
+  if result: ui.navForward = false
+
+proc takePan*(r: Rect): int =
+  ## Touch: the pixels a finger dragged vertically over `r` this frame, for
+  ## scrolling content; 0 when there is nothing to take.
+  if ui.panY != 0 and not ui.panUsed and canInput() and r.contains(ui.panFrom):
+    ui.panUsed = true
+    ui.panY
+  else: 0
+
+proc keyHit*(k: KeyCode): bool =
+  ## `k` was pressed this frame and is not used yet; uses it.
+  if ui.key == k and not ui.keyUsed and canInput():
+    ui.keyUsed = true
+    true
+  else: false
+
+proc wakeIn*(ms: int) =
+  ## Run another frame after `ms` milliseconds even without input.
+  let t = ui.now + max(1, ms)
+  if ui.wakeAt == 0 or t < ui.wakeAt: ui.wakeAt = t
+
+# ---- smooth scrolling ------------------------------------------------------------
+#
+# Every widget that scrolls keeps its position in pixels and hands it to these
+# procs: the wheel, the keys and the scroll bars' arrows make it glide to where
+# it goes (an ease-out, notches that keep coming add up), a finger moves it
+# exactly and a flick keeps it going, slowing down; the scroll bar's thumb and
+# anything else that sets the position directly just jumps there. Only the
+# scrollers that move are kept (a table by widget id), and frames are asked
+# for only while something moves.
+
+var autoFocus* = true
+  ## With no widget focused, the first one that can take the focus takes
+  ## it, as in a 3.1 dialog. False for programs whose keys go to a canvas
+  ## (an image editor, a game): a palette's box then takes the focus only
+  ## when clicked. (Dialogs always focus their first control.)
+
+var smoothScrolling* = true
+  ## The wheel, the keys and the scroll bars' arrows scroll with a short glide
+  ## and a flicked finger keeps the content moving; false: every scroll jumps
+  ## at once (`setSmoothScrolling`, "Smooth scrolling" in
+  ## `appearanceSettings`).
+
+proc setSmoothScrolling*(on: bool) =
+  ## Turns gliding scrolls and flicks on or off (see `smoothScrolling`).
+  smoothScrolling = on
+
+type
+  ScrollMode = enum smIdle, smGlide, smFling, smFinger
+  ScrollAnim = object
+    mode: ScrollMode
+    pos, fromPos, target: float   ## pixels
+    t0, lastT: int                ## when the glide began; the fling's last step
+    vel: float                    ## a fling's speed, pixels per millisecond
+    shown: int                    ## the position handed out last
+    samples: array[8, tuple[t: int; d: float]]   ## a finger's last moves
+    n: int
+
+const
+  GlideMs = 150                   ## how long a glide takes
+  FlingTau = 325.0                ## a fling slows down by e every this many ms
+  FlingMin = 0.05                 ## px/ms: slower than this, a flick stops
+  StepMs = 16                     ## frames while something moves: ~60 a second, in
+                                  ## step with most screens (13 ms beat against
+                                  ## 60 Hz: every 4th shown frame moved twice)
+
+var
+  scrollAnims: Table[uint32, ScrollAnim]
+  flingCaught: bool               ## the press now stopped a moving list
+
+proc scrollCaught*(): bool = flingCaught
+  ## The finger that went down last stopped a list that was still moving
+  ## (its tap only stops it: it does not pick an item).
+
+proc scrolling*(id: Id): bool = scrollAnims.hasKey(uint32(id))
+  ## The scroller `id` is gliding, flying on after a flick or under a finger.
+
+proc scrollTarget*(id: Id; v: int): int =
+  ## Where the scroller `id` is going (`v` itself when it is not gliding).
+  let k = uint32(id)
+  if scrollAnims.hasKey(k) and scrollAnims[k].mode == smGlide:
+    int(round(scrollAnims[k].target))
+  else: v
+
+proc scrollStop*(id: Id) =
+  ## Stops whatever moves the scroller `id` (it stays where it is).
+  scrollAnims.del(uint32(id))
+
+proc scrollTo*(id: Id; v: var int; target, hi: int) =
+  ## Moves the scroll position `v` (0 .. `hi` pixels) of the scroller `id` to
+  ## `target`: a glide with `smoothScrolling` (`scrollTick` moves it on, each
+  ## frame), else at once. For the keys, "show the selected row", the scroll
+  ## bars' arrows.
+  let t = clamp(target, 0, max(0, hi))
+  let k = uint32(id)
+  if not smoothScrolling:
+    scrollAnims.del(k)
+    v = t
+    return
+  var a = scrollAnims.getOrDefault(k)
+  let moving = a.mode in {smGlide, smFling} and a.shown == v
+  if not moving and t == v:
+    scrollAnims.del(k)
+    return
+  a.fromPos = if moving: a.pos else: float(v)
+  a.pos = a.fromPos
+  a.target = float(t)
+  a.t0 = ui.now
+  a.mode = smGlide
+  a.shown = v
+  a.n = 0
+  scrollAnims[k] = a
+  wakeIn(StepMs)
+
+proc scrollBy*(id: Id; v: var int; delta, hi: int) =
+  ## `scrollTo` by `delta` pixels from where the scroller is going (glides
+  ## that keep coming add up, as wheel notches do).
+  scrollTo(id, v, scrollTarget(id, v) + delta, hi)
+
+proc scrollShow*(id: Id; v: var int; a, b, viewLen, hi: int) =
+  ## Glides the scroller `id` just far enough that the content from `a` to
+  ## `b` (pixels) is in its view, `viewLen` long: the selected row, the
+  ## caret.
+  let goal = scrollTarget(id, v)
+  if a < goal: scrollTo(id, v, a, hi)
+  elif b > goal + viewLen: scrollTo(id, v, b - viewLen, hi)
+
+proc scrollWheel*(id: Id; v: var int; hi: int; area: Rect; step: int;
+                  sideways = false): bool {.discardable.} =
+  ## The wheel over `area` scrolls `v` (0 .. `hi`) by `step` pixels a notch,
+  ## gliding. `sideways`: the horizontal scroller, which takes Shift + the
+  ## wheel. Content that cannot scroll leaves the wheel to what is around it.
+  ## True when it took the wheel.
+  if ui.wheel == 0 or ui.wheelUsed or hi <= 0 or not canInput() or not mouseIn(area):
+    return false
+  if sideways != (ShiftPressed in ui.mods): return false
+  ui.wheelUsed = true
+  scrollBy(id, v, -ui.wheel * step, hi)
+  true
+
+proc noteFinger(a: var ScrollAnim; d: float) =
+  if a.n == a.samples.len:
+    for i in 1 ..< a.samples.len: a.samples[i - 1] = a.samples[i]
+    a.n = a.samples.len - 1
+  a.samples[a.n] = (ui.now, d)
+  inc a.n
+
+proc fingerSpeed(a: ScrollAnim): float =
+  ## px/ms of the finger's last 100 ms (0 when it stopped before lifting).
+  if a.n == 0 or ui.now - a.samples[a.n - 1].t > 60: return 0
+  var sum = 0.0
+  var first = ui.now
+  for i in 0 ..< a.n:
+    if ui.now - a.samples[i].t <= 100:
+      sum += a.samples[i].d
+      first = min(first, a.samples[i].t)
+  sum / float(max(16, ui.now - first + 16))
+
+proc panAxis(id: Id; v: var int; hi: int; area: Rect; d: int) =
+  let k = uint32(id)
+  var a = scrollAnims.getOrDefault(k)
+  if d != 0:
+    if a.mode != smFinger:
+      a = ScrollAnim(mode: smFinger)
+    v = clamp(v + d, 0, max(0, hi))
+    a.pos = float(v)
+    a.shown = v
+    a.noteFinger(float(d))
+    scrollAnims[k] = a
+  elif a.mode == smFinger and (ui.released or not ui.mouseDown):
+    # lifted: a flick goes on
+    let s = a.fingerSpeed()
+    if smoothScrolling and abs(s) > FlingMin and hi > 0:
+      a.mode = smFling
+      a.vel = s
+      a.lastT = ui.now
+      a.pos = float(v)
+      a.shown = v
+      scrollAnims[k] = a
+      wakeIn(StepMs)
+    else:
+      scrollAnims.del(k)
+
+proc scrollPan2*(idY: Id; vy: var int; hiY: int; idX: Id; vx: var int; hiX: int;
+                 area: Rect): bool {.discardable.} =
+  ## `scrollPan` both ways: a finger dragging over `area` moves `vy` and `vx`.
+  if canInput() and ui.pressed and mouseIn(area):
+    # a finger that lands on content still flying stops it (and only that)
+    var caught = false
+    for k in [uint32(idY), uint32(idX)]:
+      if scrollAnims.hasKey(k) and scrollAnims[k].mode == smFling:
+        scrollAnims.del(k)
+        caught = true
+    if caught and finger(): flingCaught = true
+  var dy, dx = 0
+  if (ui.panX != 0 or ui.panY != 0) and not ui.panUsed and canInput() and
+     area.contains(ui.panFrom) and (hiY > 0 or hiX > 0):
+    ui.panUsed = true
+    dy = if hiY > 0: ui.panY else: 0
+    dx = if hiX > 0: ui.panX else: 0
+  if hiY > 0 or scrolling(idY): panAxis(idY, vy, hiY, area, dy)
+  if hiX > 0 or scrolling(idX): panAxis(idX, vx, hiX, area, dx)
+  dy != 0 or dx != 0
+
+proc scrollPan*(id: Id; v: var int; hi: int; area: Rect; sideways = false): bool {.discardable.} =
+  ## A finger dragging over `area` moves `v` (0 .. `hi`) with it, pixel for
+  ## pixel; let go while moving, it goes on and slows down (with
+  ## `smoothScrolling`). A finger landing on it while it flies stops it.
+  var none = 0
+  if sideways: scrollPan2(Id(0), none, 0, id, v, hi, area)
+  else: scrollPan2(id, v, hi, Id(0), none, 0, area)
+
+proc scrollTick*(id: Id; v: var int; hi: int): bool {.discardable.} =
+  ## Moves the glide or fling of scroller `id` on to this frame's place;
+  ## call it once a frame, after the inputs (`scrollWheel`, `scrollPan`,
+  ## `scrollTo`...). A `v` changed by something else meanwhile (the thumb,
+  ## the app) stops the movement. True when `v` moved.
+  let k = uint32(id)
+  if not scrollAnims.hasKey(k): return false
+  var a = scrollAnims[k]
+  let top = float(max(0, hi))
+  if a.mode == smFinger:
+    if not ui.mouseDown and not ui.released: scrollAnims.del(k)
+    return false
+  if v != a.shown:                       # set from outside: that wins
+    scrollAnims.del(k)
+    return false
+  var done = false
+  case a.mode
+  of smGlide:
+    a.target = clamp(a.target, 0, top)
+    let t = float(ui.now - a.t0) / float(GlideMs)
+    if t >= 1:
+      a.pos = a.target
+      done = true
+    else:
+      let p = 1 - pow(1 - max(0.0, t), 3)
+      a.pos = a.fromPos + (a.target - a.fromPos) * p
+  of smFling:
+    let dt = float(max(0, ui.now - a.lastT))
+    a.lastT = ui.now
+    let decay = exp(-dt / FlingTau)
+    a.pos += a.vel * FlingTau * (1 - decay)
+    a.vel *= decay
+    if a.pos <= 0 or a.pos >= top:
+      a.pos = clamp(a.pos, 0, top)
+      done = true
+    elif abs(a.vel) < FlingMin * 0.4: done = true
+  else: done = true
+  let nv = int(round(clamp(a.pos, 0, top)))
+  result = nv != v
+  v = nv
+  if done:
+    scrollAnims.del(k)
+    ui.redraw = true                     # (scroll bars drawn before it catch up)
+  else:
+    a.shown = v
+    scrollAnims[k] = a
+    wakeIn(StepMs)
+
+proc toLowerAscii(c: char): char =
+  if c in {'A'..'Z'}: char(ord(c) + 32) else: c
+
+proc mnemonicOf*(label: string): char =
+  ## The letter after '&' in `label`, lower case ('\0' when there is none):
+  ## "&File" -> 'f'.
+  var i = 0
+  while i < label.len - 1:
+    if label[i] == '&':
+      if label[i+1] != '&': return label[i+1].toLowerAscii
+      inc i
+    inc i
+  '\0'
+
+proc focusNext*() =
+  ## The next widget that can take the keyboard focus takes it.
+  ui.focusWanted = true
+  ui.redraw = true
+
+proc focusFirstText*(inDialog = false) =
+  ## The next text box drawn (that can take input) takes the keyboard
+  ## focus: call it when opening a dialog that asks for a PIN, a name...
+  ## so the user can type at once (on a phone the keyboard comes up).
+  ## `inDialog`: the next one in a dialog -- for a dialog opened now, whose
+  ## boxes come after the window's own (a palette's) in the next frame.
+  ui.textFocusWanted = true
+  ui.textFocusInDialog = inDialog
+  ui.redraw = true
+
+proc heldFor*(): int =
+  ## How long the mouse button (or finger) has been down, in milliseconds
+  ## (0 when it is up): repeat buttons, press-and-hold.
+  if ui.mouseDown: ui.now - ui.pressAt else: 0
+
+proc tabStop*(id: Id; r: Rect): bool {.discardable.} =
+  ## Makes `id` a stop of Tab: for a widget that takes the keyboard but
+  ## handles its clicks itself (a tab strip, a chip row). True when it has
+  ## the focus.
+  if canInput():
+    ui.tabOrder.add id
+    if ui.focusWanted:
+      ui.focusWanted = false
+      ui.focus = id
+  result = ui.focus == id
+  if result: ui.focusRect = r
+
+proc interact*(id: Id; r: Rect; focusable = true; enabled = true): Hit =
+  ## Mouse and focus handling shared by every clickable widget.
+  ui.lastId = id
+  ui.lastRect = r
+  if not enabled:
+    if ui.active == id: ui.active = 0
+    return
+  if focusable and canInput():
+    ui.tabOrder.add id
+    if ui.focusWanted:
+      ui.focusWanted = false
+      ui.focus = id
+  result.focused = ui.focus == id
+  if result.focused: ui.focusRect = r
+  let over = hover(r)
+  if over:
+    ui.hot = id
+    if takePress():
+      ui.active = id
+      ui.spaceDown = false
+      if focusable:
+        ui.focus = id
+        result.focused = true
+  if ui.active == id and not ui.spaceDown:
+    if ui.released:
+      result.clicked = over
+      ui.active = 0
+    else:
+      result.down = over and ui.mouseDown
+  result.hover = over
+
+# ---- drag and drop ------------------------------------------------------------
+
+proc startDrag*(kind: string; items: openArray[string]; label = ""; glyph = "") =
+  ## Starts dragging `items` (paths, ids...) of `kind`, while the mouse is
+  ## down -- typically when a list reports `dragStarted`. Targets see it
+  ## with `dropTarget`; letting go over none (or Esc) drops nothing.
+  ui.drag = DragInfo(active: true, kind: kind, items: @items,
+                     label: if label.len > 0: label
+                            elif items.len == 1: items[0] else: $items.len & " items",
+                     glyph: glyph, source: ui.active)
+  ui.dragDropping = false
+  ui.dragClaimed = false
+  ui.active = 0
+  ui.dragsActive = true
+  ui.redraw = true
+
+proc lifted*(): bool = ui.lift
+  ## A finger held still on something, then moved, this frame: on a touch
+  ## screen this starts a drag (the mouse just drags).
+
+proc dragging*(kind = ""): bool =
+  ## Something (of `kind`, "" any) is being dragged.
+  ui.drag.active and (kind.len == 0 or ui.drag.kind == kind)
+
+proc dragCopies*(): bool = CtrlPressed in ui.mods
+  ## The drag copies instead of moving (Ctrl is held).
+
+proc cancelDrag*() =
+  ## Ends the drag in progress without dropping it anywhere.
+  ui.drag = DragInfo()
+  ui.redraw = true
+
+proc dropTarget*(r: Rect; kind = ""; enabled = true): DropState =
+  ## Whether a drag of `kind` is over `r` (draw `r` highlighted) or was
+  ## dropped on it this frame (take `ui.drag.items`). Only the first target
+  ## under the pointer takes a drop.
+  if not enabled or not dragging(kind) or ui.dragClaimed or not canInput(): return dsNone
+  if not (r.contains(point(ui.mx, ui.my)) and clipRect().contains(point(ui.mx, ui.my))):
+    return dsNone
+  ui.dragOver = true
+  if ui.dragDropping:
+    ui.dragClaimed = true
+    ui.redraw = true
+    return dsDropped
+  wakeIn(50)
+  dsOver
+
+proc dropHighlight*(r: Rect) =
+  ## The look of a target a drag is over.
+  box(r, ui.theme.select)
+  box(inset(r, 1), ui.theme.select)
+
+# ---- layout -----------------------------------------------------------------
+
+proc top(): ptr LFrame {.inline.} = addr ui.frames[^1]
+
+proc newline(f: ptr LFrame) =
+  f.cx = f.x
+  f.cy += f.lineH + Gap
+  f.lineH = 0
+  inc f.lineNo
+
+var clippedDepth = 0
+  ## Inside panes, panels and windows that clip their content: what they
+  ## hold does not widen the window's page.
+
+type LayoutMark* = object
+  ## Where the layout was (`layoutMark`): what `layoutRestore` goes back to
+  ## when drawing stopped half way.
+  frames, clipped: int
+  draw: DrawMark
+
+proc layoutMark*(): LayoutMark =
+  LayoutMark(frames: ui.frames.len, clipped: clippedDepth, draw: drawMark())
+
+proc layoutRestore*(m: LayoutMark) =
+  ## The frames, clips and layers begun since `m` let go (after a fault in
+  ## what drew them).
+  if ui.frames.len > m.frames: ui.frames.setLen(m.frames)
+  clippedDepth = m.clipped
+  drawRestore(m.draw)
+
+# ---- faults --------------------------------------------------------------------------------------------
+
+var faultPath = ""     ## (where faults are written: the app's data folder)
+
+proc writeFault(msg: string) {.tags: [WriteIOEffect], gcsafe, nimcall, raises: [].} =
+  {.cast(gcsafe).}:
+    try: stderr.write msg
+    except CatchableError: discard
+    if faultPath.len > 0:
+      try:
+        var f: File
+        if open(f, faultPath, fmAppend):
+          f.write(msg)
+          f.close()
+      except CatchableError: discard
+
+var lastNoted = ""
+
+proc noteFault*(where, msg: string) =
+  ## A fault written to the app's fault log (`takeFaults` reads it at the
+  ## next start): `where` it came, what it said (the same one again, each
+  ## frame: once).
+  let m = "--- " & where & "\n" & msg & "\n"
+  if m == lastNoted: return
+  lastNoted = m
+  writeFault(m)
+
+proc takeFaults*(): string =
+  ## What went wrong since the faults were last taken (the last run's end
+  ## too, when the program stopped): "" when nothing. The log is emptied.
+  if faultPath.len == 0 or not fileExists(faultPath): return ""
+  try:
+    result = readFile(faultPath)
+    removeFile(faultPath)
+  except CatchableError: discard
+  if result.len > 4000: result = "..." & result[^4000 .. ^1]
+
+template guarded*(where: string; body: untyped) =
+  ## `body`, and when it fails (an error, a fault of the program), the
+  ## layout put back as it was, the fault logged -- the program goes on.
+  ## True in `faulted` when it failed.
+  let mark {.gensym.} = layoutMark()
+  try:
+    body
+  except Exception as e:
+    if e.name == "BusyCancelled": raise        # (Cancel in the busy box: not a fault)
+    layoutRestore(mark)
+    noteFault(where, e.msg & "\n" & e.getStackTrace())
+    ui.lastFault = where & ": " & e.msg
+    ui.redraw = true
+
+proc beginClipped*() =
+  ## Content from here to `endClipped` is clipped by its container (a
+  ## split pane, a scroll panel, an MDI window): it never makes the window
+  ## scroll sideways.
+  inc clippedDepth
+
+proc endClipped*() =
+  ## Ends a `beginClipped`.
+  if clippedDepth > 0: dec clippedDepth
+
+proc beginCell*(w: int; fill = false): Rect =
+  ## Reserve the next layout cell; its height is given later to `endCell`.
+  let f = top()
+  case f.kind
+  of lkCol, lkGroup:
+    let ww = if fill or w <= 0 or w > f.w: f.w else: w
+    result = rect(f.x, f.cy, ww, 0)
+  of lkRow:
+    var ww = if w <= 0: 80 else: w
+    if f.nw > 0:
+      if f.idx > 0 and f.idx mod f.nw == 0: newline(f)
+      let spec = f.widths[f.idx mod f.nw]
+      if spec > 0: ww = spec
+      elif f.idx < f.nw: f.zeroNow += ww
+    elif fill:
+      ww = max(20, f.x + f.w - f.cx)
+    if f.springX >= 0:
+      f.tailNow += ww + Gap            # after a spring: measured, not wrapped
+    elif f.nw == 0 and f.cx > f.x and f.cx + ww > f.x + f.w: newline(f)
+    result = rect(f.cx, f.cy, ww, 0)
+    # a row of fixed widths wider than the window: the page scrolls sideways
+    if layer() == 0 and not f.fixed and clippedDepth == 0 and
+       f.cx + ww + ui.pageX > ui.contentRight:
+      ui.contentRight = f.cx + ww + ui.pageX
+    f.cx += ww + Gap
+    inc f.idx
+
+proc endCell*(r: Rect; h: int; natural = -1) =
+  ## Finish a cell `h` pixels high; `natural` is the height its content
+  ## needs when that is less (groups grow to the height of their row).
+  let f = top()
+  case f.kind
+  of lkCol, lkGroup:
+    f.cy = r.y + h + Gap
+    f.bottom = max(f.bottom, r.y + h)
+  of lkRow:
+    f.lineH = max(f.lineH, h)
+    f.bottom = max(f.bottom, f.cy + f.lineH)
+    f.natMax = max(f.natMax, if natural >= 0: natural else: h)
+    let ln = min(f.lineNo, f.lineNat.high)
+    f.lineNat[ln] = max(f.lineNat[ln], int32(if natural >= 0: natural else: h))
+
+proc place*(w, h: int; fill = false): Rect =
+  ## A cell for a leaf widget of natural size `w` x `h`. In a row, widgets
+  ## lower than the row height are centered on it.
+  result = beginCell(w, fill)
+  result.h = h
+  let f = top()
+  if f.kind == lkRow and h < f.rowH:
+    result.y += (f.rowH - h) div 2
+    endCell(result, f.rowH)
+  else:
+    endCell(result, h)
+
+proc cellRoom*(): int =
+  ## The widest the next cell can be: a fixed width of the row it is in,
+  ## else the whole width of the row or column (text wraps to it).
+  if ui.frames.len == 0: return max(10, ui.w - ui.safe.left - ui.safe.right - 2 * Pad)
+  let f = top()
+  if f.kind == lkRow and f.nw > 0:
+    let spec = f.widths[f.idx mod f.nw]
+    if spec > 0: return spec
+  f.w
+
+proc available*(): int =
+  ## Width left in the current line.
+  if ui.frames.len == 0: return max(10, ui.w - ui.safe.left - ui.safe.right - 2 * Pad)
+  let f = top()
+  if f.kind == lkRow: f.x + f.w - f.cx else: f.w
+
+proc remainingH*(): int =
+  ## Height left in the current pane, or above the status bar (less the
+  ## borders of the groups, tabs and cards around).
+  var below = 0
+  for i in countdown(ui.frames.high, 0):
+    let f = addr ui.frames[i]
+    if f.limitY > 0: return max(20, f.limitY - below - top().cy)
+    below += f.reserve
+  # (the status bar may come before the content or after it: then the
+  # last frame's says where it is)
+  max(ItemH * 4 + 2, min(ui.prevBottom, ui.bottom) - Pad - below - top().cy - top().dy)
+
+type SizeClass* = enum
+  ## How much room the window has, in design pixels of width (the classes
+  ## Android and the web use): phones, tablets and small windows, desktops.
+  scCompact,      ## under 600: one column, stacked
+  scMedium,       ## 600 to 1023: two columns, side panels may fold
+  scExpanded      ## 1024 and more: everything side by side
+
+proc sizeClass*(): SizeClass =
+  ## How much room the window has: phone, tablet, desktop.
+  let w = float(ui.w) / max(0.1, ui.k)
+  if w < 600: scCompact elif w < 1024: scMedium else: scExpanded
+
+proc isCompact*(): bool = sizeClass() == scCompact
+  ## A phone in portrait, or a narrow window.
+
+proc responsive*[T](compact, medium, expanded: T): T =
+  ## The value for the window's size class.
+  case sizeClass()
+  of scCompact: compact
+  of scMedium: medium
+  of scExpanded: expanded
+
+proc columnsFor*(minW: int; maxCols = 6): int =
+  ## How many columns at least `minW` design pixels wide fit in the space
+  ## the layout is at.
+  clamp((available() + Gap) div max(1, dp(minW) + Gap), 1, maxCols)
+
+proc space*(px = Gap) =
+  ## Empty space: down in a column, right in a row.
+  let f = top()
+  if f.kind == lkRow: f.cx += px else: f.cy += px
+
+proc beginRowPx*(widths: openArray[int] = []; rowH = CtrlH; scaled = false) =
+  ## `beginRow` with fixed widths in logical pixels (not scaled).
+  let cell = beginCell(0, fill = true)
+  var f = LFrame(kind: lkRow, x: cell.x, y: cell.y, w: cell.w, dy: top().dy,
+                 cx: cell.x, cy: cell.y, rowH: rowH, bottom: cell.y,
+                 id: makeId(0x526f77'u32), springX: -1)
+  let st = addr state(f.id)
+  f.prevH = st.aux
+  f.prevLines = st.lines
+  f.tailPrev = st.aux2
+  f.nw = min(widths.len, f.widths.len)
+  var fixed = 0
+  var shares = 0
+  for i in 0 ..< f.nw:
+    if widths[i] > 0: fixed += (if scaled: dp(widths[i]) else: widths[i])
+    elif widths[i] < 0: shares += -widths[i]
+  # (the widgets of their own width: as wide as last frame)
+  let room = max(0, cell.w - fixed - Gap * (f.nw - 1) - st.caret)
+  var given = 0
+  var left = shares
+  for i in 0 ..< f.nw:
+    f.widths[i] =
+      if widths[i] > 0: (if scaled: dp(widths[i]) else: widths[i])
+      elif widths[i] < 0:
+        # the last share takes what rounding left over
+        let w = if left == -widths[i]: room - given
+                else: room * -widths[i] div max(1, shares)
+        given += w
+        left -= -widths[i]
+        max(20, w)
+      else: 0
+  ui.frames.add f
+
+proc beginRow*(widths: openArray[int] = []; rowH = CtrlH) =
+  ## Widgets side by side. `widths`: > 0 a fixed width (in design pixels,
+  ## scaled like everything else), 0 the widget's own width, -n a share of
+  ## the room left (-1 and -2: one third and two thirds). More widgets
+  ## than widths wrap to new lines.
+  beginRowPx(widths, rowH, scaled = true)
+
+proc spring*() =
+  ## In a row: the widgets after it go to the row's right end.
+  let f = top()
+  if f.kind != lkRow: return
+  f.cx = max(f.cx, f.x + f.w - f.tailPrev)
+  f.springX = f.cx
+
+proc endRow*() =
+  ## Ends a `beginRow`.
+  let f = ui.frames.pop()
+  if f.id != 0:
+    if f.natMax != f.prevH:
+      state(f.id).aux = f.natMax
+      ui.redraw = true
+    let n = min(f.lineNo + 1, f.lineNat.len)
+    if f.prevLines.len != n or f.prevLines != f.lineNat[0 ..< n]:
+      state(f.id).lines = f.lineNat[0 ..< n]
+      ui.redraw = true
+    let tail = if f.springX >= 0: max(0, f.tailNow - Gap) else: 0
+    if tail != f.tailPrev:
+      state(f.id).aux2 = tail
+      ui.redraw = true
+    if f.zeroNow != state(f.id).caret:
+      state(f.id).caret = f.zeroNow
+      ui.redraw = true
+  endCell(rect(f.x, f.y, f.w, 0), max(f.bottom, f.cy + f.lineH) - f.y)
+
+proc beginCol*(w = 0) =
+  ## A column `w` design pixels wide (0: all the room there is).
+  let cell = beginCell(dp(w), fill = w <= 0)
+  ui.frames.add LFrame(kind: lkCol, x: cell.x, y: cell.y, w: cell.w, dy: top().dy,
+                       cx: cell.x, cy: cell.y, bottom: cell.y)
+
+proc endCol*() =
+  ## Ends a `beginCol`.
+  let f = ui.frames.pop()
+  endCell(rect(f.x, f.y, f.w, 0), f.bottom - f.y)
+
+template row*(body: untyped) =
+  ## Widgets side by side, each at its natural width (wrapping when full).
+  beginRow()
+  body
+  endRow()
+
+template row*(widths: openArray[int]; body: untyped) =
+  ## Widgets side by side in columns: a width > 0 is fixed, -1 shares the
+  ## rest, 0 is the widget's own width. More widgets than widths wrap.
+  ## The widths are design pixels, scaled as everything is: write
+  ## `row([80, -1])`, not `row([dp(80), -1])` (that scales twice: the
+  ## columns too wide on a tablet or a phone); widths measured on the
+  ## screen (a text's width) go to `rowPx`.
+  beginRow(widths)
+  body
+  endRow()
+
+template rowPx*(widths: openArray[int]; body: untyped) =
+  ## `row` with widths in logical pixels, as they are (measured on the
+  ## screen: `textWidth`, `dp`): not scaled again.
+  beginRowPx(widths)
+  body
+  endRow()
+
+template col*(body: untyped) =
+  ## Widgets stacked top to bottom (a column inside a row).
+  beginCol()
+  body
+  endCol()
+
+template col*(width: int; body: untyped) =
+  ## A column `width` design pixels wide.
+  beginCol(width)
+  body
+  endCol()
+
+template adaptive*(minW: int; body: untyped) =
+  ## As many equal columns as fit, each at least `minW` design pixels
+  ## wide; the widgets (groups, cards) of `body` flow through them and wrap.
+  ## One column on a phone, three on a desktop -- with the same code.
+  block:
+    let n = columnsFor(minW)
+    var ws: array[16, int]
+    for i in 0 ..< n: ws[i] = -1
+    beginRow(ws.toOpenArray(0, n - 1))
+    body
+    endRow()
+
+proc rowHeight*(): int =
+  ## In a row: the height the tallest cell of the current line needed last
+  ## frame (for panels that grow to line up with their neighbours), else 0.
+  ## Call it right after `beginCell`.
+  if ui.frames.len == 0 or top().kind != lkRow: return 0
+  let f = top()
+  if f.lineNo < f.prevLines.len: int(f.prevLines[f.lineNo]) else: f.prevH
+
+proc beginGroup*(title: string) =
+  ## Starts a group box (see `group`).
+  let cell = beginCell(0, fill = true)
+  let minH = rowHeight()
+  ui.frames.add LFrame(kind: lkGroup, x: cell.x + 10, y: cell.y, dy: top().dy,
+                       w: max(10, cell.w - 20), cx: cell.x + 10,
+                       cy: cell.y + FontH + 6, bottom: cell.y + FontH + 2,
+                       title: title, prevH: minH, reserve: 9,
+                       widths: [cell.x, cell.w, 0, 0, 0, 0,
+                       0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+
+proc pushRow*(r: Rect; rowH = CtrlH) =
+  ## A row at an explicit rectangle (tool bars).
+  ui.frames.add LFrame(kind: lkRow, x: r.x, y: r.y, w: r.w, cx: r.x,
+                       cy: r.y, rowH: rowH, bottom: r.y, fixed: true)
+
+proc barsBottom*(): int =
+  ## Where the bars at the top of the window (caption, menu, tool bar) end:
+  ## the window's content starts a margin under it.
+  ui.contentTop - Pad
+
+proc shiftContent*(dy: int) =
+  ## Move the window's content down (a bar was added on top).
+  ui.frames[0].cy += dy
+  ui.frames[0].bottom += dy
+  ui.contentTop += dy
+
+proc pushFrame*(r: Rect; reserve = 0; inPage = false) =
+  ## A column at an explicit rectangle (dialogs, popups, panes). A height
+  ## (`r.h` > 0) is what `remainingH` hands out inside it. Panels drawn in
+  ## the window's content (tabs, cards) pass `inPage`, and `reserve`: the
+  ## room their border needs below what is inside.
+  let dy = if inPage and ui.frames.len > 0: top().dy else: 0
+  ui.frames.add LFrame(kind: lkCol, x: r.x, y: r.y, w: r.w, cx: r.x,
+                       cy: r.y, bottom: r.y, dy: dy, reserve: reserve,
+                       limitY: if r.h > 0: r.y + r.h else: 0)
+
+proc popFrame*(): int =
+  ## Pops a `pushFrame` column and returns the height its content used.
+  let f = ui.frames.pop()
+  f.bottom - f.y
+
+proc frameBottom*(): int = top().bottom
+  ## The lowest point the current column or row has reached.
+
+
+
+proc groupEnd*(): tuple[cell: Rect, title: string] =
+  ## Ends a `beginGroup`: where the group box goes and its title (for
+  ## `endGroup`, which draws it).
+  let f = ui.frames.pop()
+  let x = f.widths[0]
+  let w = f.widths[1]
+  let natural = f.bottom - f.y + 9
+  let h = max(natural, f.prevH)
+  result = (rect(x, f.y, w, h), f.title)
+  endCell(result.cell, h, natural)
+
+# ---- drawing helpers shared by widgets ---------------------------------------
+
+var
+  uiStrings: Table[string, string]   # (the words on screen in another language: `setUiLanguage`)
+  uiLanguage = ""
+
+proc setUiLanguage*(lang: string; tables: varargs[seq[(string, string)]]) =
+  ## The interface in another language: each label, button, menu, tab,
+  ## title shown is looked up in `tables` (the English text, "&" taken out,
+  ## and what it is in that language); right to left -- mirrored -- for
+  ## Arabic, Persian, Hebrew, Urdu. "" or "en": English again.
+  uiStrings.clear()
+  uiLanguage = lang
+  if lang notin ["", "en"]:
+    for t in tables:
+      for (k, v) in t:
+        if k.len > 0 and v.len > 0: uiStrings[k] = v
+  ui.rtl = lang in ["ar", "fa", "he", "ur"]
+  setRtlInterface(ui.rtl)     # (mixed lines read right to left, as the interface)
+  ui.force = true
+
+proc uiLanguageCode*(): string = uiLanguage
+  ## The interface's language ("" English).
+
+proc tr*(s: string): string =
+  ## `s` in the interface's language (as it is when it has no translation).
+  if uiStrings.len == 0 or s.len == 0: return s
+  uiStrings.getOrDefault(s, s)
+
+proc mirroredX(x: int): int {.inline.} =
+  ## (a point across the screen, right to left when the interface is)
+  if ui.rtl: ui.w - 1 - x else: x
+
+var keepStack: seq[tuple[area: Rect; mx: int]]
+
+proc beginKeepSides*(area: Rect) =
+  ## In a right-to-left interface, what is drawn from here to
+  ## `endKeepSides` keeps its left and right -- a picture and what is drawn
+  ## over it, a text being edited -- only moved to where `area` is; the
+  ## mouse is read the same way meanwhile. (Nothing changes left to right.)
+  beginNoMirror(area)
+  keepStack.add (area, ui.mx)
+  if ui.rtl: ui.mx = 2 * area.x + area.w - 1 - ui.mx
+
+proc endKeepSides*() =
+  ## Ends `beginKeepSides`.
+  endNoMirror()
+  if keepStack.len > 0: ui.mx = keepStack.pop().mx
+
+proc globalX*(x: int): int =
+  ## A point read inside `beginKeepSides` as the rest of the frame reads it
+  ## (a menu opened where it was clicked).
+  result = x
+  if ui.rtl:
+    for k in countdown(keepStack.high, 0):
+      let a = keepStack[k].area
+      result = 2 * a.x + a.w - 1 - result
+
+proc splitMnemonic*(label: string): tuple[text: string, at: int] =
+  ## "&File" -> ("File", 0): the text to show and where to underline
+  ## (another language's: its text, nothing underlined).
+  result.at = -1
+  if '&' notin label:
+    result.text = label           # most labels: nothing to take out
+  else:
+    result.text = newStringOfCap(label.len)
+    var i = 0
+    while i < label.len:
+      if label[i] == '&' and i + 1 < label.len:
+        if label[i+1] != '&' and result.at < 0: result.at = result.text.len
+        inc i
+      result.text.add label[i]
+      inc i
+  if uiStrings.len > 0:
+    let t = uiStrings.getOrDefault(result.text, "")
+    if t.len > 0:
+      result.text = t
+      result.at = -1
+
+proc labelWidth*(label: string; bold = false): int =
+  ## The width of a label as `drawLabel` draws it (without its '&').
+  textWidth(splitMnemonic(label).text, bold)
+
+proc drawLabel*(x, y: int; label: string; c: Color; bold = false) =
+  ## Text with its mnemonic letter underlined, the 3.1 way.
+  let (s, at) = splitMnemonic(label)
+  text(x, y, s, c, bold)
+  if at >= 0:
+    let ux = x + textWidth(s[0 ..< at], bold)
+    var r: Rune
+    var i = at
+    fastRuneAt(s, i, r)
+    hline(ux, y + FontAscent + 1, textWidth(s[at ..< i], bold), c)
+
+# ---- the loop ---------------------------------------------------------------
+
+var
+  pending: Event
+  hasPending: bool
+
+var deferred: seq[Event]      # events that came while work went on (handled after it)
+
+proc nextEvent(e: var Event; timeout: int): bool =
+  if deferred.len > 0:
+    e = deferred[0]
+    deferred.delete(0)
+    return true
+  if hasPending:
+    e = pending
+    hasPending = false
+    return true
+  let flags = if ui.prevTakesText: {WantTextInput} else: {}
+  if timeout == 0: pollEvent(e, flags) else: waitEvent(e, timeout, flags)
+
+var layoutFont = uiFont()       # the font the metrics were made for
+
+proc applyLayout(l: ScreenLayout) =
+  unitPx = max(1, l.scaleX)
+  # whole pixels only: 150% stays 1x on a desktop, a 1.5x tablet gets 2x
+  # (Retro Sans is drawn smooth at any size between, so the font does not
+  # change this)
+  layoutFont = uiFont()
+  zoom = if ui.zoomWanted > 0: ui.zoomWanted
+         else: max(1, (l.uiScale + (if l.touch: 50 else: 49)) div 100)
+  pxScale = zoom * unitPx
+  ui.devW = l.width * unitPx
+  ui.devH = l.height * unitPx
+  ui.w = l.width div zoom
+  ui.h = l.height div zoom
+  template inset(v: int): int = (max(0, v) + zoom - 1) div zoom
+  ui.safe = (inset(l.safeTop), inset(l.safeLeft), inset(l.safeBottom),
+             inset(l.safeRight))
+  ui.touch = l.touch or getEnv("RETRO_TOUCH") == "1"
+  # (a tablet: its shorter side is 600 dp or more -- the size Android calls
+  # sw600dp)
+  ui.roomy = min(l.width, l.height) * 100 >= 600 * max(100, l.uiScale)
+  # whole pixels keep lines sharp; what the rounding left out of the
+  # screen's scale is made up by the sizes of text and controls
+  ui.density = if ui.zoomWanted > 0: 1.0
+               else: clamp(float(max(100, l.uiScale)) / float(zoom * 100), 0.75, 1.5)
+  ui.k = ui.density * float(ui.uiScale) / 100
+  fitMetrics()
+  ui.force = true
+
+proc setControlSizes*(c: ControlSizes) =
+  ## How big controls are: `csAuto` (finger-sized on phones, desktop-sized
+  ## on tablets and desktops), `csDesktop` or `csTouch`. `appearanceSettings`
+  ## lets the user choose; `storeAppearance` keeps it.
+  if ui.sizes == c: return
+  ui.sizes = c
+  fitMetrics()
+  ui.force = true
+
+proc controlSizes*(): ControlSizes = ui.sizes
+  ## How big controls are (see `setControlSizes`).
+
+proc setZoom*(n: int) =
+  ## Magnify the whole UI by `n` whole pixels (1..4); 0 follows the screen.
+  ui.zoomWanted = clamp(n, 0, 4)
+  applyLayout(getWindowLayout())
+
+proc zoomLevel*(): int = zoom
+  ## The current magnification.
+
+proc setUiScale*(percent: int) =
+  ## The size of everything (text, controls, spacing), 50..300 percent of
+  ## the normal size for the screen. Ctrl and +, - or 0 change it too.
+  ui.uiScale = clamp(percent, 50, 300)
+  ui.k = ui.density * float(ui.uiScale) / 100
+  fitMetrics()
+  ui.force = true
+
+proc uiScale*(): int = ui.uiScale
+  ## The user's UI size in percent (see `setUiScale`).
+
+proc scaleStep*(dir: int): int =
+  ## The next UI size up (`dir` > 0) or down from the current one.
+  const steps = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300]
+  if dir > 0:
+    for v in steps:
+      if v > ui.uiScale: return v
+    steps[^1]
+  else:
+    for i in countdown(steps.high, 0):
+      if steps[i] < ui.uiScale: return steps[i]
+    steps[0]
+
+proc setTextScale*(percent: int) =
+  ## The size of the text alone (controls grow with it), 50..300 percent.
+  ui.textScale = clamp(percent, 50, 300)
+  fitMetrics()
+  ui.force = true
+
+proc textScale*(): int = ui.textScale
+  ## The user's text size in percent (see `setTextScale`).
+
+proc setBaseTextSize*(em: float) =
+  ## The text size at 100%, logical pixels per em (default 12 on desktops,
+  ## 15 on touch screens).
+  ui.baseEm = em
+  fitMetrics()
+  ui.force = true
+
+proc letterOf(k: KeyCode): char =
+  if k in KeyA..KeyZ: char(ord('a') + ord(k) - ord(KeyA))
+  elif k in Key0..Key9: char(ord('0') + ord(k) - ord(Key0))
+  else: '\0'
+
+proc penFrom(e: Event) {.inline.} =
+  ## (how a pen is held, from a pointer event; a mouse or a finger: pressed
+  ## all the way, upright)
+  if e.pen:
+    ui.pen = true
+    ui.pressure = clamp(e.pressure.float, 0.0, 1.0)
+    ui.tilt = clamp(e.tilt.float / (PI / 2), 0.0, 1.0)
+    ui.azimuth = e.azimuth.float
+    ui.eraser = e.twist < 0
+    ui.twist = if e.twist < 0: 0.0 else: e.twist.float
+  else:
+    ui.pen = false
+    ui.pressure = 1
+    ui.tilt = 0
+    ui.eraser = false
+
+proc pump(waitMs: int) =
+  var e: Event
+  var t = waitMs
+  while nextEvent(e, t):
+    t = 0
+    case e.kind
+    of MouseMoveEvent:
+      if e.hasMods: ui.mods = e.mods
+      ui.mx = mirroredX(e.x div zoom)
+      ui.my = e.y div zoom
+      penFrom(e)
+      ui.mouseMoved = true
+      # moving with no button down: a mouse or a pen, not a finger
+      if not ui.mouseDown and (e.fromMouse or not ui.touch): ui.hovering = true
+    of WindowFocusGainedEvent, WindowFocusLostEvent:
+      ui.active31 = e.kind == WindowFocusGainedEvent
+    of MouseWheelEvent:
+      if e.hasMods: ui.mods = e.mods
+      ui.wheel += e.y
+    of GestureEvent:
+      # (two fingers: pinched and moved -- the frame's changes together)
+      ui.pinch *= max(0.01, e.scale.float)
+      ui.panDX += e.dx.float / zoom.float
+      ui.panDY += e.dy.float / zoom.float
+      ui.pinchX = mirroredX(e.x div zoom)
+      ui.pinchY = e.y div zoom
+      ui.gesturing = e.phase != gsEnd
+    of TextInputEvent:
+      if ui.textOk:
+        for c in e.text:
+          if c == '\0': break
+          ui.typed.add c
+    of WindowResizeEvent, WindowMetricsEvent:
+      var l = getWindowLayout()
+      l.width = e.x
+      l.height = e.y
+      if e.kind == WindowMetricsEvent:
+        l.scaleX = e.scaleX
+        l.uiScale = e.uiScale
+      applyLayout(l)
+    of AppPauseEvent:
+      ui.paused = true
+    of AppResumeEvent:
+      ui.paused = false
+      ui.force = true
+    of QuitEvent, WindowCloseEvent:
+      ui.closeAsked = true
+      break
+    of MouseDownEvent:
+      ui.altArmed = false
+      if e.hasMods: ui.mods = e.mods
+      ui.mx = mirroredX(e.x div zoom)
+      ui.my = e.y div zoom
+      penFrom(e)
+      ui.mouseMoved = true
+      ui.active31 = true
+      ui.fingerDown = ui.touch and not e.fromMouse
+      if e.fromMouse: ui.hovering = true
+      if e.button == LeftButton:
+        ui.mouseDown = true
+        ui.pressed = true
+        ui.clicks = e.clicks
+        ui.pressAt = getTicks()
+        ui.pressX = ui.mx
+        ui.pressY = ui.my
+        ui.longFired = false
+        ui.panning = false
+        ui.dragsActive = false
+        ui.panFrom = point(ui.mx, ui.my)
+      elif e.button == RightButton:
+        ui.rpressed = true
+        ui.rmouseDown = true
+      elif e.button == MiddleButton:
+        ui.mpressed = true
+      elif e.button == BackButton:
+        ui.navBack = true
+      elif e.button == ForwardButton:
+        ui.navForward = true
+      break
+    of MouseUpEvent:
+      if e.hasMods: ui.mods = e.mods
+      ui.mx = mirroredX(e.x div zoom)
+      ui.my = e.y div zoom
+      penFrom(e)
+      if e.button == LeftButton:
+        ui.mouseDown = false
+        ui.released = true
+        # a finger lifted is no longer over anything
+        if ui.touch and not e.fromMouse: ui.hovering = false
+        break
+      elif e.button == RightButton:
+        ui.rmouseDown = false
+        break
+    of KeyDownEvent:
+      ui.key = e.key
+      ui.mods = e.mods
+      let ctrl = CtrlPressed in e.mods
+      let alt = AltPressed in e.mods
+      ui.textOk = ctrl == alt and GuiPressed notin e.mods
+      if alt and not ctrl: ui.mnemonic = letterOf(e.key)
+      # (Alt down alone -- the key itself, no other one -- arms the menu bar)
+      ui.altArmed = e.key == KeyNone and e.mods == {AltPressed}
+      break
+    of KeyUpEvent:
+      if e.hasMods: ui.mods = e.mods
+      ui.keyUp = e.key
+      if ui.altArmed and e.key == KeyNone and AltPressed notin e.mods:
+        ui.altTapped = true            # (let go with nothing between: the menu bar)
+      ui.altArmed = false
+      break
+    else: discard
+
+# ---- long work: a box with an animation, the events kept read ---------------------------------------
+
+var
+  busyLastPump, busyLastDraw: int
+  busyCancelRect: Rect
+
+proc busyPump() =
+  ## The system's events while work goes on: Esc or Cancel ask it to stop;
+  ## a key or a click meanwhile is dropped; the rest (a button let go, the
+  ## window sized, the app put away) waits for the next frame.
+  var e: Event
+  while true:
+    if hasPending:
+      e = pending
+      hasPending = false
+    elif not pollEvent(e, {}): break
+    case e.kind
+    of KeyDownEvent:
+      if e.key == KeyEsc: busyCancelAsked = true
+    of MouseDownEvent:
+      if busyCancelRect.contains(point(e.x div zoom, e.y div zoom)): busyCancelAsked = true
+    of TextInputEvent, MouseMoveEvent, MouseWheelEvent: discard
+    of AppPauseEvent:
+      ui.paused = true
+      deferred.add e
+    of AppResumeEvent:
+      ui.paused = false
+      deferred.add e
+    of QuitEvent, WindowCloseEvent:
+      busyCancelAsked = true
+      deferred.add e
+    else: deferred.add e
+
+var busyPicture*: Bitmap
+  ## A picture the busy box shows above its bar while it is set (the file
+  ## being opened, as it will look: seen while it loads); nil: none.
+
+proc drawBusyBox(elapsed: int) =
+  ## The box: what is being done, an hourglass, a bar going along (or
+  ## filling), Cancel; `busyPicture` above them.
+  let th = ui.theme
+  let pic = busyPicture
+  let picH = if pic != nil and pic.w > 0 and pic.h > 0: min(dp(180), ui.h div 3) else: 0
+  let bw = min(ui.w - 16, dp(330))
+  let bh = dp(112) + (if picH > 0: picH + dp(8) else: 0)
+  let r = rect((ui.w - bw) div 2, (ui.h - bh) div 2, bw, bh)
+  overlayNow(rect(r.x - 2, r.y - 2, r.w + 4, r.h + 4), proc () =
+    fill(r, th.face)
+    box(r, th.frame)
+    box(inset(r, 1), th.light)
+    var tb = rect(r.x + 2, r.y + 2, r.w - 4, FontH + dp(5))
+    fill(tb, th.select)
+    text(tb.x + dp(5), tb.y + (tb.h - FontH) div 2, (if ui.title.len > 0: ui.title else: "Working"),
+         th.selectText, true)
+    if picH > 0:
+      # (the picture, fitted, in a sunken frame; what follows goes below it)
+      let pr = rect(r.x + dp(10), tb.y + tb.h + dp(6), r.w - dp(20), picH)
+      fill(pr, th.shadow)
+      let k = min((pr.w - 4) / pic.w, (pr.h - 4) / pic.h)
+      let w = max(1, int(pic.w.float * k))
+      let h = max(1, int(pic.h.float * k))
+      drawBitmap(rect(pr.x + (pr.w - w) div 2, pr.y + (pr.h - h) div 2, w, h), pic)
+      box(pr, th.shadow)
+      tb.y += picH + dp(8)
+    let glyph = if (elapsed div 600) mod 2 == 0: "\u{10F04C}" else: "\u{10F04D}"
+    image(r.x + dp(12), tb.y + tb.h + dp(10), glyphIcon(glyph, th.text, dp(32)))
+    let tx = r.x + dp(54)
+    var what = if busyLabel.len > 0: busyLabel else: "Working"
+    if not what.endsWith("..."): what.add "..."
+    text(tx, tb.y + tb.h + dp(8), what, th.text)
+    text(tx, tb.y + tb.h + dp(8) + FontH, $(elapsed div 1000) & " s", th.shadow)
+    # the bar: filled to what is done, or blocks going along
+    let bar = rect(tx, tb.y + tb.h + dp(12) + 2 * FontH, r.x + r.w - dp(12) - tx, dp(14))
+    fill(bar, th.window)
+    box(bar, th.shadow)
+    let inner = inset(bar, 2)
+    let blk = dp(8)
+    if busyFraction >= 0:
+      let n = int(float(inner.w) * clamp(busyFraction, 0.0, 1.0)) div (blk + 2)
+      for k in 0 ..< n: fill(rect(inner.x + k * (blk + 2), inner.y, blk, inner.h), th.select)
+    else:
+      let span = 5
+      let total = inner.w div (blk + 2)
+      let at = (elapsed div 90) mod max(1, total + span)
+      for k in at - span .. at:
+        if k >= 0 and k < total: fill(rect(inner.x + k * (blk + 2), inner.y, blk, inner.h), th.select)
+    # Cancel
+    if busyCancelDepth > 0:
+      let cw = dp(76)
+      let cb = rect(r.x + r.w - cw - dp(12), r.y + r.h - CtrlH - dp(8), cw, CtrlH)
+      fill(cb, th.face)
+      box(cb, th.frame)
+      hline(cb.x + 1, cb.y + 1, cb.w - 2, th.light)
+      vline(cb.x + 1, cb.y + 1, cb.h - 2, th.light)
+      hline(cb.x + 1, cb.y + cb.h - 2, cb.w - 2, th.shadow)
+      vline(cb.x + cb.w - 2, cb.y + 1, cb.h - 2, th.shadow)
+      text(cb.x + (cb.w - textWidth("Cancel")) div 2, cb.y + (cb.h - FontH) div 2, "Cancel", th.text)
+      text(r.x + dp(12), cb.y + (cb.h - FontH) div 2, "Esc stops it", th.shadow)
+      busyCancelRect = cb
+    else:
+      busyCancelRect = rect(0, 0, 0, 0))
+
+proc busyTickNow() =
+  ## (`busyTick`: the events read now and then; the box drawn once the
+  ## work has gone on a moment)
+  let t = getTicks()
+  if t - busyLastPump < 25: return
+  busyLastPump = t
+  busyPump()
+  let since = t - ui.now
+  if since < 250 or ui.paused or not ui.running: return
+  if t - busyLastDraw < 90: return
+  busyLastDraw = t
+  drawBusyBox(since)
+
+proc themeFromEnv*()
+  ## `RETRO_THEME` (a built-in theme's name, "OLED Black", or its number)
+  ## overrides the colors chosen: for tests and screenshots.
+
+var windowIcon*: seq[uint32]
+  ## The window's picture on a desktop (its taskbar button, its title bar),
+  ## set before `startApp`: `windowIconFromPng` makes it from an app icon.
+  ## Empty: the desktop's own.
+
+proc startApp*(title: string; w, h: int; theme = ui.theme; zoom = 0) =
+  ## Open the window. `zoom` forces whole-pixel magnification (0 = the
+  ## display's own scale).
+  ui.theme = theme
+  ui.zoomWanted = zoom
+  ui.active31 = true
+  if zoom == 0:
+    let env = getEnv("RETRO_ZOOM")
+    if env.len == 1 and env[0] in {'1'..'4'}: ui.zoomWanted = ord(env[0]) - ord('0')
+  var w = w
+  var h = h
+  let size = getEnv("RETRO_SIZE")            # e.g. 400x800, to try layouts
+  if 'x' in size:
+    try:
+      w = parseInt(size.split('x')[0])
+      h = parseInt(size.split('x')[1])
+    except ValueError: discard
+  let sc = getEnv("RETRO_SCALE")
+  if sc.len > 0:
+    try: ui.uiScale = clamp(parseInt(sc), 50, 300) except ValueError: discard
+  let l = createWindow(w * max(1, ui.zoomWanted), h * max(1, ui.zoomWanted), icon = windowIcon)
+  setWindowTitle(title)
+  # (a file there while the GPU is started: a crash then is not repeated)
+  try: gpuGuardPath = dataDir(title) / "gpu-starting"
+  except CatchableError: discard
+  # (what brings the program down written down, for the next start to tell)
+  # (the app's name without its version: the log stays when it is updated)
+  var base = title
+  let sp = base.rfind(' ')
+  if sp > 0 and sp + 1 < base.len and base[sp + 1] in Digits: base = base[0 ..< sp]
+  try: faultPath = dataDir(base) / "faults.log"
+  except CatchableError: discard
+  errorMessageWriter = writeFault
+  case getEnv("RETRO_GPU")
+  of "0": setGpuMode(gmCpu)
+  of "1": setGpuMode(gmGpu)
+  else: discard
+  themeFromEnv()
+  ui.title = title
+  ui.ownCaption = defined(android) or defined(ios) or
+                  getEnv("RETRO_CAPTION") == "1"
+  applyLayout(l)
+  ui.running = true
+  ui.prevBottom = ui.h
+  markUiThread()
+  busyHook = busyTickNow
+
+var beginFrameHooks*: seq[proc () {.nimcall.}]
+  ## Run in every `beginFrame` once the input is in (results of work done
+  ## in the background are handed over here).
+
+var endFrameHooks*: seq[proc () {.nimcall.}]
+  ## Run at the start of every `endFrame` (toasts and other overlays).
+
+var
+  statT0: MonoTime
+  statAvg: float                  # ms, smoothed
+  statSum, statMax: float
+  statN, statPresented: int
+  statAt: MonoTime
+  statsOn = getEnv("RETRO_STATS") == "1"
+  statStart = getMonoTime()
+  statFirst = false
+
+proc noteFrame(presented: bool) =
+  let ms = float((getMonoTime() - statT0).inMicroseconds) / 1000
+  statAvg = if statAvg == 0: ms else: statAvg * 0.9 + ms * 0.1
+  if not statsOn: return
+  statSum += ms
+  statMax = max(statMax, ms)
+  inc statN
+  if presented:
+    inc statPresented
+    if not statFirst:
+      statFirst = true
+      stderr.writeLine "retro: first frame shown ",
+        (getMonoTime() - statStart).inMilliseconds, " ms after start"
+  let now = getMonoTime()
+  if (now - statAt).inMilliseconds >= 2000:
+    stderr.writeLine "retro: ", statN, " frames, ", formatFloat(statSum / float(max(1, statN)),
+      ffDecimal, 2), " ms average, ", formatFloat(statMax, ffDecimal, 2), " ms longest, ",
+      statPresented, " shown"
+    statSum = 0
+    statMax = 0
+    statN = 0
+    statPresented = 0
+    statAt = now
+
+proc frameTime*(): float = statAvg
+  ## How long the app's frames take to build and draw, in milliseconds
+  ## (smoothed); RETRO_STATS=1 prints it every 2 seconds.
+
+proc themeFromEnv*() =
+  ## `RETRO_THEME` (a built-in theme's name, "OLED Black", or its number)
+  ## overrides the colors chosen: for tests and screenshots.
+  let t = getEnv("RETRO_THEME")
+  if t.len == 0: return
+  for i, b in builtinThemes:
+    if cmpIgnoreCase(b.name, t) == 0 or $i == t:
+      ui.theme = b.theme
+      ui.force = true
+
+type IconStyle* = enum
+  ## How pixel icons are drawn: as they are (`isPixel`), as their line twins
+  ## (`isLine`: Nerd Fonts symbols in the text's color), or line icons in a
+  ## dark theme -- where black outlines would not show -- and pixels in a
+  ## light one (`isAuto`, the default).
+  isAuto, isPixel, isLine
+
+var iconStyleSel = isAuto
+
+proc setIconStyle*(s: IconStyle) =
+  ## See `IconStyle`. `appearanceSettings` offers it; `storeAppearance` keeps it.
+  if s != iconStyleSel:
+    iconStyleSel = s
+    ui.force = true
+
+proc iconStyle*(): IconStyle = iconStyleSel
+  ## The icon style chosen (see `setIconStyle`).
+
+proc themeIsDark*(t: Theme): bool =
+  ## Its windows and buttons dark (light text): Dark, OLED black.
+  let l = (int(t.face.r) * 3 + int(t.face.g) * 6 + int(t.face.b)) div 10
+  let w = (int(t.window.r) * 3 + int(t.window.g) * 6 + int(t.window.b)) div 10
+  l < 100 and w < 100
+
+proc applyIconStyle() =
+  let on = case iconStyleSel
+           of isAuto: themeIsDark(ui.theme)
+           of isPixel: false
+           of isLine: true
+  setLineIcons(on, ui.theme.text)
+
+proc beginFrame*(): bool =
+  ## Wait for input (or a timer) and start a frame. False once the app ends.
+  if not ui.running: return false
+  applyIconStyle()
+  ui.pressed = false
+  ui.released = false
+  ui.rpressed = false
+  ui.mpressed = false
+  ui.navBack = false
+  ui.navForward = false
+  ui.menuKey = false
+  ui.pressUsed = false
+  ui.mouseMoved = false
+  ui.wheel = 0
+  ui.pinch = 1
+  ui.panDX = 0
+  ui.panDY = 0
+  ui.wheelUsed = false
+  ui.doubleClick = false
+  ui.key = KeyNone
+  ui.keyUp = KeyNone
+  ui.keyUsed = false
+  ui.mnemonic = '\0'
+  ui.altTapped = false
+  ui.typed.setLen(0)
+  ui.closeCancelled = false
+  let busy = (ui.redraw or ui.force) and not ui.paused
+  let waitMs =
+    if busy: 0
+    elif ui.wakeAt > 0 and not ui.paused: max(1, ui.wakeAt - getTicks())
+    else: -1
+  ui.redraw = false
+  pump(waitMs)
+  if ui.pressed: flingCaught = false      # (a new press: see `scrollCaught`)
+  if uiFont() != layoutFont:
+    layoutFont = uiFont()                  # the font changed: sizes follow it
+    fitMetrics()
+    ui.force = true
+  statT0 = getMonoTime()
+  ui.now = getTicks()
+  mirrorW = if ui.rtl: ui.w else: 0
+  # The menu key, or Shift+F10: a right click on the focused widget, so its
+  # context menu opens there (lists put it on their current row)
+  if (ui.key == KeyMenu or (ui.key == KeyF10 and ShiftPressed in ui.mods)) and
+     ui.focus != 0 and ui.focusRect.w > 0:
+    ui.key = KeyNone
+    ui.menuKey = true
+    ui.rpressed = true
+    ui.mx = ui.focusRect.x + min(ui.focusRect.w div 2, dp(40))
+    ui.my = ui.focusRect.y + min(ui.focusRect.h div 2, FontH)
+  if ui.backPending:
+    ui.backPending = false
+    ui.closeAsked = true
+    ui.byBackNow = ui.byBack
+    ui.byBack = false
+  else:
+    ui.byBackNow = false
+  # Touch: a finger that moves drags content (lists, text, panels) unless
+  # the widget it pressed drags by itself (slider, scroll thumb); a finger
+  # that rests half a second is a right click.
+  ui.panX = 0
+  ui.panY = 0
+  ui.panUsed = false
+  ui.lift = false
+  if ui.fingerDown and ui.mouseDown and not ui.pressed:
+    if not ui.panning and not ui.longFired and not ui.dragsActive and
+       (abs(ui.my - ui.pressY) > 8 or abs(ui.mx - ui.pressX) > 8):
+      ui.panning = true
+      ui.active = 0
+      ui.pressY = ui.panFrom.y
+      ui.pressX = ui.panFrom.x
+    if ui.panning:
+      ui.panY = ui.pressY - ui.my
+      ui.panX = ui.pressX - ui.mx
+      ui.pressY = ui.my
+      ui.pressX = ui.mx
+    elif not ui.longFired and not ui.dragsActive:
+      if ui.now - ui.pressAt >= 500:
+        ui.longFired = true
+        ui.rpressed = true
+        ui.active = 0
+        ui.longX = ui.mx
+        ui.longY = ui.my
+        ui.lifted = false
+    elif ui.longFired and not ui.lifted and not ui.drag.active and
+         (abs(ui.my - ui.longY) > dp(12) or abs(ui.mx - ui.longX) > dp(12)):
+      # held, then moved: what was held is lifted to be dragged (its menu
+      # closes); widgets that drag look at `lifted`
+      ui.lifted = true
+      ui.lift = true
+      ui.popup = 0
+      ui.menuOpen = false
+  if ui.released:
+    ui.panning = false
+    ui.dragsActive = false
+  inc ui.frameNo
+  inc ui.gen
+  ui.popupOpened = false
+  ui.inputLayer =
+    if ui.popup != 0: LayerPopup
+    elif ui.dialogTop != 0: LayerDialog
+    else: LayerBase
+  ui.tabOrder.setLen(0)
+  ui.hot = 0
+  ui.dialogTopNow = 0
+  ui.curDialog = 0
+  ui.popupRectNow = rect(0, 0, 0, 0)
+  ui.popupRect2Now = rect(0, 0, 0, 0)
+  ui.overlay = ui.overlayNow
+  ui.overlayLayer = ui.overlayLayerNow
+  ui.overlayNow = rect(0, 0, 0, 0)
+  ui.cursor = curArrow
+  # a frame asked for (`wakeIn`) still comes when frames ran in between
+  if ui.wakeAt <= ui.now: ui.wakeAt = 0
+  ui.bottom = ui.h - ui.safe.bottom
+  ui.captionH = if ui.ownCaption: (if fingers(): CtrlH else: MenuH) else: 0
+  ui.barY = ui.safe.top + ui.captionH
+  ui.takesEnter = false
+  ui.takesText = false
+  ui.tip.setLen(0)
+  ui.idStack.setLen(0)
+  ui.blockers.setLen(0)
+  # (after the frame's state is reset: what the hooks ask for -- a wake-up,
+  # a redraw -- stays)
+  for hook in beginFrameHooks: hook()
+  # a drag ends when the button is let go (the targets look this frame)
+  ui.dragOver = false
+  if ui.drag.active and (ui.released or not ui.mouseDown):
+    ui.dragDropping = true
+  beginDraw(ui.w, ui.h, ui.theme.window)
+  ui.frames.setLen(0)
+  let left = ui.safe.left + Pad
+  let topY = ui.safe.top + ui.captionH + Pad
+  ui.contentTop = topY
+  # content taller than the window scrolls (`pageY`) under the fixed bars
+  let barW = if ui.pageOn: SbW else: 0           # (the standard bar, fingers too)
+  let y0 = topY - ui.pageY
+  ui.contentRight = 0
+  clippedDepth = 0
+  ui.frames.add LFrame(kind: lkCol, x: left - ui.pageX, y: y0, dy: ui.pageY,
+                       w: max(10, ui.w - ui.safe.left - ui.safe.right - 2*Pad - barW),
+                       cx: left - ui.pageX, cy: y0, bottom: y0)
+  if ui.pageOn or ui.pageMaxX > 0: pushClip(ui.pageView)
+  if ui.fingerDown and ui.mouseDown and not ui.longFired and not ui.panning and
+     not ui.dragsActive:
+    wakeIn(ui.pressAt + 501 - ui.now)
+  true
+
+proc cancelClose*() =
+  ## Keep running although the user asked to close the window.
+  ui.closeCancelled = true
+
+proc requestClose*() =
+  ## Ask to close, as the window's close button does: the next frame's
+  ## `closeRequested` is true, so the app can still ask "Save changes?".
+  ui.backPending = true
+  ui.redraw = true
+
+proc setTitle*(title: string) =
+  ## The window's title (the title bar on phones).
+  if title != ui.title:
+    ui.title = title
+    setWindowTitle(title)
+    ui.redraw = true
+
+proc closeRequested*(): bool = ui.closeAsked
+  ## The user asked to close the window this frame; call `cancelClose` to
+  ## keep the app running (to ask "Save changes?", say).
+
+proc backPressed*(): bool = ui.closeAsked and ui.byBackNow
+  ## The close request of this frame is the phone's Back button (not a
+  ## close button or an Exit command): apps that go back through screens
+  ## or folders take it with `cancelClose` and go back.
+
+proc quitApp*() = ui.running = false
+  ## Ends the app: `beginFrame` is false from the next frame on.
+
+proc themeIndex*(): int =
+  ## Which of `builtinThemes` is in use (-1: a theme of the app's own).
+  result = -1
+  for i, t in builtinThemes:
+    if t.theme == ui.theme: return i
+
+proc invalidate*() =
+  ## Redraw the whole window on the next frame, and run that frame now.
+  ui.force = true
+
+proc drawTip() =
+  ui.tipKey = if ui.tip.len == 0: 0'u32
+              else: fnv(ui.tip, uint32(ui.lastRect.x * 31 + ui.lastRect.y))
+  if ui.tipKey != ui.prevTipKey:
+    ui.prevTipKey = ui.tipKey
+    ui.hoverSince = ui.now
+  if ui.tip.len == 0 or ui.active != 0 or ui.mouseDown: return
+  if ui.now - ui.hoverSince < 600:
+    wakeIn(600 - (ui.now - ui.hoverSince))
+    return
+  pushLayer(LayerTip)
+  let tipText = tr(ui.tip)
+  let w = textWidth(tipText) + 8
+  let tipH = FontH + 4
+  var x, y: int
+  if (defined(android) or defined(ios) or ui.touch) and ui.my - tipH - dp(12) >= 0:
+    # a tablet's or a phone's pointer (drawn by the system, big; or a
+    # finger): the tip above it, where nothing covers it
+    x = ui.mx - w div 2
+    y = ui.my - tipH - dp(12)
+  else:
+    # a desktop's: under its arrow, as Windows puts it -- as far down as the
+    # pointer is drawn (a bigger pointer, a scaled display: further)
+    let ph = if windowRelays.pointerHeight != nil: windowRelays.pointerHeight() else: 0
+    let under = if ph > 0: ph * 3 div 4 + 4 else: max(20, dp(22))
+    x = ui.mx
+    y = ui.my + (if defined(android) or defined(ios) or ui.touch: dp(40) else: max(under, dp(22)))
+    if y + tipH > ui.h: y = ui.my - tipH - dp(10)
+  x = clamp(x, 0, max(0, ui.w - w))
+  let r = rect(x, y, w, tipH)
+  fill(r, ui.theme.tip)
+  box(r, ui.theme.edge)
+  text(x + 4, y + 2, tipText, ui.theme.tipText)
+  popLayer()
+
+var pageBar*, pageBarX*: proc (view: Rect; v: var int; hi: int): bool {.nimcall.}
+  ## Draw the window's scroll bars (set by the widgets module).
+
+
+proc endPage() =
+  ## The window's content: taller than the window, it scrolls.
+  if ui.frames.len == 0: return
+  resetClip()
+  let f = ui.frames[0]
+  # wider than the window (rows of fixed widths): a scroll bar along the
+  # bottom too
+  let room = ui.w - ui.safe.right - Pad - (if ui.pageOn: SbW else: 0)
+  let overX = ui.contentRight - room
+  let wasX = ui.pageMaxX > 0
+  ui.pageMaxX = if overX > 0 or (wasX and overX > -SbW and ui.pageX > 0): max(1, overX) else: 0
+  let hbarH = if ui.pageMaxX > 0: SbW else: 0
+  let view = rect(0, ui.barY, ui.w, max(0, ui.bottom - hbarH - ui.barY))
+  let over = f.bottom + ui.pageY + Pad - (ui.bottom - hbarH)
+  let was = ui.pageOn
+  ui.pageOn = over > 0 or (was and over > -SbW and ui.pageY > 0)
+  ui.pageMax = max(0, over)
+  ui.pageView = view
+  var y = ui.pageY
+  var x = ui.pageX
+  const pageIdY = Id(0x9a6e5c90'u32)
+  const pageIdX = Id(0x9a6e5c91'u32)
+  let hiY = if ui.pageOn: ui.pageMax else: 0
+  if (ui.pageOn or ui.pageMaxX > 0) and ui.inputLayer == LayerBase and ui.popup == 0:
+    let m = point(ui.mx, ui.my)
+    if ui.wheel != 0 and not ui.wheelUsed and view.contains(m):
+      if ShiftPressed in ui.mods or not ui.pageOn:      # Shift + the wheel: sideways
+        scrollBy(pageIdX, x, -ui.wheel * 3 * ItemH, ui.pageMaxX)
+      else: scrollBy(pageIdY, y, -ui.wheel * 3 * ItemH, hiY)
+      ui.wheelUsed = true
+    # a finger drags the page both ways (and a flick goes on)
+    scrollPan2(pageIdY, y, hiY, pageIdX, x, ui.pageMaxX, view)
+    if not ui.keyUsed and not ui.prevTakesText:
+      if ui.key == KeyPageDown: scrollBy(pageIdY, y, view.h - 2 * ItemH, hiY)
+      elif ui.key == KeyPageUp: scrollBy(pageIdY, y, -(view.h - 2 * ItemH), hiY)
+      elif ui.key == KeyHome and CtrlPressed in ui.mods: scrollTo(pageIdY, y, 0, hiY)
+      elif ui.key == KeyEnd and CtrlPressed in ui.mods: scrollTo(pageIdY, y, ui.pageMax, hiY)
+  scrollTick(pageIdY, y, hiY)
+  scrollTick(pageIdX, x, ui.pageMaxX)
+  if (ui.pageOn or ui.pageMaxX > 0) and ui.inputLayer == LayerBase and ui.popup == 0:
+    if ui.frameNo - ui.focusMoved == 1:          # (focused last frame, drawn now)
+      let r = ui.focusRect
+      if r.y < view.y: y -= view.y + Pad - r.y
+      elif r.y + r.h > view.y + view.h: y += r.y + r.h + Pad - (view.y + view.h)
+      if ui.pageMaxX > 0:                  # ... and sideways
+        let right = ui.w - ui.safe.right - (if ui.pageOn: SbW else: 0)
+        if r.x < ui.safe.left: x -= ui.safe.left + Pad - r.x
+        elif r.x + r.w > right: x += r.x + r.w + Pad - right
+  y = clamp(y, 0, ui.pageMax)
+  x = clamp(x, 0, ui.pageMaxX)
+  if ui.pageOn or ui.pageMaxX > 0:
+    # the standard 3.1 scroll bars, on touch screens too (where a finger can
+    # also drag the content itself)
+    pushLayer(LayerBase)
+    if ui.pageOn and pageBar != nil:
+      let bar = rect(ui.w - ui.safe.right - SbW, view.y, SbW, view.h)
+      discard pageBar(bar, y, ui.pageMax)
+    if ui.pageMaxX > 0 and pageBarX != nil:
+      let bar = rect(ui.safe.left, view.y + view.h,
+                     ui.w - ui.safe.left - ui.safe.right - (if ui.pageOn: SbW - 1 else: 0), SbW)
+      discard pageBarX(bar, x, ui.pageMaxX)
+      if ui.pageOn:                        # the corner between the two bars
+        fill(rect(bar.x + bar.w, bar.y, SbW - 1, SbW), ui.theme.face)
+    popLayer()
+  if y != ui.pageY or ui.pageOn != was or x != ui.pageX or (ui.pageMaxX > 0) != wasX:
+    ui.pageY = y
+    ui.pageX = x
+    ui.redraw = true
+
+proc drawDragGhost() =
+  ## What is dragged, at the pointer: a glyph, a label, "+" when it copies.
+  if not ui.drag.active: return
+  if ui.key == KeyEsc and not ui.keyUsed:
+    ui.keyUsed = true
+    ui.drag = DragInfo()
+    ui.redraw = true
+    return
+  pushLayer(LayerTip)
+  let copy = CtrlPressed in ui.mods
+  var s = ui.drag.label
+  if ui.drag.glyph.len > 0: s = ui.drag.glyph & "  " & s
+  if copy and ui.dragOver: s = "+ " & s
+  let w = min(textWidth(s) + 16, max(40, ui.w div 2))
+  let h = FontH + 8
+  var x = ui.mx + 14
+  var y = ui.my + 16
+  if ui.fingerDown: y = max(0, ui.my - h - dp(28))   # above the finger, not under it
+  if x + w > ui.w: x = max(0, ui.mx - w - 4)
+  if y + h > ui.h: y = max(0, ui.my - h - 4)
+  let r = rect(x, y, w, h)
+  fill(rect(r.x + 2, r.y + 2, r.w, r.h), ui.theme.shadow)
+  fill(r, if ui.dragOver: ui.theme.select else: ui.theme.face)
+  box(r, ui.theme.frame)
+  pushClip(inset(r, 2))
+  text(r.x + 8, r.y + 4, s, if ui.dragOver: ui.theme.selectText else: ui.theme.text)
+  popClip()
+  popLayer()
+
+proc endFrame*() =
+  ## Finish the frame: keyboard focus, popups, tooltips, then put it on
+  ## screen (only if it changed).
+  for hook in endFrameHooks: hook()
+  # What a key or a click changed late in the frame (after the widgets that
+  # show it were drawn) appears on one more frame.
+  if ui.keyUsed or ui.pressed or ui.released or ui.wheelUsed or ui.typed.len > 0:
+    ui.redraw = true
+  if ui.drag.active:
+    if ui.dragDropping:
+      ui.drag = DragInfo()
+      ui.dragDropping = false
+      ui.dragClaimed = false
+      ui.redraw = true
+    else:
+      drawDragGhost()
+  endPage()
+  # Tab and Shift+Tab move the focus through the widgets of the top layer.
+  if ui.tabOrder.len > 0:
+    var at = -1
+    for i, id in ui.tabOrder:
+      if id == ui.focus: at = i
+    if ui.key == KeyTab and not ui.keyUsed:
+      let n = ui.tabOrder.len
+      let next = if at < 0: 0
+                 elif ShiftPressed in ui.mods: (at + n - 1) mod n
+                 else: (at + 1) mod n
+      ui.focus = ui.tabOrder[next]
+      ui.focusMoved = ui.frameNo
+      ui.spaceDown = false
+      ui.redraw = true
+    elif at < 0 and not ui.touch and (autoFocus or ui.dialogTopNow != 0):
+      # (a touch screen focuses nothing on its own: a text box with the
+      # focus would bring up the on-screen keyboard)
+      ui.focus = ui.tabOrder[0]
+      ui.redraw = true
+  # A press outside an open popup closes it.
+  if ui.popup != 0:
+    let p = point(ui.mx, ui.my)
+    if (ui.popupRectNow.w == 0 and not ui.popupOpened) or
+       (ui.pressed and not ui.pressUsed and not ui.popupRectNow.contains(p) and
+        not ui.popupRect2Now.contains(p)):
+      ui.popup = 0
+      ui.menuOpen = false
+      ui.redraw = true
+  ui.popupRect = ui.popupRectNow
+  # Dialogs: the focus goes into a new one and comes back when it closes.
+  if ui.dialogTopNow != ui.dialogTop:
+    if ui.dialogTop == 0: ui.focusBeforeDialog = ui.focus
+    if ui.dialogTopNow == 0: ui.focus = ui.focusBeforeDialog
+    else: ui.focus = 0
+    ui.dialogTop = ui.dialogTopNow
+    ui.redraw = true
+  if ui.released or not ui.mouseDown and ui.active != 0 and not ui.spaceDown:
+    ui.active = 0
+  ui.prevHot = ui.hot
+  # Ctrl with +, - and 0 (or the wheel) makes everything bigger or smaller
+  if CtrlPressed in ui.mods and not ui.keyUsed:
+    case ui.key
+    of KeyEqual, KeyPlus: setUiScale(scaleStep(1))
+    of KeyMinus: setUiScale(scaleStep(-1))
+    of Key0: setUiScale(100)
+    else: discard
+  if ui.cursor != ui.shownCursor and not ui.touch:
+    ui.shownCursor = ui.cursor
+    setCursor(ui.cursor)
+  drawTip()
+  ui.prevTakesEnter = ui.takesEnter
+  ui.prevTakesText = ui.takesText
+  ui.prevBottom = ui.bottom
+  if (ui.frameNo and 1023) == 0:
+    var gone: seq[Id]
+    for id, st in ui.states:
+      if ui.frameNo - st.seen > 1024: gone.add id
+    for id in gone: ui.states.del id
+  # The back button of a phone (Esc) that nothing used asks to close, in
+  # the next frame, where the app can still say no (`closeRequested`).
+  # iPhones have no back button, and their apps do not close themselves.
+  if ui.touch and ui.key == KeyEsc and not ui.keyUsed and not defined(ios):
+    ui.backPending = true
+    ui.byBack = true
+    ui.redraw = true
+  if ui.closeAsked and not ui.closeCancelled: ui.running = false
+  ui.closeAsked = false
+  # Present -- unless another frame is due right away anyway.
+  if ui.redraw and ui.redrawCount < 3:
+    inc ui.redrawCount
+    noteFrame(false)
+    return
+  ui.redraw = false
+  ui.redrawCount = 0
+  if not hasPending:
+    hasPending = pollEvent(pending,
+      if ui.prevTakesText: {WantTextInput} else: {})
+  if hasPending and ui.now - ui.lastPresent < 50:
+    noteFrame(false)
+    return
+  if ui.paused: return
+  if present(ui.devW, ui.devH, ui.force):
+    ui.lastPresent = ui.now
+  ui.force = false
+  noteFrame(true)
+
+proc stopApp*() =
+  ## Closes the window and ends the app (`app` calls it when its loop ends).
+  shutdown()

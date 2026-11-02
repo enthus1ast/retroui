@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    # the headless tests (a fake screen driver: no display needed), a short
+    # run of the fuzzers, and the Android driver on a fake Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: "2.2.6"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Libraries the GPU tests load (Mesa's EGL)
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgles2 libegl-mesa0
+      - name: Tests
+        run: nimble test -y
+      - name: Fuzz (a short run)
+        run: |
+          nim c -r -d:release --hints:off tests/fuzz/fuzz.nim tests/fuzz/seeds 2000
+          nim c -r -d:release --hints:off tests/fuzz/fuzzui.nim 200
+      - name: Android driver on a fake Android
+        run: |
+          ndk=${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}
+          NDK_INCLUDE=$ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include sh tests/android_mock/run.sh
+
+  build:
+    # every example and tool compiles on the three desktops
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: "2.2.6"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Examples
+        shell: bash
+        run: |
+          mkdir -p build
+          for app in hello gallery notepad ledger filemanager charts invoice native photo retroboard magazine; do
+            nim c -d:release --hints:off -o:build/$app examples/$app.nim
+          done
+      - name: Tools
+        shell: bash
+        run: |
+          nim c -d:release --hints:off -o:build/retroapk src/retroapk.nim
+          nim c -d:release --hints:off -o:build/retrokit src/retrokit.nim
+          nim c -d:release --hints:off -o:build/retroios src/retroios.nim

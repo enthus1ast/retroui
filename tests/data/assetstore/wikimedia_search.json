@@ -1,0 +1,86 @@
+{
+ "batchcomplete": true,
+ "continue": {"gsroffset": 4, "continue": "gsroffset||"},
+ "query": {
+  "pages": [
+   {
+    "pageid": 72851902, "ns": 6, "title": "File:Sultan Qaboos Grand Mosque courtyard.jpg", "index": 2,
+    "imagerepository": "local",
+    "imageinfo": [{
+     "size": 4120334, "width": 5472, "height": 3648,
+     "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/Sultan_Qaboos_Grand_Mosque_courtyard.jpg/330px-Sultan_Qaboos_Grand_Mosque_courtyard.jpg",
+     "thumbwidth": 330, "thumbheight": 220,
+     "url": "https://upload.wikimedia.org/wikipedia/commons/5/5f/Sultan_Qaboos_Grand_Mosque_courtyard.jpg",
+     "descriptionurl": "https://commons.wikimedia.org/wiki/File:Sultan_Qaboos_Grand_Mosque_courtyard.jpg",
+     "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=72851902",
+     "mime": "image/jpeg",
+     "extmetadata": {
+      "ObjectName": {"value": "Sultan Qaboos Grand Mosque courtyard", "source": "mediawiki-metadata", "hidden": ""},
+      "Artist": {"value": "<a href=\"//commons.wikimedia.org/wiki/User:Example_Photographer\" title=\"User:Example Photographer\">Example Photographer</a>", "source": "commons-desc-page"},
+      "Credit": {"value": "<span class=\"int-own-work\" lang=\"en\">Own work</span>", "source": "commons-desc-page", "hidden": ""},
+      "LicenseShortName": {"value": "CC BY-SA 4.0", "source": "commons-desc-page", "hidden": ""},
+      "LicenseUrl": {"value": "https://creativecommons.org/licenses/by-sa/4.0", "source": "commons-desc-page", "hidden": ""},
+      "License": {"value": "cc-by-sa-4.0", "source": "commons-templates", "hidden": ""},
+      "AttributionRequired": {"value": "true", "source": "commons-desc-page", "hidden": ""},
+      "UsageTerms": {"value": "Creative Commons Attribution-Share Alike 4.0", "source": "commons-desc-page", "hidden": ""},
+      "Restrictions": {"value": "", "source": "commons-desc-page", "hidden": ""}
+     }
+    }]
+   },
+   {
+    "pageid": 1203344, "ns": 6, "title": "File:Arabesque pattern 01.svg", "index": 1,
+    "imagerepository": "local",
+    "imageinfo": [{
+     "size": 48211, "width": 600, "height": 600,
+     "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/Arabesque_pattern_01.svg/330px-Arabesque_pattern_01.svg.png",
+     "thumbwidth": 330, "thumbheight": 330,
+     "url": "https://upload.wikimedia.org/wikipedia/commons/a/a3/Arabesque_pattern_01.svg",
+     "descriptionurl": "https://commons.wikimedia.org/wiki/File:Arabesque_pattern_01.svg",
+     "mime": "image/svg+xml",
+     "extmetadata": {
+      "Artist": {"value": "Unknown author", "source": "commons-desc-page"},
+      "LicenseShortName": {"value": "Public domain", "source": "commons-desc-page", "hidden": ""},
+      "License": {"value": "pd", "source": "commons-templates", "hidden": ""},
+      "AttributionRequired": {"value": "false", "source": "commons-desc-page", "hidden": ""},
+      "Copyrighted": {"value": "False", "source": "commons-desc-page", "hidden": ""}
+     }
+    }]
+   },
+   {
+    "pageid": 5550123, "ns": 6, "title": "File:Old harbour map.tif", "index": 3,
+    "imagerepository": "local",
+    "imageinfo": [{
+     "size": 98123456, "width": 7016, "height": 4961,
+     "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Old_harbour_map.tif/lossy-page1-330px-Old_harbour_map.tif.jpg",
+     "thumbwidth": 330, "thumbheight": 233,
+     "url": "https://upload.wikimedia.org/wikipedia/commons/0/0b/Old_harbour_map.tif",
+     "descriptionurl": "https://commons.wikimedia.org/wiki/File:Old_harbour_map.tif",
+     "mime": "image/tiff",
+     "extmetadata": {
+      "Artist": {"value": "<span>Survey Office</span>", "source": "commons-desc-page"},
+      "LicenseShortName": {"value": "CC0", "source": "commons-desc-page", "hidden": ""},
+      "LicenseUrl": {"value": "http://creativecommons.org/publicdomain/zero/1.0/deed.en", "source": "commons-desc-page", "hidden": ""},
+      "License": {"value": "cc0", "source": "commons-templates", "hidden": ""}
+     }
+    }]
+   },
+   {
+    "pageid": 4401, "ns": 6, "title": "File:Manual page scan.png", "index": 4,
+    "imagerepository": "local",
+    "imageinfo": [{
+     "size": 312000, "width": 900, "height": 1200,
+     "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Manual_page_scan.png/330px-Manual_page_scan.png",
+     "thumbwidth": 330, "thumbheight": 440,
+     "url": "https://upload.wikimedia.org/wikipedia/commons/c/c1/Manual_page_scan.png",
+     "descriptionurl": "https://commons.wikimedia.org/wiki/File:Manual_page_scan.png",
+     "mime": "image/png",
+     "extmetadata": {
+      "Artist": {"value": "Some Author", "source": "commons-desc-page"},
+      "LicenseShortName": {"value": "GFDL", "source": "commons-desc-page", "hidden": ""},
+      "License": {"value": "gfdl", "source": "commons-templates", "hidden": ""}
+     }
+    }]
+   }
+  ]
+ }
+}

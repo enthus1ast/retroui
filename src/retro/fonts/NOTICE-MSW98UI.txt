@@ -1,0 +1,42 @@
+MS W98 UI (MSW98UI.ttf, MSW98UIBold.ttf) -- the default UI font
+=================================================================
+
+What it is
+  MS W98 UI is an outline (TrueType) conversion of MS Sans Serif, the
+  bitmap system font of Microsoft Windows 3.1, 95, 98 and ME. Its letters
+  sit on a grid of 11 pixels per em, so at 11, 22, 33... pixels per em
+  every edge falls on a screen pixel, as the original bitmaps did.
+
+Where it comes from
+  Original typeface (MS Sans Serif): Microsoft Corporation.
+  Conversion to TrueType/OpenType: Lev Leontev (LR-Soft), 2019
+    https://stackoverflow.com/a/54023769
+  Fixes, details and improvements: martyr— (MARTYR X LTD), 2022
+    https://github.com/MARTYR-X-LTD/ms-w98-ui
+
+  The fonts' own name table says: "Original font by Microsoft. Conversion
+  by LR-Soft, 2019. Fixes, details and improvements by MARTYR X LTD 2022."
+
+Licence
+  The fonts come with NO licence. The project's README says only: "The
+  release is free and credits to all the contributors behind the work been
+  done for each font. Naming some: Microsoft, Lev Leontev, and martyr—".
+  No open-font licence (such as the SIL OFL) is given, and the design is
+  derived from Microsoft's MS Sans Serif, whose rights belong to Microsoft.
+
+  So, plainly: Retro Nim UI ships these files unchanged, with the credits
+  above, as the original authors released them, and makes no claim of a
+  licence it was not given. If you publish an app built with Retro Nim UI
+  and need a font with a clear licence, choose another of the built-in
+  fonts before `app`/`startApp`:
+
+    setUiFont(ufRetro)     # Retro Sans: the same look, CC BY-SA 3.0 (LICENSE-RetroSans.txt)
+    setUiFont(ufKawkab)    # Kawkab Mono: SIL OFL 1.1 (LICENSE-KawkabMono.txt)
+    setUiFont(ufSmooth)    # DejaVu Sans: free licence (LICENSE-DejaVu.txt)
+
+  or build with -d:retroNoW98 to leave MS W98 UI out of the program
+  entirely (Retro Sans is then the default).
+
+The files are byte-for-byte the TTF files of the repository above
+(TTF/MSW98UI-Regular.ttf and TTF/MSW98UI-Bold.ttf), renamed; the .ttf.z
+files are the same bytes compressed with zlib.

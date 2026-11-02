@@ -1,0 +1,283 @@
+{
+ "result_count": 240,
+ "page_count": 12,
+ "page_size": 20,
+ "page": 1,
+ "results": [
+  {
+   "id": "bf16c0a0-cb9d-4587-b89c-7a89b301fbca",
+   "title": "A White Cat Crosses My Path Every Day, Too",
+   "indexed_on": "2020-05-06T10:21:28.887462Z",
+   "foreign_landing_url": "https://www.flickr.com/photos/76345376@N00/294955320",
+   "url": "https://live.staticflickr.com/105/294955320_1be7801003_b.jpg",
+   "creator": "aturkus",
+   "creator_url": "https://www.flickr.com/photos/76345376@N00",
+   "license": "by",
+   "license_version": "2.0",
+   "license_url": "https://creativecommons.org/licenses/by/2.0/",
+   "provider": "flickr",
+   "source": "flickr",
+   "category": "photograph",
+   "filesize": null,
+   "filetype": "jpg",
+   "tags": [
+    {
+     "name": "cat",
+     "accuracy": null
+    },
+    {
+     "name": "cats",
+     "accuracy": null
+    },
+    {
+     "name": "charlotte",
+     "accuracy": null
+    },
+    {
+     "name": "white",
+     "accuracy": null
+    },
+    {
+     "name": "whitecat",
+     "accuracy": null
+    },
+    {
+     "name": "cat",
+     "accuracy": 0.99392
+    }
+   ],
+   "attribution": "\"A White Cat Crosses My Path Every Day, Too\" by aturkus is licensed under CC BY 2.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/2.0/.",
+   "fields_matched": [
+    "description",
+    "title",
+    "tags.name"
+   ],
+   "mature": false,
+   "height": 732,
+   "width": 1024,
+   "thumbnail": "https://api.openverse.org/v1/images/bf16c0a0-cb9d-4587-b89c-7a89b301fbca/thumb/",
+   "detail_url": "https://api.openverse.org/v1/images/bf16c0a0-cb9d-4587-b89c-7a89b301fbca/",
+   "related_url": "https://api.openverse.org/v1/images/bf16c0a0-cb9d-4587-b89c-7a89b301fbca/related/",
+   "unstable__sensitivity": []
+  },
+  {
+   "id": "eea1852b-1c1b-42d4-b505-4ed38e380dde",
+   "title": "cat",
+   "indexed_on": "2020-03-20T22:54:33.937468Z",
+   "foreign_landing_url": "https://www.flickr.com/photos/27497869@N04/34549084163",
+   "url": "https://live.staticflickr.com/4248/34549084163_a211fa4226_b.jpg",
+   "creator": "Ben Chen Photography",
+   "creator_url": "https://www.flickr.com/photos/27497869@N04",
+   "license": "by-nc-nd",
+   "license_version": "2.0",
+   "license_url": "https://creativecommons.org/licenses/by-nc-nd/2.0/",
+   "provider": "flickr",
+   "source": "flickr",
+   "category": "photograph",
+   "filesize": null,
+   "filetype": "jpg",
+   "tags": [
+    {
+     "name": "benagexyz",
+     "accuracy": null
+    },
+    {
+     "name": "cat",
+     "accuracy": null
+    },
+    {
+     "name": "cats",
+     "accuracy": null
+    },
+    {
+     "name": "u8c93",
+     "accuracy": null
+    },
+    {
+     "name": "貓",
+     "accuracy": null
+    }
+   ],
+   "attribution": "\"cat\" by Ben Chen Photography is licensed under CC BY-NC-ND 2.0. To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-nd/2.0/.",
+   "fields_matched": [
+    "title",
+    "tags.name"
+   ],
+   "mature": false,
+   "height": 683,
+   "width": 1024,
+   "thumbnail": "https://api.openverse.org/v1/images/eea1852b-1c1b-42d4-b505-4ed38e380dde/thumb/",
+   "detail_url": "https://api.openverse.org/v1/images/eea1852b-1c1b-42d4-b505-4ed38e380dde/",
+   "related_url": "https://api.openverse.org/v1/images/eea1852b-1c1b-42d4-b505-4ed38e380dde/related/",
+   "unstable__sensitivity": []
+  },
+  {
+   "id": "9ffc33cc-4633-4040-b270-ca87e3aa838f",
+   "title": "I wonder why I love this CAT - IMG_3475-002",
+   "indexed_on": "2023-03-12T02:36:57.709071Z",
+   "foreign_landing_url": "https://www.flickr.com/photos/181765699@N08/52181630725",
+   "url": "https://live.staticflickr.com/65535/52181630725_cfbe283a43_b.jpg",
+   "creator": "iezalel7williams",
+   "creator_url": "https://www.flickr.com/photos/181765699@N08",
+   "license": "cc0",
+   "license_version": "1.0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "provider": "flickr",
+   "source": "flickr",
+   "category": "photograph",
+   "filesize": null,
+   "filetype": "jpg",
+   "tags": [
+    {
+     "name": "beautiful",
+     "accuracy": null
+    },
+    {
+     "name": "black",
+     "accuracy": null
+    },
+    {
+     "name": "blue",
+     "accuracy": null
+    },
+    {
+     "name": "canoneos700d",
+     "accuracy": null
+    },
+    {
+     "name": "cat",
+     "accuracy": null
+    },
+    {
+     "name": "catlovers",
+     "accuracy": null
+    }
+   ],
+   "attribution": "\"I wonder why I love this CAT - IMG_3475-002\" by iezalel7williams is marked with CC0 1.0. To view the terms, visit https://creativecommons.org/publicdomain/zero/1.0/.",
+   "fields_matched": [
+    "description",
+    "title",
+    "tags.name"
+   ],
+   "mature": false,
+   "height": 683,
+   "width": 1024,
+   "thumbnail": "https://api.openverse.org/v1/images/9ffc33cc-4633-4040-b270-ca87e3aa838f/thumb/",
+   "detail_url": "https://api.openverse.org/v1/images/9ffc33cc-4633-4040-b270-ca87e3aa838f/",
+   "related_url": "https://api.openverse.org/v1/images/9ffc33cc-4633-4040-b270-ca87e3aa838f/related/",
+   "unstable__sensitivity": []
+  },
+  {
+   "id": "f861abe2-1907-4074-9a6f-b6163c7f9ecf",
+   "title": "Cat portrait",
+   "indexed_on": "2020-03-20T01:32:34.550298Z",
+   "foreign_landing_url": "https://www.flickr.com/photos/7252160@N04/33533092025",
+   "url": "https://live.staticflickr.com/3679/33533092025_a4d3c17e1f_b.jpg",
+   "creator": "solarisgirl",
+   "creator_url": "https://www.flickr.com/photos/7252160@N04",
+   "license": "by-sa",
+   "license_version": "2.0",
+   "license_url": "https://creativecommons.org/licenses/by-sa/2.0/",
+   "provider": "flickr",
+   "source": "flickr",
+   "category": "photograph",
+   "filesize": null,
+   "filetype": "jpg",
+   "tags": [
+    {
+     "name": "cat",
+     "accuracy": null
+    },
+    {
+     "name": "flickrfriday",
+     "accuracy": null
+    },
+    {
+     "name": "mother",
+     "accuracy": null
+    },
+    {
+     "name": "portrait",
+     "accuracy": null
+    },
+    {
+     "name": "stray",
+     "accuracy": null
+    }
+   ],
+   "attribution": "\"Cat portrait\" by solarisgirl is licensed under CC BY-SA 2.0. To view a copy of this license, visit https://creativecommons.org/licenses/by-sa/2.0/.",
+   "fields_matched": [
+    "description",
+    "title",
+    "tags.name"
+   ],
+   "mature": false,
+   "height": 819,
+   "width": 1024,
+   "thumbnail": "https://api.openverse.org/v1/images/f861abe2-1907-4074-9a6f-b6163c7f9ecf/thumb/",
+   "detail_url": "https://api.openverse.org/v1/images/f861abe2-1907-4074-9a6f-b6163c7f9ecf/",
+   "related_url": "https://api.openverse.org/v1/images/f861abe2-1907-4074-9a6f-b6163c7f9ecf/related/",
+   "unstable__sensitivity": []
+  },
+  {
+   "id": "8368a4a7-f8b7-4805-9a89-4347800304fc",
+   "title": "Zipf-euro-3 Spanish (Don Quixote) and Portuguese (Dom Casmurro)",
+   "indexed_on": "2023-05-10T00:07:13.839360Z",
+   "foreign_landing_url": "https://commons.wikimedia.org/w/index.php?curid=131702391",
+   "url": "https://upload.wikimedia.org/wikipedia/commons/9/92/Zipf-euro-3_Spanish_%28Don_Quixote%29_and_Portuguese_%28Dom_Casmurro%29.svg",
+   "creator": "Jorge Stolfi",
+   "creator_url": "https://commons.wikimedia.org/wiki/User:Jorge_Stolfi",
+   "license": "by-sa",
+   "license_version": "4.0",
+   "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+   "provider": "wikimedia",
+   "source": "wikimedia",
+   "category": "illustration",
+   "filesize": 1407980,
+   "filetype": "svg",
+   "tags": [],
+   "attribution": "\"Zipf-euro-3 Spanish (Don Quixote) and Portuguese (Dom Casmurro)\" by Jorge Stolfi is licensed under CC BY-SA 4.0. To view a copy of this license, visit https://creativecommons.org/licenses/by-sa/4.0/.",
+   "fields_matched": [
+    "description",
+    "title"
+   ],
+   "mature": false,
+   "height": 504,
+   "width": 512,
+   "thumbnail": "https://api.openverse.org/v1/images/8368a4a7-f8b7-4805-9a89-4347800304fc/thumb/",
+   "detail_url": "https://api.openverse.org/v1/images/8368a4a7-f8b7-4805-9a89-4347800304fc/",
+   "related_url": "https://api.openverse.org/v1/images/8368a4a7-f8b7-4805-9a89-4347800304fc/related/",
+   "unstable__sensitivity": []
+  },
+  {
+   "id": "92e80e36-67e8-4457-aae9-340944798a04",
+   "title": "000742 - Alcalá de Henares (2992443258)",
+   "indexed_on": "2020-05-20T08:54:20.237735Z",
+   "foreign_landing_url": "https://commons.wikimedia.org/w/index.php?curid=26522275",
+   "url": "https://upload.wikimedia.org/wikipedia/commons/e/e4/000742_-_Alcal%C3%A1_de_Henares_%282992443258%29.jpg",
+   "creator": "M.Peinado from Alcalá de Henares, España",
+   "creator_url": "https://www.flickr.com/people/12066793@N05",
+   "license": "by",
+   "license_version": "2.0",
+   "license_url": "https://creativecommons.org/licenses/by/2.0/",
+   "provider": "wikimedia",
+   "source": "wikimedia",
+   "category": null,
+   "filesize": 3457467,
+   "filetype": "jpg",
+   "tags": [],
+   "attribution": "\"000742 - Alcalá de Henares (2992443258)\" by M.Peinado from Alcalá de Henares, España is licensed under CC BY 2.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/2.0/.",
+   "fields_matched": [
+    "description",
+    "title"
+   ],
+   "mature": false,
+   "height": 2592,
+   "width": 3888,
+   "thumbnail": "https://api.openverse.org/v1/images/92e80e36-67e8-4457-aae9-340944798a04/thumb/",
+   "detail_url": "https://api.openverse.org/v1/images/92e80e36-67e8-4457-aae9-340944798a04/",
+   "related_url": "https://api.openverse.org/v1/images/92e80e36-67e8-4457-aae9-340944798a04/related/",
+   "unstable__sensitivity": []
+  }
+ ]
+}

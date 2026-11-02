@@ -1,0 +1,902 @@
+## retroapk -- build (and install) an Android APK from a retro app.
+##
+## No Gradle, no Java, no Android SDK: the manifest, the resource table,
+## the icon, the zip and the signature are written by this program, and
+## the small Java activity comes with it already compiled, and the APK is
+## signed here too (RSA in plain Nim: no OpenSSL, no apksigner). It needs
+## Nim and a C compiler for Android -- found, or fetched:
+##
+## * Termux on the phone or tablet itself: its clang (installed with `pkg`
+##   when missing)
+## * a desktop with the Android NDK ($ANDROID_NDK_HOME, the SDK's ndk/)
+## * neither: the NDK is downloaded once into ~/.retro/ndk (`--fetch-ndk`
+##   does it ahead; `RETRO_NDK_URL` points elsewhere)
+##
+## Usage:
+##   retroapk app.nim [--name:"My App"] [--id:org.me.myapp] [--install]
+##
+## Run `retroapk --help` for every option.
+
+import std/[os, osproc, strutils, parseopt, algorithm, unicode, sequtils]
+import retro/[appicon, androiddex, rsa, zip]
+
+const Usage = """
+retroapk -- build an Android APK from a retro app
+
+  retroapk app.nim [options]
+
+Options:
+  --name:TEXT        app name on the launcher (default: file name)
+  --id:PACKAGE       package id, e.g. org.me.myapp (default: org.retro.<file>)
+  --version:X.Y      version name (default 1.0); --code:N version code (default 1)
+  --icon:FILE.png    launcher icon (default: a drawn 3.1 window)
+  --abi:LIST         arm64-v8a (default), armeabi-v7a, x86_64, x86; comma separated
+  --orientation:O    any (default), portrait, landscape
+  --permission:NAME  add a permission, e.g. INTERNET (repeatable)
+  --query:PACKAGE    an app this one needs to see installed (Android 11+;
+                     repeatable; --storage adds com.termux)
+  --storage          the app works with all the user's files (a file
+                     manager): asks for "All files access"
+  --min-sdk:N        lowest Android API level (default 24, Android 7)
+  --target-sdk:N     API level the app is made for (default 35)
+  --debuggable       allow debugging (run-as, logcat of the app)
+  --cc:PATH          C compiler for Android (default: found, see below)
+  --fetch-ndk        download the Android NDK into ~/.retro/ndk now (it is
+                     fetched by itself the first time none is found)
+  --key:FILE.pem --cert:FILE.der   sign with your own key (default: a
+                     debug key made once in ~/.retro/android)
+  --signer:S         builtin (default: signed here, nothing needed) or apksigner
+  -o:FILE.apk        output (default: <file>.apk next to the source)
+  --install          install it (adb, or Termux's package installer)
+  --run              start it after installing (adb)
+  --nim:FLAG         pass a flag to the Nim compiler (repeatable)
+  --verbose          show the commands
+  --clean            remove the compiled pieces after (they are kept in the
+                     user's cache folder, ~/.cache/retro/apk, for quick rebuilds)
+  --work:DIR         keep them in DIR instead
+
+Compilers, in this order: --cc, $RETRO_ANDROID_CC, Termux's clang (installed
+with pkg when missing), the NDK in $ANDROID_NDK_HOME / $ANDROID_NDK_ROOT /
+$ANDROID_HOME/ndk/*, the NDK fetched into ~/.retro/ndk -- downloaded there
+the first time none of these is found ($RETRO_NDK_URL, $RETRO_NDK_DIR).
+"""
+
+var verbose = false
+
+proc hashOf(s: string): uint32 =
+  ## FNV-1a: a short name for a source path (its own build folder).
+  result = 2166136261'u32
+  for c in s:
+    result = (result xor uint32(ord(c))) * 16777619'u32
+
+proc die(msg: string) {.noreturn.} =
+  stderr.writeLine "retroapk: " & msg
+  quit 1
+
+proc runShown(cmd: string; what: string) =
+  ## (a command whose progress the user sees: a download)
+  if verbose: echo "+ ", cmd
+  let code = execCmd(cmd)
+  if code != 0: die what & " failed (exit code " & $code & ")"
+
+proc run(cmd: string; what: string) =
+  if verbose: echo "+ ", cmd
+  let (output, code) = execCmdEx(cmd)
+  if code != 0:
+    stderr.write output
+    die what & " failed (exit code " & $code & ")"
+  elif verbose and output.strip.len > 0:
+    echo output
+
+# ---- bytes ----------------------------------------------------------------------
+
+proc u8(b: var Bytes; v: SomeInteger) = b.add byte(v and 0xFF)
+proc u16(b: var Bytes; v: SomeInteger) =
+  b.u8(v); b.u8(v shr 8)
+proc u32(b: var Bytes; v: SomeInteger) =
+  let x = uint32(v)
+  for i in 0 .. 3: b.add byte((x shr (8 * i)) and 0xFF)
+proc u64(b: var Bytes; v: SomeInteger) =
+  let x = uint64(v)
+  for i in 0 .. 7: b.add byte((x shr (8 * i)) and 0xFF)
+proc add(b: var Bytes; s: string) =
+  for c in s: b.add byte(c)
+proc put32(b: var Bytes; at: int; v: SomeInteger) =
+  let x = uint32(v)
+  for i in 0 .. 3: b[at + i] = byte((x shr (8 * i)) and 0xFF)
+proc pad4(b: var Bytes) =
+  while b.len mod 4 != 0: b.add 0
+proc toStr(b: openArray[byte]): string =
+  result = newString(b.len)
+  if b.len > 0: copyMem(addr result[0], unsafeAddr b[0], b.len)
+
+# ---- SHA-256 -------------------------------------------------------------------------
+
+const K256 = [
+  0x428a2f98'u32, 0x71374491'u32, 0xb5c0fbcf'u32, 0xe9b5dba5'u32, 0x3956c25b'u32, 0x59f111f1'u32,
+  0x923f82a4'u32, 0xab1c5ed5'u32, 0xd807aa98'u32, 0x12835b01'u32, 0x243185be'u32, 0x550c7dc3'u32,
+  0x72be5d74'u32, 0x80deb1fe'u32, 0x9bdc06a7'u32, 0xc19bf174'u32, 0xe49b69c1'u32, 0xefbe4786'u32,
+  0x0fc19dc6'u32, 0x240ca1cc'u32, 0x2de92c6f'u32, 0x4a7484aa'u32, 0x5cb0a9dc'u32, 0x76f988da'u32,
+  0x983e5152'u32, 0xa831c66d'u32, 0xb00327c8'u32, 0xbf597fc7'u32, 0xc6e00bf3'u32, 0xd5a79147'u32,
+  0x06ca6351'u32, 0x14292967'u32, 0x27b70a85'u32, 0x2e1b2138'u32, 0x4d2c6dfc'u32, 0x53380d13'u32,
+  0x650a7354'u32, 0x766a0abb'u32, 0x81c2c92e'u32, 0x92722c85'u32, 0xa2bfe8a1'u32, 0xa81a664b'u32,
+  0xc24b8b70'u32, 0xc76c51a3'u32, 0xd192e819'u32, 0xd6990624'u32, 0xf40e3585'u32, 0x106aa070'u32,
+  0x19a4c116'u32, 0x1e376c08'u32, 0x2748774c'u32, 0x34b0bcb5'u32, 0x391c0cb3'u32, 0x4ed8aa4a'u32,
+  0x5b9cca4f'u32, 0x682e6ff3'u32, 0x748f82ee'u32, 0x78a5636f'u32, 0x84c87814'u32, 0x8cc70208'u32,
+  0x90befffa'u32, 0xa4506ceb'u32, 0xbef9a3f7'u32, 0xc67178f2'u32]
+
+proc sha256(parts: varargs[Bytes]): Bytes =
+  var h = [0x6a09e667'u32, 0xbb67ae85'u32, 0x3c6ef372'u32, 0xa54ff53a'u32, 0x510e527f'u32,
+           0x9b05688c'u32, 0x1f83d9ab'u32, 0x5be0cd19'u32]
+  var msg: Bytes
+  for p in parts: msg.add p
+  let bits = uint64(msg.len) * 8
+  msg.add 0x80
+  while msg.len mod 64 != 56: msg.add 0
+  for i in countdown(7, 0): msg.add byte((bits shr (8 * i)) and 0xFF)
+  template rotr(x: uint32; n: int): uint32 = (x shr n) or (x shl (32 - n))
+  var w: array[64, uint32]
+  for blk in countup(0, msg.len - 1, 64):
+    for i in 0 .. 15:
+      w[i] = (uint32(msg[blk + 4*i]) shl 24) or (uint32(msg[blk + 4*i + 1]) shl 16) or
+             (uint32(msg[blk + 4*i + 2]) shl 8) or uint32(msg[blk + 4*i + 3])
+    for i in 16 .. 63:
+      let s0 = rotr(w[i-15], 7) xor rotr(w[i-15], 18) xor (w[i-15] shr 3)
+      let s1 = rotr(w[i-2], 17) xor rotr(w[i-2], 19) xor (w[i-2] shr 10)
+      w[i] = w[i-16] + s0 + w[i-7] + s1
+    var (a, b, c, d, e, f, g, hh) = (h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7])
+    for i in 0 .. 63:
+      let S1 = rotr(e, 6) xor rotr(e, 11) xor rotr(e, 25)
+      let ch = (e and f) xor ((not e) and g)
+      let t1 = hh + S1 + ch + K256[i] + w[i]
+      let S0 = rotr(a, 2) xor rotr(a, 13) xor rotr(a, 22)
+      let maj = (a and b) xor (a and c) xor (b and c)
+      let t2 = S0 + maj
+      hh = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2
+    h[0] += a; h[1] += b; h[2] += c; h[3] += d
+    h[4] += e; h[5] += f; h[6] += g; h[7] += hh
+  for x in h:
+    for i in countdown(3, 0): result.add byte((x shr (8 * i)) and 0xFF)
+
+# ---- binary XML (the manifest) --------------------------------------------------------
+
+const
+  AndroidNs = "http://schemas.android.com/apk/res/android"
+  TString = 0x03'u8
+  TRef = 0x01'u8
+  TDec = 0x10'u8
+  THex = 0x11'u8
+  TBool = 0x12'u8
+  TDimen = 0x05'u8
+
+proc dp(v: int): int = (v shl 8) or 1     ## a dimension in dp (complex: mantissa, unit 1)
+
+type
+  XAttr = object
+    android: bool
+    name: string
+    resId: uint32
+    kind: uint8
+    str: string
+    data: uint32
+  XNode = object
+    name: string
+    attrs: seq[XAttr]
+    kids: seq[XNode]
+
+proc sAttr(name: string; id: uint32; v: string): XAttr =
+  XAttr(android: true, name: name, resId: id, kind: TString, str: v)
+proc iAttr(name: string; id: uint32; v: int; kind = TDec): XAttr =
+  XAttr(android: true, name: name, resId: id, kind: kind, data: uint32(v))
+proc bAttr(name: string; id: uint32; v: bool): XAttr =
+  XAttr(android: true, name: name, resId: id, kind: TBool,
+        data: if v: 0xFFFFFFFF'u32 else: 0)
+
+proc stringPool(strs: openArray[string]; utf8 = false): Bytes =
+  ## A ResStringPool chunk (UTF-16 strings by default).
+  var data: Bytes
+  var offs: seq[int]
+  for s in strs:
+    offs.add data.len
+    if utf8:
+      var n16 = 0
+      for r in s.toRunes: n16 += (if int(r) >= 0x10000: 2 else: 1)
+      for n in [n16, s.len]:
+        if n > 0x7F: data.u8(0x80 or (n shr 8))
+        data.u8(n and 0xFF)
+      data.add s
+      data.add 0
+    else:
+      let w = newWideCString(s)
+      var n = 0
+      while int(w[n]) != 0: inc n
+      data.u16(n)
+      for i in 0 ..< n: data.u16(int(w[i]))
+      data.u16(0)
+  data.pad4
+  let header = 28
+  result.u16(0x0001); result.u16(header)
+  result.u32(header + 4 * strs.len + data.len)
+  result.u32(strs.len); result.u32(0)
+  result.u32(if utf8: 0x100 else: 0)
+  result.u32(header + 4 * strs.len); result.u32(0)
+  for o in offs: result.u32(o)
+  result.add data
+
+proc axml(root: XNode): Bytes =
+  # The string pool starts with the attribute names that have resource
+  # ids, in the order of the resource map.
+  var named: seq[(uint32, string)]
+  proc collect(n: XNode) =
+    for a in n.attrs:
+      if a.resId != 0 and (a.resId, a.name) notin named: named.add (a.resId, a.name)
+    for k in n.kids: collect(k)
+  collect(root)
+  named.sort(proc (a, b: (uint32, string)): int = cmp(a[0], b[0]))
+  var pool: seq[string]
+  for (_, n) in named: pool.add n
+  proc idx(s: string; attrName = false; resId = 0'u32): uint32 =
+    if attrName and resId != 0:
+      for i, (id, n) in named:
+        if id == resId: return uint32(i)
+    for i in named.len ..< pool.len:
+      if pool[i] == s: return uint32(i)
+    pool.add s
+    uint32(pool.high)
+  let nsPrefix = idx("android")
+  let nsUri = idx(AndroidNs)
+  var body: Bytes
+  var line = 1
+  proc element(n: XNode) =
+    var attrs = n.attrs
+    attrs.sort(proc (a, b: XAttr): int =
+      if a.resId != 0 and b.resId != 0: cmp(a.resId, b.resId)
+      elif a.resId != 0: -1
+      elif b.resId != 0: 1
+      else: cmp(a.name, b.name))
+    let name = idx(n.name)
+    body.u16(0x0102); body.u16(16); body.u32(36 + 20 * attrs.len)
+    body.u32(line); body.u32(0xFFFFFFFF'u32)
+    inc line
+    body.u32(0xFFFFFFFF'u32); body.u32(name)
+    body.u16(20); body.u16(20); body.u16(attrs.len)
+    body.u16(0); body.u16(0); body.u16(0)
+    for a in attrs:
+      body.u32(if a.android: nsUri else: 0xFFFFFFFF'u32)
+      body.u32(idx(a.name, true, a.resId))
+      if a.kind == TString:
+        let v = idx(a.str)
+        body.u32(v); body.u16(8); body.u8(0); body.u8(TString); body.u32(v)
+      else:
+        body.u32(0xFFFFFFFF'u32); body.u16(8); body.u8(0); body.u8(a.kind)
+        body.u32(a.data)
+    for k in n.kids: element(k)
+    body.u16(0x0103); body.u16(16); body.u32(24)
+    body.u32(line); body.u32(0xFFFFFFFF'u32)
+    body.u32(0xFFFFFFFF'u32); body.u32(name)
+  var nsStart: Bytes
+  nsStart.u16(0x0100); nsStart.u16(16); nsStart.u32(24)
+  nsStart.u32(0); nsStart.u32(0xFFFFFFFF'u32); nsStart.u32(nsPrefix); nsStart.u32(nsUri)
+  element(root)
+  var nsEnd: Bytes
+  nsEnd.u16(0x0101); nsEnd.u16(16); nsEnd.u32(24)
+  nsEnd.u32(line); nsEnd.u32(0xFFFFFFFF'u32); nsEnd.u32(nsPrefix); nsEnd.u32(nsUri)
+  var resMap: Bytes
+  resMap.u16(0x0180); resMap.u16(8); resMap.u32(8 + 4 * named.len)
+  for (id, _) in named: resMap.u32(id)
+  let sp = stringPool(pool)
+  result.u16(0x0003); result.u16(8)
+  result.u32(8 + sp.len + resMap.len + nsStart.len + body.len + nsEnd.len)
+  result.add sp
+  result.add resMap
+  result.add nsStart
+  result.add body
+  result.add nsEnd
+
+# ---- resources.arsc: one entry, the icon -----------------------------------------------
+
+const IconRes = 0x7f010000'u32
+const IconPath = "res/drawable/icon.png"
+
+proc resourceTable(pkg: string): Bytes =
+  var p: Bytes                                    # the package chunk
+  let typeStrings = stringPool(["drawable"], utf8 = true)
+  let keyStrings = stringPool(["icon"], utf8 = true)
+  var spec: Bytes
+  spec.u16(0x0202); spec.u16(16); spec.u32(20)
+  spec.u8(1); spec.u8(0); spec.u16(0); spec.u32(1)
+  spec.u32(0)
+  var typ: Bytes
+  let hdr = 20 + 64
+  typ.u16(0x0201); typ.u16(hdr); typ.u32(hdr + 4 + 16)
+  typ.u8(1); typ.u8(0); typ.u16(0); typ.u32(1); typ.u32(hdr + 4)
+  typ.u32(64)                                     # ResTable_config: any
+  for _ in 0 ..< 60: typ.add 0
+  typ.u32(0)                                      # offset of entry 0
+  typ.u16(8); typ.u16(0); typ.u32(0)              # entry: key "icon"
+  typ.u16(8); typ.u8(0); typ.u8(TString); typ.u32(0)
+  const header = 288
+  p.u16(0x0200); p.u16(header)
+  p.u32(header + typeStrings.len + keyStrings.len + spec.len + typ.len)
+  p.u32(0x7f)
+  let w = newWideCString(pkg)
+  var n = 0
+  while int(w[n]) != 0 and n < 127:
+    p.u16(int(w[n])); inc n
+  for _ in n ..< 128: p.u16(0)
+  p.u32(header); p.u32(1)
+  p.u32(header + typeStrings.len); p.u32(1)
+  p.u32(0)
+  p.add typeStrings
+  p.add keyStrings
+  p.add spec
+  p.add typ
+  let values = stringPool([IconPath], utf8 = true)
+  result.u16(0x0002); result.u16(12); result.u32(12 + values.len + p.len)
+  result.u32(1)
+  result.add values
+  result.add p
+
+# ---- zip -------------------------------------------------------------------------
+
+type ZipFile = object
+  data: Bytes
+  central: Bytes
+  count: int
+
+proc addFile(z: var ZipFile; name: string; content: Bytes; align = 4;
+             compress = true) =
+  ## Deflated when that makes it smaller, else stored with its data aligned
+  ## to `align` bytes (as zipalign does).
+  let offset = z.data.len
+  let crc = crc32(content)
+  var packed = if compress: deflate(content) else: @[]
+  let deflated = compress and packed.len < content.len
+  if not deflated: packed = content
+  let methodNo = if deflated: 8 else: 0
+  var extra = 0
+  if align > 1 and not deflated:
+    let base = offset + 30 + name.len
+    extra = 6
+    while (base + extra) mod align != 0: inc extra
+  var h: Bytes
+  h.u32(0x04034b50); h.u16(if deflated: 20 else: 10); h.u16(0); h.u16(methodNo)
+  h.u16(0); h.u16(0x21)                           # 1980-01-01 00:00
+  h.u32(crc); h.u32(packed.len); h.u32(content.len)
+  h.u16(name.len); h.u16(extra)
+  h.add name
+  if extra > 0:
+    h.u16(0xd935); h.u16(extra - 4); h.u16(align)  # zipalign's own field
+    for _ in 6 ..< extra: h.add 0
+  z.data.add h
+  z.data.add packed
+  var c: Bytes
+  c.u32(0x02014b50); c.u16(0x031E); c.u16(if deflated: 20 else: 10); c.u16(0)
+  c.u16(methodNo); c.u16(0); c.u16(0x21)
+  c.u32(crc); c.u32(packed.len); c.u32(content.len)
+  c.u16(name.len); c.u16(0); c.u16(0); c.u16(0); c.u16(0)
+  c.u32(0o100644 shl 16); c.u32(offset)
+  c.add name
+  z.central.add c
+  inc z.count
+
+proc eocd(z: ZipFile; cdOffset: int): Bytes =
+  result.u32(0x06054b50); result.u16(0); result.u16(0)
+  result.u16(z.count); result.u16(z.count)
+  result.u32(z.central.len); result.u32(cdOffset); result.u16(0)
+
+proc finish(z: ZipFile): Bytes =
+  result = z.data
+  result.add z.central
+  result.add z.eocd(z.data.len)
+
+# ---- APK signature scheme v2 ---------------------------------------------------------
+
+proc lp(b: Bytes): Bytes =
+  result.u32(b.len)
+  result.add b
+
+proc chunkedDigest(sections: openArray[Bytes]): Bytes =
+  const Mb = 1 shl 20
+  var digests: Bytes
+  var n = 0
+  for s in sections:
+    var i = 0
+    while i < s.len:
+      let e = min(s.len, i + Mb)
+      var head: Bytes = @[0xa5'u8]
+      head.u32(e - i)
+      digests.add sha256(head, s[i ..< e])
+      inc n
+      i = e
+  var top: Bytes = @[0x5a'u8]
+  top.u32(n)
+  sha256(top, digests)
+
+proc signV2(z: ZipFile; keyPem, certDer, work: string): Bytes =
+  let entries = z.data
+  let cdOffset = entries.len
+  let tail = z.eocd(cdOffset)
+  let digest = chunkedDigest([entries, z.central, tail])
+  const Alg = 0x0103            # RSASSA-PKCS1-v1_5, SHA2-256 chunks
+  var digestPair: Bytes
+  digestPair.u32(Alg)
+  digestPair.add lp(digest)
+  let cert = readFile(certDer).toBytes
+  var signedData = lp(lp(digestPair))
+  signedData.add lp(lp(cert))
+  signedData.add lp(@[])
+  let key = try: readRsaKey(readFile(keyPem))
+            except RsaError as e: die "the key " & keyPem & ": " & e.msg
+            except IOError: die "cannot read the key " & keyPem
+  var sigPair: Bytes
+  sigPair.u32(Alg)
+  sigPair.add lp(key.sign(signedData))
+  var signer = lp(signedData)
+  signer.add lp(lp(sigPair))
+  signer.add lp(key.publicKeyDer)
+  let value = lp(lp(signer))
+  var pairs: Bytes
+  pairs.u64(4 + value.len)
+  pairs.u32(0x7109871a)
+  pairs.add value
+  var blk: Bytes
+  let size = pairs.len + 8 + 16
+  blk.u64(size)
+  blk.add pairs
+  blk.u64(size)
+  blk.add "APK Sig Block 42"
+  result = entries
+  result.add blk
+  result.add z.central
+  result.add z.eocd(cdOffset + blk.len)
+
+# ---- checks on the built library --------------------------------------------------------
+
+const SystemLibs = ["libc.so", "libm.so", "libdl.so", "liblog.so", "libandroid.so",
+                    "libz.so", "libEGL.so", "libGLESv2.so", "libGLESv3.so",
+                    "libvulkan.so", "libjnigraphics.so", "libOpenSLES.so",
+                    "libaaudio.so", "libmediandk.so", "libcamera2ndk.so",
+                    "libnativewindow.so", "libstdc++.so", "libsync.so"]
+
+proc neededLibs(path: string): seq[string] =
+  ## DT_NEEDED entries of a 64- or 32-bit little-endian ELF shared library.
+  let f = readFile(path)
+  if f.len < 64 or f[0 .. 3] != "\x7fELF": die path & " is not an ELF file"
+  let is64 = f[4] == '\x02'
+  proc rd(at, n: int): int =
+    for i in countdown(n - 1, 0): result = (result shl 8) or ord(f[at + i])
+  let phoff = if is64: rd(0x20, 8) else: rd(0x1C, 4)
+  let phsize = if is64: rd(0x36, 2) else: rd(0x2A, 2)
+  let phnum = if is64: rd(0x38, 2) else: rd(0x2C, 2)
+  var loads: seq[(int, int, int)]          # vaddr, offset, filesz
+  var dynOff, dynSize = 0
+  for i in 0 ..< phnum:
+    let p = phoff + i * phsize
+    let kind = rd(p, 4)
+    let (off, vaddr, filesz) =
+      if is64: (rd(p + 8, 8), rd(p + 16, 8), rd(p + 32, 8))
+      else: (rd(p + 4, 4), rd(p + 8, 4), rd(p + 16, 4))
+    if kind == 1: loads.add (vaddr, off, filesz)
+    if kind == 2: (dynOff, dynSize) = (off, filesz)
+  proc fileOf(vaddr: int): int =
+    for (va, off, sz) in loads:
+      if vaddr >= va and vaddr < va + sz: return vaddr - va + off
+    -1
+  let entSize = if is64: 16 else: 8
+  var strtab = -1
+  var needed: seq[int]
+  var i = dynOff
+  while i + entSize <= dynOff + dynSize:
+    let tag = if is64: rd(i, 8) else: rd(i, 4)
+    let val = if is64: rd(i + 8, 8) else: rd(i + 4, 4)
+    if tag == 0: break
+    if tag == 1: needed.add val
+    if tag == 5: strtab = fileOf(val)
+    i += entSize
+  if strtab < 0: return
+  for n in needed:
+    var s = ""
+    var k = strtab + n
+    while k < f.len and f[k] != '\0':
+      s.add f[k]
+      inc k
+    result.add s
+
+# ---- toolchain ----------------------------------------------------------------------------
+
+type Abi = object
+  name, cpu, triple: string
+
+const Abis = [
+  Abi(name: "arm64-v8a", cpu: "arm64", triple: "aarch64-linux-android"),
+  Abi(name: "armeabi-v7a", cpu: "arm", triple: "armv7a-linux-androideabi"),
+  Abi(name: "x86_64", cpu: "amd64", triple: "x86_64-linux-android"),
+  Abi(name: "x86", cpu: "i386", triple: "i686-linux-android")]
+
+proc inTermux(): bool =
+  getEnv("PREFIX").contains("com.termux") or getEnv("TERMUX_VERSION").len > 0
+
+proc ndkRoot(): string =
+  for v in ["ANDROID_NDK_HOME", "ANDROID_NDK_ROOT", "ANDROID_NDK", "NDK_HOME"]:
+    let d = getEnv(v)
+    if d.len > 0 and dirExists(d): return d
+  for v in ["ANDROID_HOME", "ANDROID_SDK_ROOT"]:
+    let d = getEnv(v) / "ndk"
+    if dirExists(d):
+      var best = ""
+      for kind, p in walkDir(d):
+        if kind in {pcDir, pcLinkToDir} and p > best: best = p
+      if best.len > 0: return best
+  ""
+
+# ---- the NDK, fetched when there is none --------------------------------------------------
+
+const NdkVersion = "r27c"
+  ## The NDK fetched (an LTS release)
+
+proc ndkUrl(): string =
+  let env = getEnv("RETRO_NDK_URL")
+  if env.len > 0: return env
+  let host = when defined(windows): "windows" elif defined(macosx): "darwin" else: "linux"
+  let ext = when defined(macosx): ".dmg" else: ".zip"
+  "https://dl.google.com/android/repository/android-ndk-" & NdkVersion & "-" & host & ext
+
+proc fetchedNdkHome(): string =
+  getEnv("RETRO_NDK_DIR", getHomeDir() / ".retro" / "ndk")
+
+proc findNdkIn(dir: string): string =
+  ## (an NDK under `dir`: the folder holding toolchains/)
+  if dirExists(dir / "toolchains" / "llvm"): return dir
+  if not dirExists(dir): return ""
+  for kind, p in walkDir(dir):
+    if kind in {pcDir, pcLinkToDir} and dirExists(p / "toolchains" / "llvm"): return p
+  ""
+
+proc download(url, file: string) =
+  ## (with what the system has: curl -- Windows 10, macOS and Linux have it --,
+  ## wget, or PowerShell)
+  if url.startsWith("file://"):
+    copyFile(url[7 .. ^1], file)
+    return
+  if findExe("curl").len > 0:
+    runShown(quoteShellCommand(["curl", "-fL", "--retry", "3", "-o", file, url]), "downloading " & url)
+  elif findExe("wget").len > 0:
+    runShown(quoteShellCommand(["wget", "-O", file, url]), "downloading " & url)
+  elif defined(windows):
+    runShown("powershell -NoProfile -Command \"Invoke-WebRequest -Uri '" & url & "' -OutFile '" & file & "'\"",
+             "downloading " & url)
+  else:
+    die "cannot download " & url & ": no curl or wget"
+
+proc unpack(file, dest: string) =
+  ## (a zip with the system's unzip or tar, else our own; a .dmg on a Mac)
+  if file.toLowerAscii.endsWith(".dmg"):
+    let mnt = dest / "mnt"
+    createDir(mnt)
+    run(quoteShellCommand(["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint", mnt, file]),
+        "opening the NDK disk image")
+    try:
+      for kind, p in walkDir(mnt):
+        if p.endsWith(".app") and dirExists(p / "Contents" / "NDK"):
+          run(quoteShellCommand(["cp", "-R", p / "Contents" / "NDK", dest / ("android-ndk-" & NdkVersion)]),
+              "copying the NDK")
+    finally:
+      discard execCmd(quoteShellCommand(["hdiutil", "detach", mnt]))
+    return
+  if findExe("unzip").len > 0 and not defined(windows):
+    run(quoteShellCommand(["unzip", "-q", "-o", file, "-d", dest]), "unpacking the NDK")
+  elif findExe("tar").len > 0 and (defined(windows) or defined(macosx)):
+    run(quoteShellCommand(["tar", "-xf", file, "-C", dest]), "unpacking the NDK")
+  else:
+    try: extractZip(file, dest)
+    except ZipError as e: die "unpacking the NDK: " & e.msg
+    # (our unzip keeps no permissions: the tools made runnable)
+    for p in walkDirRec(dest):
+      if "/bin/" in p.replace('\\', '/'):
+        try: setFilePermissions(p, getFilePermissions(p) + {fpUserExec, fpGroupExec, fpOthersExec})
+        except OSError: discard
+
+proc fetchNdk*(): string =
+  ## The NDK fetched once into ~/.retro/ndk (or $RETRO_NDK_DIR): its root.
+  let base = fetchedNdkHome()
+  result = findNdkIn(base)
+  if result.len > 0: return
+  createDir(base)
+  let url = ndkUrl()
+  var name = url.extractFilename
+  let q = name.find('?')
+  if q >= 0: name = name[0 ..< q]
+  let file = base / name
+  echo "Fetching the Android NDK ", NdkVersion, " (once; about 700 MB) into ", base
+  if not fileExists(file): download(url, file)
+  echo "Unpacking it..."
+  unpack(file, base)
+  removeFile(file)
+  result = findNdkIn(base)
+  if result.len == 0: die "the NDK fetched from " & url & " has no toolchains/ folder"
+  echo "The NDK is in ", result
+
+proc compilerFor(abi: Abi; minSdk: int; explicit: string): string =
+  if explicit.len > 0: return explicit
+  let env = getEnv("RETRO_ANDROID_CC")
+  if env.len > 0: return env
+  if inTermux():
+    let hostAbi = when defined(arm64): "arm64-v8a"
+                  elif defined(arm): "armeabi-v7a"
+                  elif defined(amd64): "x86_64"
+                  else: "x86"
+    if abi.name != hostAbi:
+      die "Termux's clang builds for this device only (" & hostAbi &
+          "); for " & abi.name & " use the Android NDK"
+    var cc = findExe("clang")
+    if cc.len == 0 or not dirExists(getEnv("PREFIX") / "lib" / "android"):
+      # (Termux: its clang and the NDK's headers, installed here)
+      echo "Installing clang and the NDK's headers (pkg install clang ndk-sysroot)..."
+      runShown("pkg install -y clang ndk-sysroot", "pkg install")
+      cc = findExe("clang")
+    if cc.len == 0: die "no clang: pkg install clang ndk-sysroot"
+    return cc
+  var ndk = ndkRoot()
+  if ndk.len == 0: ndk = findNdkIn(fetchedNdkHome())
+  if ndk.len == 0:
+    # none: fetched (once)
+    ndk = fetchNdk()
+  let host = when defined(windows): "windows-x86_64"
+             elif defined(macosx): "darwin-x86_64"
+             else: "linux-x86_64"
+  let bin = ndk / "toolchains" / "llvm" / "prebuilt" / host / "bin"
+  let ext = when defined(windows): ".cmd" else: ""
+  # the NDK has a wrapper for every API level it supports; take ours, or
+  # the lowest one above it
+  for api in max(minSdk, 21) .. 40:
+    let cc = bin / abi.triple & $api & "-clang" & ext
+    if fileExists(cc): return cc
+  die "no " & abi.triple & "-clang in " & bin
+
+# ---- keys -------------------------------------------------------------------------------
+
+proc debugKey(): tuple[key, cert: string] =
+  let dir = getEnv("RETRO_KEYS", getHomeDir() / ".retro" / "android")
+  result = (dir / "debug-key.pem", dir / "debug-cert.der")
+  if fileExists(result.key) and fileExists(result.cert): return
+  createDir(dir)
+  echo "Making a debug signing key in ", dir
+  let key = newRsaKey()
+  writeFile(result.key, key.pem)
+  writeFile(result.cert, key.selfSignedCert("CN=retro debug, O=retro").toStr)
+
+# ---- main ---------------------------------------------------------------------------------
+
+proc main() =
+  var
+    src, name, id, outPath, iconPath, cc, keyPem, certDer = ""
+    version = "1.0"
+    code = 1
+    minSdk = 24
+    targetSdk = 35
+    abiList = @["arm64-v8a"]
+    orientation = "any"
+    permissions: seq[string]
+    queries: seq[string]
+    nimFlags: seq[string]
+    debuggable, install, runIt, storage, clean = false
+    signer = "auto"
+    workDir = ""
+  for kind, key, val in getopt(commandLineParams()):
+    case kind
+    of cmdArgument: src = key
+    of cmdLongOption, cmdShortOption:
+      case key.normalize
+      of "name": name = val
+      of "id": id = val
+      of "version": version = val
+      of "code": code = parseInt(val)
+      of "icon": iconPath = val
+      of "abi": abiList = val.split(',')
+      of "orientation": orientation = val.toLowerAscii
+      of "permission":
+        permissions.add(if '.' in val: val else: "android.permission." & val)
+      of "query": queries.add val
+      of "storage": storage = true
+      of "minsdk": minSdk = parseInt(val)
+      of "targetsdk": targetSdk = parseInt(val)
+      of "debuggable": debuggable = true
+      of "cc": cc = val
+      of "key": keyPem = val
+      of "cert": certDer = val
+      of "signer": signer = val
+      of "o", "out", "output": outPath = val
+      of "install": install = true
+      of "run": install = true; runIt = true
+      of "nim": nimFlags.add val
+      of "verbose", "v": verbose = true
+      of "clean": clean = true
+      of "work": workDir = val
+      of "help", "h": echo Usage; quit 0
+      of "fetchndk":
+        echo "The NDK: ", fetchNdk()
+        quit 0
+      else: die "unknown option --" & key & " (see --help)"
+    of cmdEnd: discard
+  if src.len == 0: (echo Usage; quit 1)
+  if not fileExists(src): die "no such file: " & src
+  let base = src.splitFile.name
+  if name.len == 0: name = base.capitalizeAscii
+  if id.len == 0:
+    var clean = ""
+    for c in base.toLowerAscii:
+      if c in {'a'..'z', '0'..'9'}: clean.add c
+    id = "org.retro." & (if clean.len > 0 and clean[0] in {'a'..'z'}: clean
+                           else: "app" & clean)
+  if outPath.len == 0: outPath = src.changeFileExt("apk")
+  # (the compiled pieces: kept for quick rebuilds -- out of the source
+  # folder, in the user's cache; --clean removes them after)
+  let work = if workDir.len > 0: workDir
+             else: getCacheDir("retro") / "apk" / base & "-" & toHex(hashOf(src.absolutePath), 8)
+  createDir(work)
+  let nim = findExe("nim")
+  if nim.len == 0: die "nim is not on the PATH"
+
+  # 1. compile libmain.so for every ABI
+  var libs: seq[(string, string)]
+  for an in abiList:
+    var abi: Abi
+    var found = false
+    for a in Abis:
+      if a.name == an.strip: (abi = a; found = true)
+    if not found: die "unknown ABI " & an
+    let compiler = compilerFor(abi, minSdk, cc)
+    let lib = work / "lib" / abi.name / "libmain.so"
+    createDir(lib.parentDir)
+    echo "Compiling ", src, " for ", abi.name, " ..."
+    var args = @[nim, "c", "--os:android", "--cpu:" & abi.cpu, "--app:lib",
+                 "--noMain", "-d:noSignalHandler", "-d:release", "--cc:clang",
+                 "--clang.exe:" & compiler, "--clang.linkerexe:" & compiler,
+                 # replaces Termux's "-landroid-glob" (an app cannot load
+                 # Termux's libraries), strips the library and aligns it for
+                 # phones with 16 KB memory pages
+                 "--clang.options.linker:-s -Wl,-z,max-page-size=16384",
+                 "--nimcache:" & work / "nimcache-" & abi.name,
+                 "--hints:off", "-o:" & lib]
+    # (the system's malloc, unless the program asks for Nim's allocator:
+    # with it the app's memory would only grow -- see retro/memwatch)
+    if not nimFlags.anyIt("retroNimAlloc" in it): args.add "-d:useMalloc"
+    args.add nimFlags
+    args.add src
+    run(quoteShellCommand(args), "compiling for " & abi.name)
+    for n in neededLibs(lib):
+      if n notin SystemLibs:
+        die abi.name & ": libmain.so needs " & n & ", which is not part of " &
+            "Android; an app cannot load it (on Termux, libraries in $PREFIX " &
+            "are not visible to apps)"
+    libs.add ("lib/" & abi.name & "/libmain.so", lib)
+
+  # 2. manifest, resources, icon
+  let orient = case orientation
+    of "portrait": 7         # sensorPortrait
+    of "landscape": 6        # sensorLandscape
+    else: -1
+  var activity = XNode(name: "activity", attrs: @[
+    sAttr("name", 0x01010003, "org.retro.RetroActivity"),
+    sAttr("label", 0x01010001, name),
+    # every configuration change is the app's (rotation, size, language,
+    # font size, dark mode...): the activity is never recreated
+    iAttr("configChanges", 0x0101001f, 0x5000FFFF, THex),
+    iAttr("windowSoftInputMode", 0x0101022b, 0x10, THex),
+    # a window the user sizes with the mouse (DeX, desktop windowing,
+    # split screen) -- the app follows every size
+    bAttr("resizeableActivity", 0x010104f6, true),
+    bAttr("exported", 0x01010010, true)],
+    kids: @[
+      # (a free window's first and smallest sizes)
+      XNode(name: "layout", attrs: @[
+        iAttr("defaultWidth", 0x010104f4, dp(1280), TDimen),
+        iAttr("defaultHeight", 0x010104f5, dp(800), TDimen),
+        iAttr("gravity", 0x010100af, 0x11, THex),        # center
+        iAttr("minWidth", 0x0101013f, dp(480), TDimen),
+        iAttr("minHeight", 0x01010140, dp(360), TDimen)]),
+      XNode(name: "meta-data", attrs: @[
+        sAttr("name", 0x01010003, "android.app.lib_name"),
+        sAttr("value", 0x01010024, "main")]),
+      XNode(name: "intent-filter", kids: @[
+        XNode(name: "action", attrs: @[
+          sAttr("name", 0x01010003, "android.intent.action.MAIN")]),
+        XNode(name: "category", attrs: @[
+          sAttr("name", 0x01010003, "android.intent.category.LAUNCHER")])])])
+  if orient >= 0:
+    activity.attrs.add iAttr("screenOrientation", 0x0101001e, orient)
+  var app = XNode(name: "application", attrs: @[
+    sAttr("label", 0x01010001, name),
+    iAttr("icon", 0x01010002, int(IconRes), TRef),
+    bAttr("hasCode", 0x0101000c, true),     # classes.dex: RetroActivity
+    bAttr("largeHeap", 0x0101035a, true),   # room to decode big photos
+    iAttr("theme", 0x01010000, 0x0103012c, TRef)],   # DeviceDefault.Light.NoActionBar
+    kids: @[activity,
+      # hands files to other apps for "Open" and "Share" (read only)
+      XNode(name: "provider", attrs: @[
+        sAttr("name", 0x01010003, "org.retro.RetroFiles"),
+        sAttr("authorities", 0x01010018, id & ".files"),
+        bAttr("exported", 0x01010010, false),
+        bAttr("grantUriPermissions", 0x0101001b, true)])])
+  if debuggable: app.attrs.add bAttr("debuggable", 0x0101000f, true)
+  var manifest = XNode(name: "manifest", attrs: @[
+    XAttr(name: "package", kind: TString, str: id),
+    iAttr("versionCode", 0x0101021b, code),
+    sAttr("versionName", 0x0101021c, version)],
+    kids: @[XNode(name: "uses-sdk", attrs: @[
+      iAttr("minSdkVersion", 0x0101020c, minSdk),
+      iAttr("targetSdkVersion", 0x01010270, targetSdk)])])
+  if storage:
+    # all files: the settings switch on Android 11+, the dialog before
+    manifest.kids.add XNode(name: "uses-permission", attrs: @[
+      sAttr("name", 0x01010003, "android.permission.READ_EXTERNAL_STORAGE"),
+      iAttr("maxSdkVersion", 0x01010271, 32)])
+    manifest.kids.add XNode(name: "uses-permission", attrs: @[
+      sAttr("name", 0x01010003, "android.permission.WRITE_EXTERNAL_STORAGE"),
+      iAttr("maxSdkVersion", 0x01010271, 29)])
+    permissions.add "android.permission.MANAGE_EXTERNAL_STORAGE"
+    if "com.termux" notin queries: queries.add "com.termux"   # its files, through SAF
+  for p in permissions:
+    manifest.kids.add XNode(name: "uses-permission",
+                            attrs: @[sAttr("name", 0x01010003, p)])
+  if queries.len > 0:
+    var q = XNode(name: "queries")
+    for pkg in queries:
+      q.kids.add XNode(name: "package", attrs: @[sAttr("name", 0x01010003, pkg)])
+    manifest.kids.add q
+  manifest.kids.add app
+  let icon = if iconPath.len > 0: readFile(iconPath).toBytes else: iconPng(192)
+  if icon.len < 8 or icon[1] != byte('P') or icon[2] != byte('N'):
+    die "the icon must be a PNG file"
+
+  # 3. the zip; Android unpacks the (deflated) libraries when installing
+  var z: ZipFile
+  z.addFile("AndroidManifest.xml", axml(manifest))
+  z.addFile("classes.dex", classesDex.toBytes)
+  z.addFile("resources.arsc", resourceTable(id), compress = false)  # Android 11+
+  z.addFile(IconPath, icon, compress = false)
+  for (inZip, path) in libs: z.addFile(inZip, readFile(path).toBytes, 16384)
+
+  # 4. sign
+  let unsigned = work / "unsigned.apk"
+  writeFile(unsigned, z.finish.toStr)
+  if keyPem.len == 0: (keyPem, certDer) = debugKey()
+  let apksigner = findExe("apksigner")
+  let useApksigner = signer == "apksigner"     # (else signed here: nothing else needed)
+  if useApksigner:
+    if apksigner.len == 0: die "apksigner is not on the PATH"
+    let pk8 = work / "key.pk8"
+    try: writeFile(pk8, readRsaKey(readFile(keyPem)).pkcs8Der.toStr)
+    except RsaError as e: die "the key " & keyPem & ": " & e.msg
+    run(quoteShellCommand([apksigner, "sign", "--key", pk8, "--cert", certDer,
+                           "--min-sdk-version", $minSdk, "--out", outPath,
+                           unsigned]), "apksigner")
+    removeFile(pk8)
+  else:
+    writeFile(outPath, signV2(z, keyPem, certDer, work).toStr)
+  echo "Built ", outPath, " (", getFileSize(outPath) div 1024, " KB, ", id, ")"
+  if clean:
+    try: removeDir(work) except OSError: discard
+
+  # 5. install
+  if install:
+    let adb = findExe("adb")
+    if adb.len > 0:
+      run(quoteShellCommand([adb, "install", "-r", outPath]), "adb install")
+      echo "Installed."
+      if runIt:
+        run(quoteShellCommand([adb, "shell", "am", "start", "-n",
+                               id & "/org.retro.RetroActivity"]), "starting it")
+    elif inTermux():
+      # Android's package installer asks the user; Termux hands the file over
+      let opener = findExe("termux-open")
+      if opener.len == 0: die "termux-open is missing (pkg install termux-tools)"
+      run(quoteShellCommand([opener, "--view", "--content-type",
+                             "application/vnd.android.package-archive",
+                             outPath]), "opening the installer")
+      echo "Confirm the installation on the screen."
+    else:
+      die "to install, connect a device and put adb on the PATH"
+
+when isMainModule: main()

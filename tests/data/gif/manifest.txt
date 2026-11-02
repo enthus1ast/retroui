@@ -1,0 +1,3 @@
+# file width height frames loop durations -- frames as Pillow composes them; see tests/test_exrgif.nim
+frames.gif 40 30 7 3 100,200,0,300,400,50,700
+pillow.gif 34 26 6 0 50,60,70,80,90,100
