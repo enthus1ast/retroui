@@ -353,10 +353,13 @@ proc mirror(cp: int): int =
 
 var formsOf: Table[int, array[4, uint16]]
 var lamAlefOf: Table[int, (uint16, uint16)]
+var isolatedOf: Table[int, int]     ## an isolated presentation form -> its letter
 
 proc initArabic() =
   if formsOf.len > 0: return
-  for (k, v) in arabicForms: formsOf[int(k)] = v
+  for (k, v) in arabicForms:
+    formsOf[int(k)] = v
+    if v[0] != 0: isolatedOf[int(v[0])] = int(k)
   for (k, iso, fin) in lamAlef: lamAlefOf[int(k)] = (iso, fin)
 
 type Joining = enum jNone, jRight, jDual, jTransparent
@@ -645,6 +648,15 @@ proc pick(base: FaceId; cp: int): (FaceId, int) =
     # W98 UI has a few -- do not stand in for them)
     let g = face(fIcons).glyphOf(cp)
     if g != 0: return (fIcons, g)
+  # (a font that has the joined forms of Arabic letters but not the isolated
+  # ones -- the letter itself is its isolated form -- keeps its own letter)
+  let first = fallbacks(base)[0]
+  if cp in 0xFE70 .. 0xFEFF and face(first).glyphOf(cp) == 0:
+    initArabic()
+    let letter = isolatedOf.getOrDefault(cp, 0)
+    if letter != 0:
+      let g = face(first).glyphOf(letter)
+      if g != 0: return (first, g)
   for id in fallbacks(base):
     let g = face(id).glyphOf(cp)
     if g != 0: return (id, g)

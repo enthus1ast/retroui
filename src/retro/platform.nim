@@ -85,23 +85,54 @@ proc boldBeside*(path: string): string =
   ## The bold of a font file, when it lies beside it ("X-Regular.ttf":
   ## "X-Bold.ttf", "X.ttf": "XBold.ttf", "X-Bold.ttf", "X Bold.ttf").
   let (dir, name, ext) = path.splitFile
+  # (the path's own separator: building for Windows elsewhere, `/` would be `\`)
+  let sep = if '/' in path: "/" else: $DirSep
   var stems: seq[string]
   for sfx in ["-Regular", " Regular", "_Regular", "Regular", "-Roman", "-Book"]:
     if name.endsWith(sfx): stems.add name[0 ..< name.len - sfx.len]
   stems.add name
   for st in stems:
     for b in ["-Bold", " Bold", "_Bold", "Bold", "bd", "-bold"]:
-      let p = dir / (st & b & ext)
+      let p = dir & sep & st & b & ext
       if p != path and fileExists(p): return p
   ""
 
+const
+  appFontPath {.strdefine: "retroAppFont".} = ""
+    ## a font built into the app (`-d:retroAppFont=path/X-Regular.ttf`,
+    ## its bold beside it): the app's own, read at build time
+  appFontBoldPath {.strdefine: "retroAppFontBold".} = ""
+    ## its bold, when it is not beside it
+  appFontBoldFile = (when appFontBoldPath.len > 0: appFontBoldPath
+                     elif appFontPath.len > 0: boldBeside(appFontPath)
+                     else: "")
+  appFontRegular = (when appFontPath.len > 0: staticRead(appFontPath) else: "")
+  appFontBold = (when appFontBoldFile.len > 0: staticRead(appFontBoldFile) else: "")
+  appFontKey* = "builtin:" & (when appFontPath.len > 0: appFontPath.splitFile.name else: "")
+    ## what `uiFontPath` says while the app's own font is the UI's
+
+proc hasAppFont*(): bool = appFontRegular.len > 0
+  ## The app was built with a font of its own (`-d:retroAppFont`).
+
 proc loadUiFontFile*(path: string) =
   ## The font in `path` (a .ttf; its bold beside it, when there is one) as
-  ## the UI's font (`ufFile`). Raises `IOError` or `FontError`.
-  let regular = readFile(path)
-  let b = boldBeside(path)
-  setUiFontFile(regular, if b.len > 0: readFile(b) else: "")
+  ## the UI's font (`ufFile`); `appFontKey`: the app's own font, built in.
+  ## Raises `IOError` or `FontError`.
+  if path == appFontKey and hasAppFont():
+    setUiFontFile(appFontRegular, appFontBold)
+  else:
+    let regular = readFile(path)
+    let b = boldBeside(path)
+    setUiFontFile(regular, if b.len > 0: readFile(b) else: "")
   uiFontPath = path
+
+proc useAppFont*() =
+  ## The app's own font (built in with `-d:retroAppFont`) as the UI's;
+  ## nothing when there is none. Apps built so start with it (until the
+  ## user chooses another in `appearanceSettings`).
+  if hasAppFont():
+    try: loadUiFontFile(appFontKey)
+    except CatchableError: discard
 
 proc uiFontKey*(f: UiFont): string =
   ## The word settings keep font `f` as: "w98", "kawkab", "retro",
@@ -221,9 +252,10 @@ proc restoreAppearance*(s: Settings) =
   of "file":
     # (the font from a file: when it is still there)
     let p = s.getOrDefault("look.fontfile", "")
-    if p.len > 0 and fileExists(p):
+    if (p.len > 0 and fileExists(p)) or (p == appFontKey and hasAppFont()):
       try: loadUiFontFile(p)
       except CatchableError: discard
+  of "": useAppFont()        # (nothing chosen yet: the app's own font, when it has one)
   else: discard
 
 proc canOpenTerminal*(): bool =

@@ -51,6 +51,7 @@
 ## `spell`           spelling (the system's checker, Hunspell) and AutoCorrect
 ## `mailimport`      mail brought in: Outlook Express (.dbx, .mbx), mbox, .eml
 ## `notify`          the system's notifications (and the unread count on the icon)
+## `bgcheck`         a check the system runs while the app is closed (Android)
 ## `vault`, `rsa`    encryption with a password, RSA keys
 ## ================  ==========================================================
 ##

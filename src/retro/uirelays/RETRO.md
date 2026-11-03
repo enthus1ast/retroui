@@ -37,6 +37,11 @@ is in `docs/uirelays-pr.md`.
 - `drivers/surface_driver.nim` -- the relays both phone drivers share.
 - `services.nim` -- `systemRelays`: data folder, links, files, places,
   storage access, photo decoding, `systemCall`.
+- Files dropped on the window (`FileDropEvent`: WM_DROPFILES, XDND) and
+  dragged out of it (`startFileDragOut`, `fileDragRelays`: OLE's DoDragDrop
+  with CF_HDROP and the shell's IDList Array, XDND as the source with
+  `text/uri-list`, a Cocoa dragging session with file URLs);
+  `filesOfUriList`, `uriListOfFiles`, `hdropOfFiles`.
 - `eglload.nim` -- EGL loaded at run time; `gpuRelays` in `screen.nim`.
 - `drivers/penaxes.nim` -- a pen's pressure, lean and turn from what each
   system reports.

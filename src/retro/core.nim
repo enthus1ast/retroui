@@ -15,7 +15,7 @@ import uirelays/services
 import gfx, busy
 export busy
 
-const RetroVersion* = "0.18.0"
+const RetroVersion* = "0.19.0"
 const
   RetroDeveloper* = "Sultan Al Isaiee"
     ## Who made Retro Nim UI (and its apps): every About box says so.
@@ -28,6 +28,7 @@ const
 
 export gfx
 export KeyCode, Modifier, CursorKind
+export DragOutResult, canDragFilesOut
 
 type
   Id* = uint32
@@ -223,6 +224,9 @@ type
     label*: string               ## shown at the pointer
     glyph*: string               ## an icon-font glyph before the label
     source*: Id                  ## the widget it came from
+    files*: proc (): seq[string] ## the files it is for other programs, made when it
+                                 ## leaves the window (nil: it stays in the window)
+    moveFiles*: bool             ## ... and they may move them instead of copying
   DropState* = enum
     ## Where a drag stands for a drop target (`dropTarget`).
     dsNone                       ## no drag of that kind is over the target
@@ -926,14 +930,29 @@ proc interact*(id: Id; r: Rect; focusable = true; enabled = true): Hit =
 
 # ---- drag and drop ------------------------------------------------------------
 
-proc startDrag*(kind: string; items: openArray[string]; label = ""; glyph = "") =
+var
+  outPaths: seq[string]        # the files of the drag in progress, for other programs
+  outMade: bool                # ... made already (`DragInfo.files` asked)
+
+proc startDrag*(kind: string; items: openArray[string]; label = ""; glyph = "";
+                files: proc (): seq[string] = nil; moveFiles = false) =
   ## Starts dragging `items` (paths, ids...) of `kind`, while the mouse is
   ## down -- typically when a list reports `dragStarted`. Targets see it
   ## with `dropTarget`; letting go over none (or Esc) drops nothing.
+  ##
+  ## `files`: what it is for other programs, as files on disk -- messages as
+  ## .eml files, pictures as PNGs, a file manager's own paths. Made only if
+  ## the drag leaves the window, which then becomes the system's drag of
+  ## them, to a file manager, a browser, a mail (`dragFilesOut`); brought
+  ## back over the window, it is this drag again. `moveFiles`: they may be
+  ## moved there instead of copied.
   ui.drag = DragInfo(active: true, kind: kind, items: @items,
                      label: if label.len > 0: label
                             elif items.len == 1: items[0] else: $items.len & " items",
-                     glyph: glyph, source: ui.active)
+                     glyph: glyph, source: ui.active, files: files,
+                     moveFiles: moveFiles)
+  outPaths.setLen(0)
+  outMade = false
   ui.dragDropping = false
   ui.dragClaimed = false
   ui.active = 0
@@ -999,6 +1018,83 @@ proc dropHighlight*(r: Rect) =
   ## The look of a target a drag is over.
   box(r, ui.theme.select)
   box(inset(r, 1), ui.theme.select)
+
+# ---- files dragged out of the window, to other programs ----------------------
+#
+# The system's drag runs while the button is down and returns when it is let
+# go (the app's frame waits meanwhile; the window shows what it showed). Its
+# release is reported afterwards, so the press clicks nothing.
+
+var
+  outArm: tuple[on: bool; r: Rect; x, y: int]   # a press in a `fileDragSource`
+  outResult: DragOutResult     # how the last drag of files out ended
+
+proc lastDragOut*(): DragOutResult = outResult
+  ## How the last drag of files out of the window ended: `drCopied` or
+  ## `drMoved` (another program took them), `drCancelled`, `drBack` (it came
+  ## back into the window as the app's own drag), `drNone`.
+
+proc systemDrag(paths: seq[string]; move, back: bool): DragOutResult =
+  ## (the system's drag of `paths`, the press ended: what it began is no click)
+  outArm.on = false
+  ui.active = 0
+  result = startFileDragOut(paths, move, back)
+  outResult = result
+  ui.redraw = true
+
+proc dragFilesOut*(paths: seq[string]; move = false): bool {.discardable.} =
+  ## Drags the files `paths` out of the window now, while the left button is
+  ## down: to the system's file manager, a browser's upload box, a mail being
+  ## written... The system's drag goes on until the button is let go (or
+  ## Esc), and this returns then: true when another program took them
+  ## (`lastDragOut` says whether it copied or moved them). The press is over:
+  ## what it began clicks nothing; a drag of the toolkit's in progress ends.
+  ## False with no paths, the button up, a finger's press, or where the
+  ## platform cannot (`canDragFilesOut`: Windows, X11 and macOS can).
+  if paths.len == 0 or not ui.mouseDown or ui.fingerDown or not canDragFilesOut():
+    outResult = drNone
+    return false
+  if ui.drag.active: cancelDrag()
+  systemDrag(paths, move, false) in {drCopied, drMoved}
+
+proc fileDragSource*(r: Rect; paths: proc (): seq[string]; move = false): bool {.discardable.} =
+  ## Makes `r` (an attachment, a file's icon) something to drag files out of
+  ## the window from: a press inside it that moves a few pixels with the
+  ## button down begins the system's drag of the files `paths` gives -- made
+  ## only then (an attachment written to a temporary file). That press
+  ## clicks nothing. True in the frame another program took them
+  ## (`lastDragOut`: copied or moved). Nothing for a finger on a touch
+  ## screen, or where the platform cannot (`canDragFilesOut`); call it every
+  ## frame, after drawing what is in `r` (`ui.lastRect`).
+  if not canDragFilesOut() or ui.fingerDown: return false
+  if ui.pressed:
+    if hover(r): outArm = (true, r, ui.mx, ui.my)
+    return false
+  if not outArm.on or outArm.r != r: return false
+  if not ui.mouseDown or ui.released or ui.drag.active:
+    outArm.on = false
+    return false
+  let d = max(3, dp(4))
+  if abs(ui.mx - outArm.x) < d and abs(ui.my - outArm.y) < d: return false
+  outArm.on = false
+  let ps = paths()
+  if ps.len == 0: return false
+  dragFilesOut(ps, move)
+
+proc dragLeftWindow() =
+  ## (a drag of the toolkit's left the window with files for other
+  ## programs: the system's drag of them from here; back over the window,
+  ## the toolkit's goes on)
+  if not outMade:
+    outMade = true
+    outPaths = ui.drag.files()
+  if outPaths.len == 0:
+    ui.drag.files = nil               # (none to give: it stays in the window)
+    return
+  case systemDrag(outPaths, ui.drag.moveFiles, true)
+  of drBack: discard
+  of drNone: ui.drag.files = nil      # (cannot: not tried again)
+  else: cancelDrag()                  # taken by another program, or not
 
 # ---- layout -----------------------------------------------------------------
 
@@ -2189,6 +2285,14 @@ proc beginFrame*(): bool =
   # (after the frame's state is reset: what the hooks ask for -- a wake-up,
   # a redraw -- stays)
   for hook in beginFrameHooks: hook()
+  # a press for a `fileDragSource` is this frame's or none; a drag of the
+  # toolkit's that left the window with files for other programs is the
+  # system's from here (`startDrag`'s `files`)
+  if ui.pressed or not ui.mouseDown: outArm.on = false
+  if ui.drag.active and ui.drag.files != nil and ui.mouseDown and not ui.released and
+     ui.mouseMoved and not ui.fingerDown and
+     (ui.mx < 0 or ui.my < 0 or ui.mx >= ui.w or ui.my >= ui.h) and canDragFilesOut():
+    dragLeftWindow()
   # a drag ends when the button is let go (the targets look this frame)
   ui.dragOver = false
   if ui.drag.active and (ui.released or not ui.mouseDown):

@@ -16,13 +16,15 @@
 ##   writes the count on the app's icon in the Dock.
 ## - **Android apps:** NotificationManager, a "Mail" channel, the app's
 ##   icon; a tap opens the app. Android 13 and newer ask the user once
-##   (the APK needs `retroapk --permission:POST_NOTIFICATIONS`); `setBadge`
-##   puts the count on the app's notifications, which launchers show.
+##   (the APK needs `retroapk --permission:POST_NOTIFICATIONS`; the window
+##   asks, never a background check); `setBadge` puts the count on the
+##   app's notifications, which launchers show. Both work with the app
+##   closed too, from its background check (`retro/bgcheck`).
 ## - **iOS:** none (`notify` answers false).
 ##
 ## Nothing waits on the system: the slow parts (starting `gdbus`, the
 ## notification area's thread) run off the UI thread. Call these from the
-## UI thread.
+## UI thread (or a background check's).
 ##
 ## .. code-block:: nim
 ##   import retro, retro/notify
@@ -33,7 +35,7 @@
 ##   setBadge(unreadCount)
 
 import std/[os, strutils, tables, locks, typedthreads, times, unicode]
-import native
+import native, bgcheck
 when defined(windows):
   import std/exitprocs
 
@@ -580,9 +582,10 @@ proc askPostPermission() =
   javaRelease(arr, cls)
 
 proc androidAllowed(nm: JObject): bool =
-  ## The app may post notifications (asking for that the first time).
+  ## The app may post notifications (asking for that the first time, from
+  ## the window: a background check has no Activity to ask with).
   if androidSdk() >= 33 and javaActivity("checkSelfPermission", PostPermission) != "0":
-    if not aAsked:
+    if not aAsked and not inBackgroundCheck():
       aAsked = true
       askPostPermission()
     return false

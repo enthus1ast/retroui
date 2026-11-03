@@ -37,6 +37,8 @@ Options:
                      repeatable; --storage adds com.termux)
   --storage          the app works with all the user's files (a file
                      manager): asks for "All files access"
+  --background       the app checks while it is closed (retro/bgcheck): its
+                     job service, kept across reboots
   --min-sdk:N        lowest Android API level (default 24, Android 7)
   --target-sdk:N     API level the app is made for (default 35)
   --debuggable       allow debugging (run-as, logcat of the app)
@@ -680,7 +682,7 @@ proc main() =
     permissions: seq[string]
     queries: seq[string]
     nimFlags: seq[string]
-    debuggable, install, runIt, storage, clean = false
+    debuggable, install, runIt, storage, background, clean = false
     signer = "auto"
     workDir = ""
   for kind, key, val in getopt(commandLineParams()):
@@ -699,6 +701,7 @@ proc main() =
         permissions.add(if '.' in val: val else: "android.permission." & val)
       of "query": queries.add val
       of "storage": storage = true
+      of "background": background = true
       of "minsdk": minSdk = parseInt(val)
       of "targetsdk": targetSdk = parseInt(val)
       of "debuggable": debuggable = true
@@ -819,6 +822,17 @@ proc main() =
         sAttr("authorities", 0x01010018, id & ".files"),
         bAttr("exported", 0x01010010, false),
         bAttr("grantUriPermissions", 0x0101001b, true)])])
+  if background:
+    # the background check: a job only the system may start (JobScheduler);
+    # kept across reboots (RECEIVE_BOOT_COMPLETED), with a network
+    # (ACCESS_NETWORK_STATE: Android 14+ refuses such a job without it)
+    app.kids.add XNode(name: "service", attrs: @[
+      sAttr("name", 0x01010003, "org.retro.RetroBackground"),
+      sAttr("permission", 0x01010006, "android.permission.BIND_JOB_SERVICE"),
+      bAttr("exported", 0x01010010, true)])
+    for p in ["android.permission.RECEIVE_BOOT_COMPLETED",
+              "android.permission.ACCESS_NETWORK_STATE"]:
+      if p notin permissions: permissions.add p
   if debuggable: app.attrs.add bAttr("debuggable", 0x0101000f, true)
   var manifest = XNode(name: "manifest", attrs: @[
     XAttr(name: "package", kind: TString, str: id),
