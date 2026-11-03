@@ -147,3 +147,10 @@ proc unseal*(k: VaultKey; sealed: string): string =
 proc wipe*(k: var VaultKey) =
   ## Forget the key (when the app locks).
   crypto_wipe(addr k.key[0], 32)
+
+proc vaultKeyFromBytes*(raw: openArray[byte]): VaultKey =
+  ## A key of 32 random bytes kept elsewhere (in a file only the user may
+  ## read: `retro/secrets`), with no password and no Argon2. What it seals
+  ## no password opens.
+  if raw.len != 32: raise newException(VaultError, "a key is 32 bytes")
+  for i in 0 ..< 32: result.key[i] = raw[i]

@@ -14,11 +14,15 @@ import sys
 data = open(sys.argv[1], 'rb').read()
 lines = []
 for i in range(0, len(data), 36):
-    lines.append('  "' + ''.join('\\x%02x' % b for b in data[i:i+36]) + '"')
+    lines.append('"' + ''.join('\\x%02x' % b for b in data[i:i+36]) + '"')
+# (in parenthesized groups of 64 lines: one long chain of & crashes the compiler)
+groups = []
+for g in range(0, len(lines), 64):
+    groups.append("  (" + " &\n   ".join(lines[g:g+64]) + ")")
 open(sys.argv[2], 'w').write(
     "## classes.dex of tools/android/*.java (made by\n"
     "## tools/android/build_dex.sh): the Java part of every retro APK.\n\n"
-    "const classesDex* =\n" + " &\n".join(lines) + "\n")
+    "const classesDex* =\n" + " &\n".join(groups) + "\n")
 PY
 rm -rf "$work"
 echo "wrote src/retro/androiddex.nim"
