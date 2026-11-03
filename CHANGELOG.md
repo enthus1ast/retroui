@@ -1,5 +1,84 @@
 # Changes
 
+## 0.18.0
+
+- **Retro Mail 1.0.2:**
+  - **The list:** beside the reading pane each message takes three lines
+    (who and when, the subject and its marks, the tags and the start of
+    the text), as Outlook shows it there. Arrange by date, sender, subject,
+    size, flag or unread (a click on a column's header; again: the other way
+    round); columns as wide as you drag them; the panes keep their sizes.
+  - **Many at once:** Ctrl+click, Shift+click, Shift+arrows, Ctrl+A; the
+    reading pane then offers what to do with them all. On a phone, a long
+    press starts choosing (check boxes, and a bar of actions).
+  - **Undo:** a delete, an archive or a move can be taken back for a few
+    seconds (the bar at the bottom, or Ctrl+Z); **Undo Send** holds a message
+    back 10 seconds (Options: 0 to 30).
+  - **Threads:** a message picked inside a thread opens in the conversation
+    and comes to the top of the pane; Reply answers that one. A double click
+    (or Enter) opens a message in a window of its own, with Previous and Next.
+  - **Mouse:** buttons over the row under the mouse (flag, pin, delete); drag
+    messages onto a folder (moved), a tag (tagged), Flagged or Pinned.
+  - **Keys:** Ctrl+Enter sends, Ctrl+Shift+V moves, Ctrl+Y goes to a folder,
+    Ctrl+. and Ctrl+, the next and previous message, F6 the next pane,
+    letters jump to a sender, Alt+Q "Tell me what you want to do"
+    (every command by name); Help, Keyboard Shortcuts lists them.
+  - **Workflow:** Quick Steps (several actions in one: Message, Quick Steps),
+    Sweep (everything from one sender, now and from now on), Follow Up (a
+    flag with a day, and a reminder when it comes), Message Rules (as
+    Outlook Express had them: applied to mail as it comes, every account),
+    meeting invitations answered in the message (Accept, Tentative,
+    Decline: Microsoft 365 and Gmail), Automatic Replies (out of office),
+    Forward as Attachment, Save As (.eml) and Open a saved message.
+  - **Local Folders,** as in Outlook Express: File, Import brings mail from
+    Outlook Express 4 to 6 (.mbx, .dbx: found on the computer by itself),
+    mbox files (Thunderbird, Apple Mail, a Gmail Takeout) and .eml files;
+    File, Export writes the list as an mbox file.
+  - **Assistant:** Summarize a conversation, Translate a message, with your
+    own key (Options, Assistant; nothing is sent before it is on).
+  - **Writing:** spelling as you type (red lines; the right button
+    suggests), AutoCorrect in English and Arabic (Options, Spelling).
+  - **Attachments:** one click opens a file in its program; pictures show
+    small under the message; Preview (a picture, a PDF) before opening;
+    Save As and Save All start in Downloads.
+  - **Reading:** Ctrl+wheel, Ctrl +/- and a pinch make the text larger
+    (kept); mail is read once opened ("Mark as Unread" stays); the system's
+    notification for new mail and the unread count on the icon.
+  - **Phone:** pull down to check for mail, swipe a message sideways to the
+    next one, the round Compose button, a tap of the motor as a swipe acts.
+  - Tags: changes made here (read, flags, tags, moves) are no longer undone
+    by a sync that read the server before they went out; the Tags menu finds
+    a tag as you type, or makes it.
+  - The signature comes from the web: Gmail's settings, and what Outlook put
+    under the mail you sent last (for new mail and for replies).
+  - Customize Toolbar (right-click the tool bar, or View).
+  - New permissions asked at sign-in: Microsoft `Calendars.ReadWrite` and
+    `MailboxSettings.ReadWrite` (invitations, automatic replies), Google
+    `gmail.settings.basic` (the vacation reply, the signature): accounts
+    added before sign in again for those.
+- **New modules:** `toolcustom` (Customize Toolbar for any app: the buttons
+  there are, the bar's, their order, the labels' look), `spell` (spelling
+  through the system's checker -- Windows' own, Hunspell, Enchant -- and
+  AutoCorrect, English and Arabic; `RichDoc.spell`, `RichDoc.autoCorrect`
+  in the rich text editor), `notify` (the system's notifications: D-Bus,
+  the Windows tray balloon, macOS, Android; the badge), `mailimport`
+  (Outlook Express .dbx and .mbx, mbox, .eml in; mbox and .eml out).
+- **New in the widgets:** `showSnackbar` / `snackbar` (what was just done,
+  and Undo), `revealInPanel` (a panel scrolled so a part of it comes to
+  the top), `downloadsDir`, `htmlView`'s `zoom` (Ctrl+wheel, Ctrl +/-, a
+  pinch; `htmlBlock` too).
+- **Two more UI fonts:** `ufFixedsys`, **Fixedsys Excelsior** (Darien
+  Valentine's 8 x 16 Fixedsys, public domain): its pixels traced into clean
+  outlines (`tools/genfixedsys.py`), crisp on its grid at 100 % and whole
+  multiples, smoothed (Fixedsys Excelsior HD) on HD screens and in large
+  text, monospaced text in it too, bold as Windows drew it, Arabic from
+  Unifont; and `ufOpenSans`, **Open Sans** (SIL OFL 1.1), smooth, its stems
+  fitted at small sizes. In `appearanceSettings`, kept by
+  `storeAppearance`, named "Fixedsys" and "Open Sans" on a canvas;
+  `-d:retroNoFixedsys` / `-d:retroNoOpenSans` leave them out.
+  `builtinUiFonts`, `uiFontKey` and `uiFontOfKey` for an app's own font
+  menu; Ledger has one (View > Font).
+
 ## 0.17.0
 
 - **Retro Mail 1.0** (`examples/mail.nim`, `nimble mail`): Outlook Express 4

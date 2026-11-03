@@ -2,7 +2,7 @@ import std/strutils
 
 # Package
 
-version       = "0.17.0"
+version       = "0.18.0"
 author        = "Sultan Al Isaiee (@foxoman) <sultan@foxoman.net>"
 description   = "Retro Nim UI: a small, fast, dependency-free Windows 3.1 style UI toolkit for business and desktop apps on Windows, macOS, Linux, Android and iOS"
 license       = "MIT"
@@ -41,9 +41,9 @@ task test, "Run the headless tests":
             "test_charts", "test_planning", "test_mapview", "test_view3d", "test_htmlview",
             "test_media", "test_native", "test_canvas2d", "test_pdf", "test_report",
             "test_scroll", "test_apk", "test_xlsx", "test_letters", "test_photo",
-            "test_parallel", "test_textengine", "test_photomore", "test_photopro", "test_photoapp",
+            "test_parallel", "test_textengine", "test_uifonts", "test_photomore", "test_photopro", "test_photoapp",
             "test_photomerge", "test_icc", "test_brushfiles", "test_raw", "test_brushes",
-            "test_adobefiles", "test_deep", "test_gpu", "test_rsa", "test_morecontrols", "test_neural", "test_photopdf", "test_pdfread", "test_googlefonts", "test_filecolumns", "test_blendfast", "test_dock", "test_presets", "test_photocc", "test_photoartistic", "test_photohdr", "test_channelspanel", "test_photodeep", "test_photoanim", "test_photovp", "test_photosvg", "test_otshape", "test_icccmyk", "test_webp", "test_exrgif", "test_rawformats", "test_rscript", "test_psdround", "test_phototemplates", "test_gpucomposite", "test_penmap", "test_systemimage", "test_qrcode", "test_videoenc", "test_jxl", "test_assetstore", "test_svgimport", "test_morepictures", "test_memcache", "test_memsoak", "test_filespeed", "test_filesapp", "test_bigpicture", "test_edgetrace", "test_board", "test_boardapp", "test_http", "test_oauth", "test_secrets", "test_db", "test_mime", "test_htmlmail", "test_richedit", "test_mail"]:
+            "test_adobefiles", "test_deep", "test_gpu", "test_rsa", "test_morecontrols", "test_neural", "test_photopdf", "test_pdfread", "test_googlefonts", "test_filecolumns", "test_blendfast", "test_dock", "test_presets", "test_photocc", "test_photoartistic", "test_photohdr", "test_channelspanel", "test_photodeep", "test_photoanim", "test_photovp", "test_photosvg", "test_otshape", "test_icccmyk", "test_webp", "test_exrgif", "test_rawformats", "test_rscript", "test_psdround", "test_phototemplates", "test_gpucomposite", "test_penmap", "test_systemimage", "test_qrcode", "test_videoenc", "test_jxl", "test_assetstore", "test_svgimport", "test_morepictures", "test_memcache", "test_memsoak", "test_filespeed", "test_filesapp", "test_bigpicture", "test_edgetrace", "test_board", "test_boardapp", "test_http", "test_oauth", "test_secrets", "test_db", "test_mime", "test_htmlmail", "test_richedit", "test_mail", "test_toolcustom", "test_mailextra", "test_spell", "test_mailimport", "test_frame", "test_filedrop", "test_notify"]:
     exec "nim c -r --hints:off tests/" & t & ".nim"
 
 task fuzz, "Feed damaged files to the decoders and random input to the widgets":
@@ -94,8 +94,8 @@ const RetroApps: seq[RetroApp] = @[
    id: "org.retro.board", version: "1.3.1", icon: "examples/assets/board-icon-512.png",
    apk: "--storage --nim:-d:lto", code: 5, small: true),
   (key: "mail", src: "examples/mail.nim", name: "Retro Mail", stem: "RetroMail",
-   id: "org.retro.mail", version: "1.0.0", icon: "examples/assets/mail-icon-512.png",
-   apk: "--permission:INTERNET --nim:-d:lto", code: 1, small: false),
+   id: "org.retro.mail", version: "1.0.2", icon: "examples/assets/mail-icon-512.png",
+   apk: "--permission:INTERNET --permission:POST_NOTIFICATIONS --nim:-d:lto", code: 2, small: false),
   (key: "gallery", src: "examples/gallery.nim", name: "Retro Gallery", stem: "RetroGallery",
    id: "org.retro.gallery", version: "0.17.0", icon: "examples/assets/gallery-icon.png",
    apk: "--permission:INTERNET --permission:VIBRATE --nim:-d:lto --nim:--opt:size", code: 170, small: true),
@@ -138,6 +138,15 @@ proc apkOf(a: RetroApp; extra = "") =
        " --version:" & a.version & " --code:" & $a.code & " " & a.apk &
        " -o:build/" & a.stem & ".apk " & extra
 
+proc frameOpt(): string =
+  ## (the window's frame a desktop build draws: RETRO_FRAME=classic for
+  ## Windows 3.1's, drawn by the app itself; system, or not set, for the
+  ## system's own)
+  case getEnv("RETRO_FRAME")
+  of "classic": "-d:retroFrame=classic "
+  of "", "system": ""
+  else: quit "RETRO_FRAME is classic or system"
+
 proc exeOf(a: RetroApp) =
   ## (an app for Windows from Linux or macOS, with its icon and version:
   ## MinGW's x86_64-w64-mingw32-gcc and -windres; build/win/<Stem>.exe)
@@ -146,7 +155,7 @@ proc exeOf(a: RetroApp) =
   exec "nim c -r -d:release --hints:off tools/winicon.nim " & a.icon & " \"" & a.name & "\" " &
        a.version & " " & res
   exec "nim c -d:release -d:lto --passL:-s " & (if a.small: "--opt:size " else: "") &
-       "--nimcache:\"" & a.nimcacheFor("win") & "\" " &
+       frameOpt() & "--nimcache:\"" & a.nimcacheFor("win") & "\" " &
        "-d:mingw --cpu:amd64 --app:gui --hints:off --passL:" & res &
        " -o:build/win/" & a.stem & ".exe " & a.src
 
@@ -167,7 +176,8 @@ proc appImageOf(a: RetroApp) =
   else:
     echo "(no zig: linked with this computer's glibc; `pip install ziglang` for older systems)"
   exec "nim c -d:release " & cc & "--passL:-s " & (if a.small: "--opt:size " else: "") &
-       "--nimcache:\"" & a.nimcacheFor("appimage") & "\" --hints:off -o:build/linux/" & bin & " " & a.src
+       frameOpt() & "--nimcache:\"" & a.nimcacheFor("appimage") & "\" --hints:off -o:build/linux/" &
+       bin & " " & a.src
   exec "nim c -r -d:release --hints:off tools/appimage.nim build/linux/" & bin & " \"" & a.name &
        "\" " & a.version & " " & a.icon & " build/" & a.stem & "-x86_64.AppImage"
 
@@ -232,7 +242,8 @@ task ndk, "Fetch the Android NDK now (~/.retro/ndk; otherwise fetched by the fir
 task apps, "Build every example app for this computer (build/)":
   mkDir "build"
   for app in ["gallery", "hello", "notepad", "ledger", "filemanager", "charts", "invoice", "native", "photo", "retroboard"]:
-    exec "nim c -d:release -d:strip -d:lto --hints:off -o:build/" & app & " examples/" & app & ".nim"
+    exec "nim c -d:release -d:strip -d:lto " & frameOpt() & "--hints:off -o:build/" & app &
+         " examples/" & app & ".nim"
 
 task dist, "Everything to hand out: the apps for this computer and the Android APKs (build/)":
   exec "nimble apps"

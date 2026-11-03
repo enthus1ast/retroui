@@ -16,6 +16,7 @@
 ## `morecontrols`    range slider, menu and split buttons, tags, autocomplete, knob, accordion
 ## `records`         masked fields, record navigator, property and tree grids, wizards
 ## `desktop`         MDI windows, find and replace, hot keys, the About box
+## `toolcustom`      Customize Toolbar: the user picks a tool bar's buttons
 ## `dock`            docked panels as Photoshop's: tabbed groups, icons, floating palettes
 ## `charts`          21 kinds of business chart, CSV tables, PNG export
 ## `planning`        kanban, Gantt, agenda, org chart, KPI tiles
@@ -47,6 +48,9 @@
 ## `db`              SQLite (compiled in) with full-text search
 ## `mime`            mail messages: reading, writing, charsets, addresses
 ## `richedit`        a rich text editor that reads and writes HTML
+## `spell`           spelling (the system's checker, Hunspell) and AutoCorrect
+## `mailimport`      mail brought in: Outlook Express (.dbx, .mbx), mbox, .eml
+## `notify`          the system's notifications (and the unread count on the icon)
 ## `vault`, `rsa`    encryption with a password, RSA keys
 ## ================  ==========================================================
 ##
@@ -66,9 +70,9 @@ export core, widgets, business, extras, markdown, icons, nerdicons, pixelicons,
        platform, files, docfs, imaging, zip, background, textfile, filewidgets, charts,
        memwatch, thumbcache
 import retro/[records, desktop, planning, view3d, mapview, htmlview, native, media,
-                report, pdf, templates, canvas2d, morecontrols, dock]
+                report, pdf, templates, canvas2d, morecontrols, dock, toolcustom]
 export records, desktop, planning, view3d, mapview, htmlview, native, media,
-       report, pdf, templates, canvas2d, morecontrols, dock
+       report, pdf, templates, canvas2d, morecontrols, dock, toolcustom
 
 template app*(title: string; w, h: int; body: untyped) =
   ## Open a window (`w` x `h`; phones use the whole screen) and run `body`

@@ -46,8 +46,9 @@ package and module are called `retro`.
   pixel grid so it is crisp at 100 %, on HD, 2K and 4K screens and at
   in-between scales (no licence: see "The font" below). **Kawkab Mono** (a
   monospaced Arabic and Latin font), **Retro Sans** (a recreation of MS
-  Sans Serif with Arabic, bitmaps at 100 %) and DejaVu Sans are the other
-  choices
+  Sans Serif with Arabic, bitmaps at 100 %), **Fixedsys Excelsior** (the
+  8 x 16 Fixedsys look, crisp on its pixel grid), DejaVu Sans and **Open
+  Sans** are the other choices
   (`setUiFont`, or the user in `appearanceSettings`). 109 pixel icons in
   the manner of the period. Lists and pages glide when scrolled, and a
   flicked finger keeps them moving.
@@ -158,6 +159,34 @@ Windows .exe, an APK and a macOS .app. Its APKs are signed with the key in
 the secrets `ANDROID_KEY_PEM` and `ANDROID_CERT_DER` (base64 of the files in
 `~/.retro/android`), so a new one installs over the one before.
 
+### The window's frame
+
+A desktop app has the system's own frame, or the one Windows 3.1 had: the
+gray sizing border with dark lines at its corners, the navy title bar (white
+while another window is in front) with the control-menu box at its left and
+the minimize and maximize buttons at its right. The app draws that one
+itself, in a window without the system's frame, and the system still does
+the rest: drag the title bar to move the window (Aero Snap on Windows), the
+border or a corner to size it; a double click or the maximize button
+maximizes it, down to the taskbar; Alt+Space opens the control menu
+(Restore, Move, Size, Minimize, Maximize, Close, the UI's size). The menu bar,
+tool bars and the content move down under it as under a phone's title bar,
+so an app needs no change.
+
+```sh
+RETRO_FRAME=classic nimble mailexe    # Retro Mail for Windows with the 3.1 frame
+RETRO_FRAME=classic nimble apps       # every example (exes and appimages the same way)
+nim c -d:retroFrame=classic app.nim   # by hand (system: the default)
+RETRO_FRAME=system ./app              # when it starts: the system's frame after all
+```
+
+In the app, `setClassicFrame(on)` changes it while it runs and
+`classicFrame()` says which one is on; `appearanceSettings` offers it as
+**Window**, and `storeAppearance` keeps the choice. Windows and X11 have it
+(macOS too, not yet tried on a Mac); Wayland and the phones keep their own.
+A window manager's own keys stay its own: openbox, say, opens its window
+menu for Alt+Space before the app sees it.
+
 ## Your first app
 
 ```nim
@@ -183,8 +212,9 @@ retrokit small hello.nim          # optimized for size, LTO, stripped: about 1.1
 retroapk hello.nim --install      # on a phone in Termux
 ```
 
-For the smallest program add `-d:retroNoW98 -d:retroNoKawkab` (two fonts
-left out: Retro Sans and DejaVu Sans Mono stand in). On Windows from
+For the smallest program add `-d:retroNoW98 -d:retroNoKawkab
+-d:retroNoFixedsys -d:retroNoOpenSans` (four fonts left out, about 670 KB:
+Retro Sans, DejaVu Sans Mono and DejaVu Sans stand in). On Windows from
 Linux: `nim c -d:release -d:useMalloc -d:lto --opt:size --passL:-s -d:mingw
 --cpu:amd64 --app:gui hello.nim`.
 
@@ -393,15 +423,35 @@ CC BY-SA 3.0), regular and bold, with the Arabic of GNU Unifont joined
 and right to left. At 100 % it is drawn from its bitmaps, one screen
 pixel per font pixel, as on a 1992 screen; larger, and on HD, 2K and 4K
 screens, from smoothed outlines of the same shapes, so it stays sharp and
-keeps its character at every size. `setUiFont(ufSmooth)` switches to
+keeps its character at every size. `setUiFont(ufFixedsys)` gives
+**Fixedsys Excelsior**, the Fixedsys look of Windows 3.x and DOS screens:
+Darien Valentine's 8 x 16 font (public domain, CC0; with Kirill Pertsev's
+additions), monospaced, its thousands of characters (Latin, Greek,
+Cyrillic, Hebrew, box drawing...) traced again from their pixels into
+clean outlines by `tools/genfixedsys.py`. At 100 % and whole multiples
+every font pixel is screen pixels, its line 16 pixels as it was; on HD
+screens and in large text it is drawn from smoothed outlines (Fixedsys
+Excelsior HD: diagonals smooth, stems still on the pixels;
+`setHdText(false)` keeps the pixels). Its bold is drawn as Windows drew a
+bitmap font's, each letter again a pixel to the right, and its Arabic is
+Unifont's, the same 8 x 16 cell. `setUiFont(ufOpenSans)` gives **Open
+Sans** (SIL OFL 1.1, `tools/genopensans.py`), a smooth modern font,
+regular and bold, its stems fitted to the pixels at small sizes; Arabic
+comes from DejaVu Sans. `setUiFont(ufSmooth)` switches to
 DejaVu Sans; `loadUiFontFile(path)` to a font of the user's (a .ttf; a
 pixel font is drawn on its grid, crisp) (before `app` for one app's default, or at any time);
 `uiFont()` tells which is on; `appearanceSettings` puts the choice in an
-app's Settings and `storeAppearance` / `restoreAppearance` keep it.
-Monospaced text (code, hex) is DejaVu Sans Mono with both. The fonts are
+app's Settings and `storeAppearance` / `restoreAppearance` keep it
+(`builtinUiFonts` lists the fonts for a menu of an app's own, `uiFontKey` /
+`uiFontOfKey` name them in its settings).
+Monospaced text (code, hex) is Kawkab Mono with Kawkab Mono, Fixedsys with
+Fixedsys, DejaVu Sans Mono with the others. The fonts are
 also in `src/retro/fonts` as TrueType files for other programs:
 `RetroSans.ttf`, `RetroSansBold.ttf` and `RetroSansArabic.ttf` (the
-bitmaps as square pixels) and `RetroSansHD*.ttf` (the smoothed outlines).
+bitmaps as square pixels) and `RetroSansHD*.ttf` (the smoothed outlines),
+`FixedsysExcelsior.ttf` and `FixedsysExcelsiorHD.ttf` (12 of its pixels
+to the em: at 12 pixels per em, 9 points, one font pixel is one screen
+pixel), `OpenSans.ttf` and `OpenSansBold.ttf`.
 The Arabic is its own file because its licence (OFL) and that of the
 Latin letters (CC BY-SA) do not allow one merged file; the toolkit joins
 them when it draws.
@@ -804,6 +854,9 @@ case dropTarget(lane, "cards")          # dsOver: draw it highlighted
 of dsDropped: moveCard(ui.drag.items, laneId)
 else: discard
 
+# files dropped from Explorer, Nautilus... (Windows, X11): attach them
+for path in fileDropTarget(attachmentsBox): attach(path)
+
 let t = tabStrip(names, cur, closable = true, addButton = true)  # browser tabs
 if t.closed >= 0: names.delete(t.closed)
 toast("Copied 12 items", title = "Files")    # a yellow Windows 95 balloon
@@ -991,7 +1044,7 @@ drawing (`fill`, `box`, `line`, `text`, `disc`, `polygon`…).
 
 ![Retro Mail: All Inboxes in threads, tags, the conversation in the preview pane](docs/mail.png)
 
-`examples/mail.nim` is **Retro Mail 1.0**: Outlook Express 4 to look at and to
+`examples/mail.nim` is **Retro Mail 1.0.2**: Outlook Express 4 to look at and to
 use, with what the new Outlook does, for Microsoft 365, Outlook.com and Gmail.
 It is the toolkit's network modules at work:
 
@@ -1010,8 +1063,12 @@ It is the toolkit's network modules at work:
 
 Threads with + and - boxes, Focused and Other, tags in their colors,
 flags, pin, snooze, quick replies, send later, the calendar, people, to do
-and notes; on a phone, swipe a message right to archive it, left to delete
-it. Adding an account is your address and Enter: the browser opens the
+and notes; Undo and Undo Send, many messages at once, Quick Steps, Sweep,
+Follow Up, Message Rules, meeting invitations, Automatic Replies, Local
+Folders (Outlook Express's mail imported), spelling and AutoCorrect in
+English and Arabic, Summarize and Translate with your own key; on a phone,
+swipe a message right to archive it, left to delete it, hold one to choose
+several, pull to refresh. Adding an account is your address and Enter: the browser opens the
 right sign-in page, done (`docs/retromail.md`: the app registrations a build
 carries, made once).
 
@@ -1589,6 +1646,7 @@ needed. `nimble test` runs them all; `nimble fuzz` runs the fuzzers.
 | `test_widgets` | clicks, slide-off, default button, typing and the clipboard, Tab and Space, mnemonics, lists, modal dialogs, pixels, frame skipping, hover (mouse yes, finger no), Back versus Exit |
 | `test_business` | dates, number formats, sorting; the grid (selection, multi-select, sorting, editing, resizing, every cell kind, cell colours, record indicator, totals); tree; icon view; calendar and date picker; check list; number fields; auto-complete; splitter; dialogs |
 | `test_text` | fonts, kerning, Arabic joining and lam-alef, bidi order, the rasterizer, sizes, rows, `spring`, `adaptive`, forms, page scrolling both ways with the standard scroll bars, Tab scrolling into view, Markdown |
+| `test_uifonts` | Fixedsys Excelsior and Open Sans as the UI's font: their lines, Fixedsys on its pixel grid at 100 % and 2x (pixels and HD), bold, Arabic from the other faces, the canvas's font names, kept and brought back (also with `-d:retroNoFixedsys -d:retroNoOpenSans`) |
 | `test_input` | every kind of input on the widgets that take it: the slide switch, the tab strip, chips, the bottom bar, the menu key, the mouse's side buttons, a tall dialog on a touch screen |
 | `test_files` | listings (quick and full), natural sorting, copy / move / delete / zip / unzip jobs with conflicts, links and cancelling, JPEG decoding, big text and hex files, worker threads, thousands of damaged files, zip bombs, names that climb out |
 | `test_apps` | settings rows, appearance, avatars, steps, pages, banners, the bottom bar, the folder model, the file list, thumbnails, the preview, text and hex views, properties, file jobs |
@@ -1642,8 +1700,8 @@ high-DPI screens, Arabic text, phones, threads.
 
 **Can it look less retro?**
 Yes. `ui.theme` takes one of eight colour schemes or your own `Theme`;
-`setUiFont(ufSmooth)` trades Kawkab Mono for DejaVu Sans (`ufRetro`:
-the 3.1 font);
+`setUiFont(ufOpenSans)` or `setUiFont(ufSmooth)` trades MS W98 UI for
+Open Sans or DejaVu Sans (`ufRetro`: the 3.1 font; `ufFixedsys`: Fixedsys);
 `retroIcons = false` uses the Nerd Fonts icons; `appearanceSettings()`
 gives users the choices. Cards, banners, chips, bottom bars, floating
 buttons and switches are there for app-style screens.
