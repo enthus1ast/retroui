@@ -111,6 +111,9 @@ proc optionsDialog() =
                 signInAgain(accountsC[optAcct])
               if button("&Remove", w = dp(140), enabled = optAcct in 0 ..< accountsC.len):
                 askRemove = true
+              if button("&Organisation's App...", w = dp(140)):
+                optOpen = false
+                ownRegistration()
           if optAcct in 0 ..< accountsC.len:
             let a = accountsC[optAcct]
             label "Name shown to others: " & (if a.name.len > 0: a.name else: "(none)")

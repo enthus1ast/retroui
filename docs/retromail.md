@@ -32,13 +32,15 @@ Microsoft 365 (work or school), Outlook.com and Gmail, side by side.
 
 ## Adding an account
 
-File > Add Account (it opens by itself the first time): click **Microsoft
-365 or Outlook.com** or **Gmail or Google Workspace**. Your browser opens
-the service's own sign-in page; sign in, allow Retro Mail, and the window
-goes on by itself. That is all.
+File > Add Account (it opens by itself the first time): type your e-mail
+address and press Enter. Retro Mail finds where your mail is (Outlook.com,
+Hotmail and Gmail by name; a company's domain by its Microsoft 365 tenant or
+its mail servers), and your browser opens that service's own sign-in page,
+with your address filled in. Sign in, allow Retro Mail, and the window goes
+on by itself. That is all.
 
-(An organisation that allows only apps it registered itself: *Advanced:
-my organisation's own app registration* takes its Application ID.)
+(An organisation that allows only apps it registered itself: Tools >
+Options > Accounts > *Organisation's App* takes its Application ID.)
 
 ## For whoever builds it: the app registrations, once
 

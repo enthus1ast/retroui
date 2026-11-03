@@ -6,8 +6,9 @@
   to look at and to use, with what the new Outlook does, for Microsoft 365,
   Outlook.com and Gmail. Signed in in the browser (the services' own pages:
   no password typed here, the tokens kept encrypted); Microsoft Graph and
-  the Gmail API only. Adding an account is one click: Microsoft or
-  Google, the browser opens its sign-in page, done (the app registrations
+  the Gmail API only. Adding an account is your address and Enter: Retro
+  Mail finds the service (by name, by the domain's Microsoft tenant, by its
+  MX records) and the browser opens its sign-in page, done (the app registrations
   are built in: `examples/mail/appids.nim` or CI secrets; `docs/retromail.md`
   says how to make them once). Everything is kept in a local SQLite store: the list opens at
   once, search answers offline in milliseconds (`from:`, `tag:`, `is:`,

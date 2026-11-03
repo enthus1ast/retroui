@@ -174,6 +174,10 @@ class H(BaseHTTPRequestHandler):
         try:
             with LOCK:
                 if path.startswith("/test/"): return self.test(meth, path, q)
+                if path == "/dns/resolve":
+                    name = q.get("name", [""])[0]
+                    ans = [{"name": name, "type": 15, "data": "1 aspmx.l.google.com."}] if name.endswith(".example") or name == "foxoman.net" else []
+                    return self.send(200, {"Status": 0, "Answer": ans})
                 if path.startswith("/ms/") or path.startswith("/g/"): return self.oauth(meth, path, q)
                 if path.startswith("/upload-session/"): return self.upload(meth, path)
                 if path.startswith("/v1.0/"): return self.graph(meth, path[5:], q)
@@ -214,6 +218,11 @@ class H(BaseHTTPRequestHandler):
 
     # ---- OAuth ----
     def oauth(self, meth, path, q):
+        if path.endswith("/v2.0/.well-known/openid-configuration"):
+            dom = path.split("/")[2]
+            if dom in ("contoso.com", "organizations", "common"):
+                return self.send(200, {"issuer": "https://login.microsoftonline.com/x/v2.0"})
+            return self.send(400, {"error": "invalid_tenant"})
         if path.endswith("/authorize") or path == "/g/auth":
             for k in ("client_id", "redirect_uri", "state", "code_challenge", "scope"):
                 if k not in q: return self.send(400, raw=("missing " + k).encode(), ctype="text/plain")

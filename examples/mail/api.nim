@@ -21,6 +21,33 @@ proc gcalBase*(): string = endpoint("gcal", "https://www.googleapis.com/calendar
 proc msLoginBase*(): string = endpoint("mslogin", "https://login.microsoftonline.com")
 proc gAuthUrl*(): string = endpoint("gauth", "https://accounts.google.com/o/oauth2/v2/auth")
 proc gTokenUrl*(): string = endpoint("gtoken", "https://oauth2.googleapis.com/token")
+proc dohBase*(): string = endpoint("doh", "https://dns.google/resolve")
+
+proc detectService*(email: string): int {.gcsafe.} =
+  ## Where an address's mail is: 0 Microsoft (365 or Outlook.com), 2 Google
+  ## (Gmail or Workspace), -1 not known. Well-known domains at once; else the
+  ## domain's Microsoft tenant (OpenID discovery), else its MX records
+  ## (Google Public DNS).
+  let at = email.rfind('@')
+  if at < 0: return -1
+  let domain = email[at + 1 .. ^1].strip.toLowerAscii
+  if domain.len < 3 or '.' notin domain: return -1
+  if domain in ["gmail.com", "googlemail.com"]: return 2
+  for p in ["outlook.", "hotmail.", "live.", "msn.", "windowslive.", "passport."]:
+    if domain.startsWith(p): return 0
+  let ms = httpRequest("GET", msLoginBase() & "/" & urlEncode(domain) &
+                       "/v2.0/.well-known/openid-configuration", timeoutSec = 8)
+  if ms.status == 200: return 0
+  let r = httpRequest("GET", dohBase() & "?name=" & urlEncode(domain) & "&type=MX",
+                      [("Accept", "application/dns-json")], timeoutSec = 8)
+  if r.ok:
+    try:
+      for a in parseJson(r.body){"Answer"}.getElems:
+        let mx = a{"data"}.getStr.toLowerAscii
+        if "google.com" in mx or "googlemail.com" in mx: return 2
+        if "outlook.com" in mx or "office365" in mx: return 0
+    except CatchableError: discard
+  -1
 
 proc fail*(r: HttpResponse; what: string) {.noreturn.} =
   ## Raises the error a failed answer stands for, with the service's message.

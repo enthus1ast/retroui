@@ -8,7 +8,8 @@
 
 var
   wizOpen = false
-  wizStep = 0               ## 0 choose, 1 an app registration of your own, 2 signing in, 3 done
+  wizStep = 0               ## 0 your address, 4 looking it up, 5 which service, 2 signing in,
+                            ## 3 done, 1 an organisation's own app registration (from Options)
   wizKind = 0               ## 0 Microsoft (work, school or personal), 2 Google
   wizName, wizMail: string
   wizOwn = false            ## an app registration of your own, not the built-in one
@@ -29,6 +30,20 @@ proc testBrowserThread(url: string) {.thread.} =
 
 var testBrowserT: Thread[string]
 
+# finding out where an address's mail is, off the window's thread
+var detectT: Thread[string]
+var detectCh: Channel[int]
+var detectOpen = false
+
+proc detectMain(email: string) {.thread.} =
+  {.gcsafe.}: detectCh.send(detectService(email))
+
+proc startDetect(email: string) =
+  if not detectOpen:
+    detectCh.open()
+    detectOpen = true
+  createThread(detectT, detectMain, email)
+
 proc testBrowser(url: string) {.gcsafe.} =
   {.gcsafe.}: createThread(testBrowserT, testBrowserThread, url)
 
@@ -48,6 +63,7 @@ proc wizSecretNow(): string =
 
 proc openWizard() =
   wizOpen = true
+  ui.textFocusWanted = true
   wizStep = 0
   wizAccount = 0
   wizError = ""
@@ -71,15 +87,22 @@ proc startSignIn() =
 
 proc chooseService(kind: int) =
   wizKind = kind
-  if builtinId(kind).len == 0:
-    # (a build without its own registration: yours, once)
-    wizOwn = true
-    wizClient = pref(if kind == 2: "gClient" else: "msClient")
-    wizTenant = if kind == 2: "" else: pref("msTenant")
-    wizSecret = if kind == 2: loadSecret(secretApp, "google-client-secret") else: ""
-    wizStep = 1
+  if builtinId(kind).len == 0 and not wizOwn:
+    wizError = "This copy of Retro Mail was built without its " &
+               (if kind == 2: "Google" else: "Microsoft") & " app registration, so it " &
+               "cannot open the sign-in page yet (docs/retromail.md: for whoever builds it)."
+    wizStep = 5
   else:
     startSignIn()
+
+proc ownRegistration*() =
+  ## (Options > Accounts: an organisation that allows only its own apps)
+  openWizard()
+  wizOwn = true
+  wizKind = 0
+  wizClient = pref("msClient")
+  wizTenant = pref("msTenant")
+  wizStep = 1
 
 proc signInAgain(acc: Account) =
   openWizard()
@@ -161,7 +184,24 @@ proc serviceButton(px, title, detail: string): bool =
   if hit.focused: focusDots(inset(r, 4))
   hit.clicked
 
+proc lookUp() =
+  ## Next on the address: find its service, then sign in.
+  let e = wizMail.strip
+  if '@' notin e or '.' notin e.split('@')[^1]:
+    wizError = "That does not look like an e-mail address."
+    return
+  wizError = ""
+  wizStep = 4
+  startDetect(e)
+
 proc wizardDialog() =
+  if wizStep == 4 and detectOpen:
+    let (ok, kind) = detectCh.tryRecv()
+    if ok:
+      joinThread(detectT)
+      if kind < 0: wizStep = 5
+      else: chooseService(kind)
+    else: wakeIn(200)
   if wizFlow != nil and wizStep == 2:
     case wizFlow.state
     of osDone:
@@ -181,25 +221,38 @@ proc wizardDialog() =
         case wizStep
         of 0:
           label "Add an E-mail Account", bold = true
-          paragraph "Where is your mail? Retro Mail opens the service's own sign-in page " &
-                    "in your browser: sign in there, allow Retro Mail, and come back. It " &
-                    "never sees your password."
+          paragraph "Type your e-mail address. Retro Mail finds where your mail is and " &
+                    "opens its sign-in page in your browser: sign in there and allow Retro " &
+                    "Mail. It never sees your password."
+          space()
+          form dp(110):
+            field "&E-mail address:": edit wizMail
+          label "Microsoft 365, Outlook.com, Hotmail, Gmail or Google Workspace.",
+                color = ui.theme.gray
+          if wizError.len > 0:
+            space()
+            label wizError, color = rgb(200, 0, 0)
+        of 4:
+          label "Add an E-mail Account", bold = true
+          space()
+          row:
+            spinner()
+            label "Finding where the mail of " & wizMail.strip & " is...", bold = true
+        of 5:
+          label "Where Is Your Mail?", bold = true
+          if wizError.len > 0:
+            paragraph wizError
+          else:
+            paragraph "Retro Mail could not tell from " & wizMail.strip & ". Choose its service:"
           space()
           if serviceButton(pxGlobe, "Microsoft 365 or Outlook.com",
                            "Work, school, Outlook.com, Hotmail, Live"):
+            wizError = ""
             chooseService(0)
           space()
           if serviceButton(pxMail, "Gmail or Google Workspace", "Your Google account"):
+            wizError = ""
             chooseService(2)
-          space()
-          form dp(130):
-            field "E-mail (if you like):": edit wizMail
-          label "It fills in the sign-in page for you.", color = ui.theme.gray
-          if link("Advanced: my organisation's own app registration..."):
-            wizOwn = true
-            wizClient = pref("msClient")
-            wizTenant = pref("msTenant")
-            wizStep = 1
         of 1:
           label (if wizKind == 2: "Your Google App" else: "Your Organisation's App"), bold = true
           if wizKind == 2:
@@ -247,11 +300,13 @@ proc wizardDialog() =
     separator()
     row:
       space available() - 3 * (dp(84) + Gap) + Gap
-      if button("< &Back", enabled = wizStep in 1 .. 2 and wizFlow == nil and wizAccount == 0,
+      if button("< &Back", enabled = wizStep in {1, 2, 5} and wizFlow == nil and wizAccount == 0,
                 w = dp(84)):
         wizStep = 0
         wizError = ""
-      if wizStep == 1:
+      if wizStep == 0:
+        if button("&Next >", isDefault = true, enabled = wizMail.strip.len > 3, w = dp(84)): lookUp()
+      elif wizStep == 1:
         let ok = if wizKind == 2: wizClient.strip.len > 10 and wizSecret.strip.len > 4
                  else: wizClient.strip.len > 10
         if button("&Sign In", isDefault = true, enabled = ok, w = dp(84)): startSignIn()
