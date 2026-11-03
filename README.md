@@ -856,6 +856,8 @@ else: discard
 
 # files dropped from Explorer, Nautilus... (Windows, X11): attach them
 for path in fileDropTarget(attachmentsBox): attach(path)
+# ... and dragged out to them (Windows, X11, macOS): made only once dragged
+fileDragSource(iconRect, proc (): seq[string] = @[saveToTemp(att)])
 
 let t = tabStrip(names, cur, closable = true, addButton = true)  # browser tabs
 if t.closed >= 0: names.delete(t.closed)
@@ -1044,7 +1046,7 @@ drawing (`fill`, `box`, `line`, `text`, `disc`, `polygon`…).
 
 ![Retro Mail: All Inboxes in threads, tags, the conversation in the preview pane](docs/mail.png)
 
-`examples/mail.nim` is **Retro Mail 1.0.2**: Outlook Express 4 to look at and to
+`examples/mail.nim` is **Retro Mail 1.0.3**: Outlook Express 4 to look at and to
 use, with what the new Outlook does, for Microsoft 365, Outlook.com and Gmail.
 It is the toolkit's network modules at work:
 
@@ -1066,7 +1068,10 @@ flags, pin, snooze, quick replies, send later, the calendar, people, to do
 and notes; Undo and Undo Send, many messages at once, Quick Steps, Sweep,
 Follow Up, Message Rules, meeting invitations, Automatic Replies, Local
 Folders (Outlook Express's mail imported), spelling and AutoCorrect in
-English and Arabic, Summarize and Translate with your own key; on a phone,
+English and Arabic, Summarize and Translate with your own key, Print with a
+preview, Properties and Message Source, Find Message, Search Folders,
+Unsubscribe, Block Sender, Ignore Conversation, My Templates, the new-mail
+sound; on a phone,
 swipe a message right to archive it, left to delete it, hold one to choose
 several, pull to refresh. Adding an account is your address and Enter: the browser opens the
 right sign-in page, done (`docs/retromail.md`: the app registrations a build

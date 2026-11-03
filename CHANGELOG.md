@@ -1,5 +1,63 @@
 # Changes
 
+## 0.19.0
+
+- **Retro Mail 1.0.3:**
+  - **Print** (File, Print, Ctrl+P): the message as Outlook Express printed
+    it -- From, Sent, To, Subject, a line, the text and its pictures --
+    seen first, then printed or saved as a PDF.
+  - **Properties** (Alt+Enter) with the message's Internet headers, and
+    **Message Source** (View, Ctrl+F3), as in Outlook Express; Local Folders
+    messages too.
+  - **Find Message** (Edit, Ctrl+Shift+F): Outlook Express's dialog -- from,
+    to, subject, words, received before and after, an attachment, flagged,
+    unread, where to look.
+  - **Search Folders:** a search kept in the folder list ("Save as Search
+    Folder" over the results), run again each time it is opened.
+  - **Newsletters:** Unsubscribe in one click (RFC 8058 one-click, else a
+    message to the list's address, else its page), Block Sender (to Junk,
+    now and from now on), **Ignore Conversation** (to Deleted Items, with
+    its replies as they come).
+  - **My Templates** while writing (Insert, or the Templates button): start
+    from one, or keep the message being written as one.
+  - View, Current View, **Hide Read Messages**; Options, **Read all messages
+    in plain text**; pictures from the web: **Trust this sender**.
+  - **The sound of new mail** (Options, General): a chime, a ding, the old
+    beep or a sound file of your own.
+  - Imported newsletters no longer show their style sheet as the preview.
+  - **Events and meetings** made, changed and deleted in the calendar, in
+    both Microsoft 365 and Gmail: New Event (or a double click on a time),
+    a double click on an event to change it, a drag to move it; title,
+    start and end or all day, location, attendees (invited by the services
+    themselves), a Teams meeting or Google Meet (*Join*), repeat, reminder,
+    notes; only this event or the whole series; a meeting you organize is
+    cancelled for its attendees when deleted. Message, New Meeting invites
+    the people of a message. Google asks for `calendar.events` now (in place
+    of `calendar.readonly`): Gmail accounts sign in again once.
+  - **New mail while it is closed** (Android): a check of the system every
+    15 minutes or so tells it in a notification and keeps the count on the
+    icon; mail is told once, by the window or by the check.
+- `platform`: `-d:retroAppFont=path/X-Regular.ttf` builds a font into an
+  app (its bold found beside it, or `-d:retroAppFontBold`); it is the UI's
+  font unless the user picks another. The bold is found when building for
+  Windows from Linux too.
+- `typeset`: an Arabic letter in its isolated form that a font lacks is
+  drawn with the font's plain letter (fonts that map only the plain one).
+- **Files dragged out of the window** to the system's file manager, the
+  desktop or another program (Windows: OLE; X11: XDND; macOS: a dragging
+  session): `fileDragSource(r, paths)` (the files made only once dragged),
+  `dragFilesOut`, and `startDrag(..., files = ...)` -- the toolkit's own drag
+  becomes the system's when it leaves the window, and comes back.
+  uirelays: `startFileDragOut`, `uriListOfFiles`, `hdropOfFiles`. Retro
+  Mail: attachments and messages (as .eml files) dragged out.
+- **New module** `bgcheck`: work an app does while it is closed -- a check
+  the system runs every so often with no window (Android's JobScheduler:
+  `onBackgroundCheck`, `scheduleBackgroundCheck`, `inBackgroundCheck`);
+  `retroapk --background` adds the job to the APK.
+- uirelays (Android): a process started by a job of the system, with no
+  activity, runs the app's start for its check; an activity opened later
+  carries on from there.
+
 ## 0.18.0
 
 - **Retro Mail 1.0.2:**
