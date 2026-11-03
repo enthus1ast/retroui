@@ -1,12 +1,22 @@
 ## Web pages and HTML in the window.
 ##
-## - `htmlView`, `htmlBlock`: a safe subset of HTML -- headings,
-##   paragraphs, bold, italic, underline, strike, code, marked and colored
-##   text, links, line breaks, rules, lists (nested), quotes, preformatted
-##   text, tables, pictures (files next to the page), definition lists --
-##   read by a forgiving parser and drawn with the kit's Markdown renderer.
-##   Scripts, styles, frames and forms are left out entirely: no page can
-##   run code or reach the network.
+## - `htmlView`, `htmlBlock`: HTML as mail and help pages have it, laid out
+##   by the kit itself (`htmllayout`): style sheets and `style` attributes
+##   (`htmlcss`), the old attributes (`bgcolor`, `width`, `align`,
+##   `cellpadding`, `<font>`...), blocks with margins, padding, borders and
+##   backgrounds, tables with real column widths (nested as newsletters
+##   nest them), floats, lists, quotes as mail apps show replies, pictures
+##   made to fit, right-to-left paragraphs. What a mail hides (a
+##   newsletter's "preheader") stays hidden. Scrolls with the wheel, a
+##   finger, the scroll bar and the keys; links show the hand and are
+##   reported when clicked; text is selected with the mouse and copied
+##   with Ctrl+C (Ctrl+A: all of it).
+##   No page can run code or reach the network: scripts are never run,
+##   forms are left out, and pictures come from the page itself (`data:`),
+##   from files next to it (`baseDir`, never outside it) or from the app
+##   (`images`): what is not there is listed in `HtmlEvent.wantedImages`
+##   for the app to fetch (then `htmlImagesChanged`).
+## - `htmlToText`: the plain text of a mail; `htmlToMarkdown`, `htmlTitle`.
 ## - `webView`: a web page. On Android it is the system's WebView (the
 ##   browser engine of the phone) placed over the widget; elsewhere local
 ##   pages (`file://`, paths, `html:` text) are shown with `htmlView`, and
@@ -16,348 +26,46 @@
 ##   let ev = htmlView(readFile("help/index.html"), baseDir = "help")
 ##   if ev.link.len > 0: discard openUrl(ev.link)
 ##
+##   # a mail: its pictures from the app (cid: parts, the web when allowed)
+##   let m = htmlView(body, key = "mail", images = proc (src: string): Bitmap =
+##     pictures.getOrDefault(src))
+##   for src in m.wantedImages: fetchLater(src)   # ... then htmlImagesChanged()
+##
 ##   let w = webView("https://nim-lang.org", key = "docs")
 ##   if w.back: requestClose()      # Back with no page before (Android)
 
-import std/[strutils, unicode, tables, os, hashes, times]
-import core, widgets, markdown, pixelicons, nerdicons
-import uirelays/services
+import std/[strutils, unicode, tables, os, hashes, times, base64]
+import core, widgets, markdown, pixelicons, nerdicons, imaging, htmldom, htmllayout, htmlcss
+import webp, gifanim
+import uirelays/[services, input]
+
+export htmldom.decodeEntities, htmldom.htmlEscape
 
 template th: untyped = ui.theme
 
 # ---- limits: what a hostile page can cost ---------------------------------------------------
 
 const
-  MaxHtml = 4_000_000        ## bytes of HTML read (the rest is left out)
-  MaxDepth = 96              ## elements in elements deeper than this are taken flat
-  MaxNodes = 250_000         ## elements and texts
-  MaxAttrs = 32              ## attributes read per element
   MaxOut = 6_000_000         ## bytes of Markdown made
   MaxNest = 10               ## lists and quotes in each other
-  MaxCols = 50               ## table columns
-  MaxRows = 5000             ## table rows
-
-# ---- entities -----------------------------------------------------------------------------------
-
-const namedEntities = {
-  "amp": "&", "lt": "<", "gt": ">", "quot": "\"", "apos": "'", "nbsp": "\u00A0",
-  "copy": "©", "reg": "®", "trade": "™", "hellip": "…", "mdash": "—", "ndash": "–",
-  "laquo": "«", "raquo": "»", "lsaquo": "‹", "rsaquo": "›", "lsquo": "‘",
-  "rsquo": "’", "sbquo": "‚", "ldquo": "“", "rdquo": "”", "bdquo": "„",
-  "bull": "•", "middot": "·", "times": "×", "divide": "÷", "deg": "°",
-  "plusmn": "±", "micro": "µ", "para": "¶", "sect": "§", "euro": "€", "pound": "£",
-  "yen": "¥", "cent": "¢", "curren": "¤", "larr": "←", "rarr": "→", "uarr": "↑",
-  "darr": "↓", "harr": "↔", "lArr": "⇐", "rArr": "⇒", "hArr": "⇔", "crarr": "↵",
-  "check": "✓", "cross": "✗", "frac12": "½", "frac14": "¼", "frac34": "¾",
-  "sup1": "¹", "sup2": "²", "sup3": "³", "ordf": "ª", "ordm": "º", "iexcl": "¡",
-  "iquest": "¿", "shy": "\u00AD", "ensp": "\u2002", "emsp": "\u2003",
-  "thinsp": "\u2009", "zwj": "\u200D", "zwnj": "\u200C", "lrm": "\u200E",
-  "rlm": "\u200F", "dagger": "†", "Dagger": "‡", "permil": "‰", "prime": "′",
-  "Prime": "″", "oline": "‾", "frasl": "⁄", "minus": "−", "lowast": "∗",
-  "infin": "∞", "ne": "≠", "le": "≤", "ge": "≥", "asymp": "≈", "equiv": "≡",
-  "sum": "∑", "prod": "∏", "radic": "√", "part": "∂", "int": "∫", "forall": "∀",
-  "exist": "∃", "empty": "∅", "nabla": "∇", "isin": "∈", "notin": "∉", "ni": "∋",
-  "prop": "∝", "and": "∧", "or": "∨", "cap": "∩", "cup": "∪", "there4": "∴",
-  "sim": "∼", "cong": "≅", "sub": "⊂", "sup": "⊃", "sube": "⊆", "supe": "⊇",
-  "oplus": "⊕", "otimes": "⊗", "perp": "⊥", "sdot": "⋅", "lceil": "⌈",
-  "rceil": "⌉", "lfloor": "⌊", "rfloor": "⌋", "lang": "⟨", "rang": "⟩", "loz": "◊",
-  "spades": "♠", "clubs": "♣", "hearts": "♥", "diams": "♦", "not": "¬",
-  "macr": "¯", "acute": "´", "cedil": "¸", "uml": "¨", "brvbar": "¦",
-  "Agrave": "À", "Aacute": "Á", "Acirc": "Â", "Atilde": "Ã", "Auml": "Ä",
-  "Aring": "Å", "AElig": "Æ", "Ccedil": "Ç", "Egrave": "È", "Eacute": "É",
-  "Ecirc": "Ê", "Euml": "Ë", "Igrave": "Ì", "Iacute": "Í", "Icirc": "Î",
-  "Iuml": "Ï", "ETH": "Ð", "Ntilde": "Ñ", "Ograve": "Ò", "Oacute": "Ó",
-  "Ocirc": "Ô", "Otilde": "Õ", "Ouml": "Ö", "Oslash": "Ø", "Ugrave": "Ù",
-  "Uacute": "Ú", "Ucirc": "Û", "Uuml": "Ü", "Yacute": "Ý", "THORN": "Þ",
-  "szlig": "ß", "agrave": "à", "aacute": "á", "acirc": "â", "atilde": "ã",
-  "auml": "ä", "aring": "å", "aelig": "æ", "ccedil": "ç", "egrave": "è",
-  "eacute": "é", "ecirc": "ê", "euml": "ë", "igrave": "ì", "iacute": "í",
-  "icirc": "î", "iuml": "ï", "eth": "ð", "ntilde": "ñ", "ograve": "ò",
-  "oacute": "ó", "ocirc": "ô", "otilde": "õ", "ouml": "ö", "oslash": "ø",
-  "ugrave": "ù", "uacute": "ú", "ucirc": "û", "uuml": "ü", "yacute": "ý",
-  "thorn": "þ", "yuml": "ÿ", "OElig": "Œ", "oelig": "œ", "Scaron": "Š",
-  "scaron": "š", "Yuml": "Ÿ", "fnof": "ƒ", "circ": "ˆ", "tilde": "˜",
-  "Alpha": "Α", "Beta": "Β", "Gamma": "Γ", "Delta": "Δ", "Epsilon": "Ε",
-  "Zeta": "Ζ", "Eta": "Η", "Theta": "Θ", "Iota": "Ι", "Kappa": "Κ",
-  "Lambda": "Λ", "Mu": "Μ", "Nu": "Ν", "Xi": "Ξ", "Omicron": "Ο", "Pi": "Π",
-  "Rho": "Ρ", "Sigma": "Σ", "Tau": "Τ", "Upsilon": "Υ", "Phi": "Φ", "Chi": "Χ",
-  "Psi": "Ψ", "Omega": "Ω", "alpha": "α", "beta": "β", "gamma": "γ",
-  "delta": "δ", "epsilon": "ε", "zeta": "ζ", "eta": "η", "theta": "θ",
-  "iota": "ι", "kappa": "κ", "lambda": "λ", "mu": "μ", "nu": "ν", "xi": "ξ",
-  "omicron": "ο", "pi": "π", "rho": "ρ", "sigmaf": "ς", "sigma": "σ", "tau": "τ",
-  "upsilon": "υ", "phi": "φ", "chi": "χ", "psi": "ψ", "omega": "ω"}.toTable
-
-const legacyEntities = ["amp", "lt", "gt", "quot", "nbsp", "copy", "reg"]
-  ## named without the ';' in old pages
-
-proc decodeEntities*(t: string): string =
-  ## `t` with its character references ("&amp;", "&#169;", "&#xA9;")
-  ## replaced by the characters.
-  if '&' notin t: return t
-  result = newStringOfCap(t.len)
-  var i = 0
-  while i < t.len:
-    let ch = t[i]
-    if ch != '&':
-      result.add ch
-      inc i
-      continue
-    var j = i + 1
-    if j < t.len and t[j] == '#':
-      inc j
-      var hex = false
-      if j < t.len and t[j] in {'x', 'X'}:
-        hex = true
-        inc j
-      var v = 0
-      var n = 0
-      while j < t.len and n < 8 and (if hex: t[j] in HexDigits else: t[j] in Digits):
-        v = v * (if hex: 16 else: 10) +
-            (if t[j] in Digits: ord(t[j]) - ord('0')
-             else: ord(t[j].toLowerAscii) - ord('a') + 10)
-        inc j
-        inc n
-      if n == 0:
-        result.add ch
-        inc i
-        continue
-      if j < t.len and t[j] == ';': inc j
-      if v == 0 or v > 0x10FFFF or v in 0xD800 .. 0xDFFF: v = 0xFFFD
-      result.add $Rune(v)
-      i = j
-      continue
-    var name = ""
-    while j < t.len and name.len < 32 and t[j].isAlphaNumeric:
-      name.add t[j]
-      inc j
-    if j < t.len and t[j] == ';' and namedEntities.hasKey(name):
-      result.add namedEntities[name]
-      i = j + 1
-    elif name in legacyEntities:
-      result.add namedEntities[name]
-      i = j
-    else:
-      result.add ch
-      inc i
-
-proc htmlEscape*(s: string): string =
-  ## `s` safe to put in HTML text: & < > " escaped.
-  result = newStringOfCap(s.len + 8)
-  for c in s:
-    case c
-    of '&': result.add "&amp;"
-    of '<': result.add "&lt;"
-    of '>': result.add "&gt;"
-    of '"': result.add "&quot;"
-    else: result.add c
-
-# ---- the document tree ------------------------------------------------------------------------
-
-type
-  HNode = ref object
-    tag: string                          ## "" for a text
-    text: string
-    attrs: seq[(string, string)]
-    kids: seq[HNode]
-
-proc attr(n: HNode; name: string): string =
-  for (k, v) in n.attrs:
-    if k == name: return v
+  MaxCols = 50               ## table columns (in Markdown)
+  MaxRows = 5000             ## table rows (in Markdown)
+  MaxPicture = 2048          ## a picture is made no bigger than this
+  MaxDataUri = 12_000_000    ## bytes of a `data:` picture read
 
 const
-  voidTags = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link",
-              "meta", "param", "source", "track", "wbr", "keygen", "frame",
-              "basefont", "isindex"]
-  rawTags = ["script", "style", "textarea", "title", "xmp", "iframe", "noembed",
-             "noframes", "plaintext"]
   skipTags = ["head", "script", "style", "template", "iframe", "object", "embed",
               "svg", "math", "canvas", "video", "audio", "form", "select", "button",
               "textarea", "datalist", "dialog", "map", "frameset", "frame", "applet",
               "meta", "link", "base", "noembed", "noframes", "title", "xmp", "option",
               "optgroup", "label", "output", "progress", "meter", "picture", "source",
               "track", "param", "plaintext"]
-  closesP = ["address", "article", "aside", "blockquote", "center", "details",
-             "dialog", "dir", "div", "dl", "fieldset", "figcaption", "figure",
-             "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hgroup",
-             "hr", "main", "menu", "nav", "ol", "p", "pre", "section", "summary",
-             "table", "ul", "li", "dd", "dt", "search"]
-  pScope = ["table", "td", "th", "caption", "html", "button", "object", "template",
-            "marquee", "applet"]
-  headings = ["h1", "h2", "h3", "h4", "h5", "h6"]
   blockTags = ["html", "body", "div", "p", "section", "article", "header", "footer",
                "main", "nav", "aside", "figure", "figcaption", "address", "center",
                "details", "summary", "hgroup", "h1", "h2", "h3", "h4", "h5", "h6",
                "ul", "ol", "li", "dl", "dt", "dd", "blockquote", "pre", "table",
                "caption", "thead", "tbody", "tfoot", "tr", "td", "th", "hr", "menu",
                "dir", "fieldset", "legend", "noscript", "search", "listing"]
-
-proc findCI(s, what: string; start: int): int =
-  ## `what` (lower case) in `s` from `start`, letters in any case.
-  let n = what.len
-  var i = start
-  while i + n <= s.len:
-    var k = 0
-    while k < n and s[i + k].toLowerAscii == what[k]: inc k
-    if k == n: return i
-    inc i
-  -1
-
-proc parseHtml(src: string): tuple[root: HNode; title: string] =
-  ## A forgiving reader: what browsers make of messy pages, near enough --
-  ## unclosed paragraphs, list items and cells closed by what follows,
-  ## misnested tags, missing end tags.
-  let s = if src.len > MaxHtml: src[0 ..< MaxHtml] else: src
-  let root = HNode(tag: "#root")
-  result.root = root
-  var stack = @[root]
-  var nodes = 0
-  var gotTitle = false
-  template top: HNode = stack[^1]
-  proc addText(stack: var seq[HNode]; t: string; nodes: var int) =
-    if t.len == 0: return
-    let p = stack[^1]
-    if p.kids.len > 0 and p.kids[^1].tag.len == 0:
-      p.kids[^1].text.add t
-    else:
-      inc nodes
-      p.kids.add HNode(text: t)
-  proc closeTo(stack: var seq[HNode]; names: openArray[string];
-               bounds: openArray[string]): bool =
-    ## Closes up to the nearest open element named one of `names`, unless
-    ## an element in `bounds` comes first.
-    for k in countdown(stack.high, 1):
-      let t = stack[k].tag
-      if t in names:
-        stack.setLen(k)
-        return true
-      if t in bounds: return false
-  var i = 0
-  while i < s.len and nodes < MaxNodes:
-    let lt = s.find('<', i)
-    let textEnd = if lt < 0: s.len else: lt
-    if textEnd > i:
-      addText(stack, decodeEntities(s[i ..< textEnd]), nodes)
-    if lt < 0: break
-    i = lt
-    if i + 1 >= s.len:
-      addText(stack, "<", nodes)
-      break
-    let c1 = s[i + 1]
-    if s.continuesWith("<!--", i):
-      let e = s.find("-->", i + 4)
-      i = if e < 0: s.len else: e + 3
-      continue
-    if s.continuesWith("<![CDATA[", i):
-      let e = s.find("]]>", i + 9)
-      let body = if e < 0: s[i + 9 .. ^1] else: s[i + 9 ..< e]
-      addText(stack, body, nodes)
-      i = if e < 0: s.len else: e + 3
-      continue
-    if c1 in {'!', '?'}:
-      let e = s.find('>', i + 2)
-      i = if e < 0: s.len else: e + 1
-      continue
-    if c1 == '/' and i + 2 < s.len and s[i + 2].isAlphaAscii:
-      # an end tag
-      var j = i + 2
-      var name = ""
-      while j < s.len and (s[j].isAlphaNumeric or s[j] in {'-', ':'}) and name.len < 32:
-        name.add s[j].toLowerAscii
-        inc j
-      let e = s.find('>', j)
-      i = if e < 0: s.len else: e + 1
-      if name == "br":
-        inc nodes
-        top.kids.add HNode(tag: "br")
-      elif name == "p":
-        discard closeTo(stack, ["p"], pScope)
-      elif name in headings:
-        discard closeTo(stack, headings, [])
-      else:
-        discard closeTo(stack, [name], [])
-      continue
-    if not c1.isAlphaAscii:
-      addText(stack, "<", nodes)
-      inc i
-      continue
-    # a start tag, its attributes
-    var j = i + 1
-    var name = ""
-    while j < s.len and (s[j].isAlphaNumeric or s[j] in {'-', ':'}) and name.len < 32:
-      name.add s[j].toLowerAscii
-      inc j
-    var attrs: seq[(string, string)]
-    var selfClose = false
-    while j < s.len:
-      while j < s.len and s[j] in {' ', '\t', '\n', '\r', '\f'}: inc j
-      if j >= s.len: break
-      if s[j] == '>':
-        inc j
-        break
-      if s[j] == '/':
-        selfClose = j + 1 < s.len and s[j + 1] == '>'
-        inc j
-        continue
-      var an = ""
-      while j < s.len and s[j] notin {' ', '\t', '\n', '\r', '\f', '=', '>', '/'}:
-        if an.len < 64: an.add s[j].toLowerAscii
-        inc j
-      if an.len == 0:
-        inc j
-        continue
-      while j < s.len and s[j] in {' ', '\t', '\n', '\r', '\f'}: inc j
-      var av = ""
-      if j < s.len and s[j] == '=':
-        inc j
-        while j < s.len and s[j] in {' ', '\t', '\n', '\r', '\f'}: inc j
-        if j < s.len and s[j] in {'"', '\''}:
-          let q = s[j]
-          let e = s.find(q, j + 1)
-          let stop = if e < 0: s.len else: e
-          av = s[j + 1 ..< stop]
-          j = stop + 1
-        else:
-          let st = j
-          while j < s.len and s[j] notin {' ', '\t', '\n', '\r', '\f', '>'}: inc j
-          av = s[st ..< j]
-      if attrs.len < MaxAttrs and av.len <= 100_000:
-        attrs.add (an, decodeEntities(av))
-    i = min(j, s.len)
-    # raw text: up to its end tag, not read as HTML
-    if name in rawTags and not selfClose:
-      let e = findCI(s, "</" & name, i)
-      let body = if e < 0: s[i .. ^1] else: s[i ..< e]
-      if name == "title" and not gotTitle:
-        gotTitle = true
-        result.title = strutils.splitWhitespace(decodeEntities(body)).join(" ")
-      elif name in ["xmp", "plaintext"]:
-        inc nodes
-        let n = HNode(tag: "pre", kids: @[HNode(text: body)])
-        top.kids.add n
-      if e < 0: i = s.len
-      else:
-        let gt = s.find('>', e)
-        i = if gt < 0: s.len else: gt + 1
-      continue
-    # what this one closes first
-    if name in closesP: discard closeTo(stack, ["p"], pScope)
-    case name
-    of "li": discard closeTo(stack, ["li"], ["ul", "ol", "menu", "dir", "table"])
-    of "dt", "dd": discard closeTo(stack, ["dt", "dd"], ["dl", "table"])
-    of "tr": discard closeTo(stack, ["tr", "td", "th"], ["table"])
-    of "td", "th": discard closeTo(stack, ["td", "th"], ["tr", "table"])
-    of "thead", "tbody", "tfoot":
-      discard closeTo(stack, ["thead", "tbody", "tfoot"], ["table"])
-    of "h1", "h2", "h3", "h4", "h5", "h6":
-      if top.tag in headings: discard stack.pop()
-    of "a": discard closeTo(stack, ["a"], ["table", "td", "th"])
-    of "option", "optgroup": discard closeTo(stack, ["option"], ["select"])
-    else: discard
-    inc nodes
-    let n = HNode(tag: name, attrs: attrs)
-    top.kids.add n
-    if name notin voidTags and not selfClose and stack.len < MaxDepth:
-      stack.add n
 
 # ---- to Markdown ------------------------------------------------------------------------------
 
@@ -401,10 +109,6 @@ proc safeUrl(u: string): string =
     of '|': result.add "%7C"
     of '\\': result.add '/'
     else: result.add c
-
-proc unsafeUrl(u: string): string =
-  ## What `safeUrl` changed, back (for the link reported).
-  u.multiReplace(("%3C", "<"), ("%3E", ">"), ("%28", "("), ("%29", ")"), ("%7C", "|"))
 
 proc emitText(st: var Inl; t: string; c: var Conv) =
   ## Text into the paragraph, white space collapsed.
@@ -809,9 +513,10 @@ proc convert(html: string): tuple[md, title: string] =
         convCache.delete(i)
         convCache.insert(x, 0)
       return (convCache[0].md, convCache[0].title)
-  let (root, title) = parseHtml(html)
+  let hd = parseHtml(html)
+  let title = hd.title
   var c = Conv()
-  let lines = c.blocks(root.kids, 0, 0)
+  let lines = c.blocks(hd.root.kids, 0, 0)
   result = (lines.join("\n"), title)
   convCache.insert((h, html.len, result.md, result.title), 0)
   if convCache.len > 4: convCache.setLen(4)
@@ -826,25 +531,657 @@ proc htmlTitle*(html: string): string =
   ## The page's `<title>` ("" when it has none).
   convert(html).title
 
-# ---- showing HTML -------------------------------------------------------------------------------
+
+# ---- pictures ---------------------------------------------------------------------------------
+
+type
+  HtmlImageSource* = proc (src: string): Bitmap {.closure.}
+    ## A picture for an <img src>, or an empty Bitmap (w = 0) when there is none (yet)
+
+var
+  imgVersion = 0
+  picCache: Table[string, Bitmap]      ## (folder, src): the picture, or nil
+  dataPics: Table[Hash, Bitmap]        ## `data:` pictures, decoded
+
+proc htmlImagesChanged*() =
+  ## A picture arrived (the app has one now for a src it was asked for):
+  ## the views lay their pages out again, with it.
+  inc imgVersion
+  picCache.clear()
+  ui.redraw = true
+
+proc decodePicture(data: string): Bitmap =
+  ## PNG, JPEG, GIF (its first frame), BMP or WebP bytes; nil when they are
+  ## none of these, or damaged.
+  if data.len < 8: return nil
+  try:
+    if data.startsWith("\x89PNG"): result = decodePng(data)
+    elif data[0] == '\xFF' and data[1] == '\xD8': result = decodeJpeg(data)
+    elif data.startsWith("GIF8"):
+      let f = gifFrames(data)
+      if f.len > 0: result = f[0].bmp
+    elif data.startsWith("BM"): result = decodeBmp(data)
+    elif data.startsWith("RIFF") and data.len > 12 and data[8 .. 11] == "WEBP":
+      result = decodeWebp(data)
+  except CatchableError, Defect:
+    result = nil
+  if result != nil and (result.w <= 0 or result.h <= 0): result = nil
+  if result != nil: result = thumbnail(result, MaxPicture, MaxPicture)
+
+proc dataPicture(src: string): Bitmap =
+  ## A `data:image/...;base64,...` picture, decoded once.
+  let key = hash(src)
+  if key in dataPics: return dataPics[key]
+  if dataPics.len > 200: dataPics.clear()
+  result = nil
+  let comma = src.find(',')
+  if comma > 5 and src.len <= MaxDataUri:
+    let meta = src[5 ..< comma].toLowerAscii
+    var body = src[comma + 1 .. ^1]
+    var bytes = ""
+    if ";base64" in meta:
+      var clean = newStringOfCap(body.len)
+      for ch in body:
+        if ch in {'A'..'Z', 'a'..'z', '0'..'9', '+', '/', '-', '_'}: clean.add ch
+      while clean.len mod 4 != 0: clean.add '='
+      try: bytes = base64.decode(clean)
+      except ValueError: bytes = ""
+    else:
+      var i = 0
+      while i < body.len:
+        if body[i] == '%' and i + 2 < body.len and body[i + 1] in HexDigits and body[i + 2] in HexDigits:
+          bytes.add char(parseHexInt(body[i + 1 .. i + 2]))
+          i += 3
+        else:
+          bytes.add body[i]
+          inc i
+    result = decodePicture(bytes)
+  dataPics[key] = result
+
+proc filePicture(src, baseDir: string): Bitmap =
+  ## A picture in a file next to the page (never outside `baseDir`).
+  if baseDir.len == 0: return nil
+  var p = src
+  for c in ['?', '#']:
+    let k = p.find(c)
+    if k >= 0: p = p[0 ..< k]
+  var dec = ""
+  var i = 0
+  while i < p.len:
+    if p[i] == '%' and i + 2 < p.len and p[i + 1] in HexDigits and p[i + 2] in HexDigits:
+      dec.add char(parseHexInt(p[i + 1 .. i + 2]))
+      i += 3
+    else:
+      dec.add p[i]
+      inc i
+  if dec.len == 0 or ':' in dec or dec[0] in {'/', '\\', '~'} or '\0' in dec: return nil
+  let base = normalizedPath(absolutePath(baseDir))
+  let full = normalizedPath(absolutePath(baseDir / dec))
+  if not full.startsWith(base & DirSep): return nil
+  loadPicture(full, MaxPicture, MaxPicture)
+
+proc picSource(baseDir: string; images: HtmlImageSource): PicSource =
+  ## Where a page's pictures come from: itself (`data:`), the app, the
+  ## files next to it.
+  result = proc (src: string): Bitmap =
+    if src.len == 0: return nil
+    if src.len > 5 and src[0 .. 4].toLowerAscii == "data:": return dataPicture(src)
+    let key = baseDir & "\0" & src
+    picCache.withValue(key, v):
+      return v[]
+    var b: Bitmap = nil
+    if images != nil:
+      try:
+        b = images(src)
+      except CatchableError:
+        b = nil
+      if b != nil and (b.w <= 0 or b.h <= 0 or b.px.len < b.w * b.h): b = nil
+    if b == nil: b = filePicture(src, baseDir)
+    if picCache.len > 2000: picCache.clear()
+    picCache[key] = b
+    b
+
+# ---- pages read and laid out, kept ----------------------------------------------------------------
+
+type
+  PageKey = tuple[h: Hash; n, w: int; dir: string; img: int; em: float; k: float;
+                  font: int; scale: int]
+
+var
+  docCache: seq[tuple[h: Hash; n: int; doc: Doc]]
+  pageCache: seq[tuple[key: PageKey; page: ref Page]]
+
+proc docOf(html: string; h: Hash): Doc =
+  for i, e in docCache:
+    if e.h == h and e.n == html.len:
+      if i > 0:
+        let x = docCache[i]
+        docCache.delete(i)
+        docCache.insert(x, 0)
+      return docCache[0].doc
+  result = buildDoc(html)
+  docCache.insert((h, html.len, result), 0)
+  if docCache.len > 4: docCache.setLen(4)
+
+proc pageOf(html: string; width: int; baseDir: string; images: HtmlImageSource): ref Page =
+  ## `html` laid out `width` wide (read, styled and laid out once; kept).
+  let h = hash(html)
+  let key: PageKey = (h, html.len, width, baseDir, imgVersion, textSize(), ui.k,
+                      ord(uiFont()), pxScale)
+  for i, e in pageCache:
+    if e.key == key:
+      if i > 0:
+        let x = pageCache[i]
+        pageCache.delete(i)
+        pageCache.insert(x, 0)
+      return pageCache[0].page
+  let d = docOf(html, h)
+  result = new Page
+  var pk = hash(baseDir)
+  if images != nil: pk = pk !& hash(cast[int](rawProc(images))) !& hash(cast[int](rawEnv(images)))
+  result[] = layoutDoc(d, width, picSource(baseDir, images), imgVersion, !$pk)
+  pageCache.insert((key, result), 0)
+  if pageCache.len > 8: pageCache.setLen(8)
+
+# ---- colors -----------------------------------------------------------------------------------------
+
+var
+  adapted: Table[uint32, Color]
+  adaptedFor: Color
+
+proc dark(): bool {.inline.} =
+  (int(th.field.r) * 3 + int(th.field.g) * 6 + int(th.field.b)) div 10 < 110
+
+proc toColor(c: uint32): Color {.inline.} =
+  color(uint8((c shr 16) and 255), uint8((c shr 8) and 255), uint8(c and 255))
+
+type Use = enum forText, forBg, forLine
+
+proc darkened(c: uint32; use: Use): Color =
+  ## A page's color for a dark theme: light backgrounds made dark and dark
+  ## text made light (their hue kept), as mail apps do; lines between.
+  let r = float((c shr 16) and 255) / 255
+  let g = float((c shr 8) and 255) / 255
+  let b = float(c and 255) / 255
+  let mx = max(r, max(g, b))
+  let mn = min(r, min(g, b))
+  let l = (mx + mn) / 2
+  if (use == forBg and l <= 0.45) or (use == forText and l >= 0.55): return toColor(c)
+  var hh, ss = 0.0
+  let d = mx - mn
+  if d > 0.0001:
+    ss = if l > 0.5: d / (2 - mx - mn) else: d / (mx + mn)
+    hh = if mx == r: (g - b) / d + (if g < b: 6 else: 0)
+         elif mx == g: (b - r) / d + 2
+         else: (r - g) / d + 4
+    hh /= 6
+  var nl = 1 - l
+  case use
+  of forBg: nl = 0.08 + nl * 0.5
+  of forText: nl = max(nl, 0.62)
+  of forLine: nl = clamp(nl, 0.3, 0.7)
+  let q = if nl < 0.5: nl * (1 + ss) else: nl + ss - nl * ss
+  let p = 2 * nl - q
+  proc hue(t0: float): float =
+    var t = t0
+    if t < 0: t += 1
+    if t > 1: t -= 1
+    if t < 1/6: p + (q - p) * 6 * t
+    elif t < 1/2: q
+    elif t < 2/3: p + (q - p) * (2/3 - t) * 6
+    else: p
+  color(uint8(clamp(hue(hh + 1/3) * 255, 0, 255)), uint8(clamp(hue(hh) * 255, 0, 255)),
+        uint8(clamp(hue(hh - 1/3) * 255, 0, 255)))
+
+const quoteColors = [(60, 110, 200), (40, 140, 80), (160, 80, 160), (200, 120, 30)]
+
+proc colorOf(c: uint32; fallback: Color; use = forText): Color =
+  ## A color of the page as drawn: the theme's for the roles, the page's
+  ## own (made to suit a dark theme).
+  if c == 0: return fallback
+  if isRole(c):
+    if c >= RoleQuote and c <= RoleQuote + 3:
+      let q = quoteColors[int(c - RoleQuote)]
+      return if dark(): mixColor(color(uint8(q[0]), uint8(q[1]), uint8(q[2])), th.fieldText, 0.3)
+             else: color(uint8(q[0]), uint8(q[1]), uint8(q[2]))
+    case c
+    of RoleLink: return th.link
+    of RoleMark: return (if dark(): color(110, 95, 10) else: color(255, 240, 120))
+    of RoleRule: return mixColor(th.fieldText, th.field, 0.6)
+    of RoleFaint: return mixColor(th.fieldText, th.field, 0.92)
+    of RoleHeading: return (if dark(): th.fieldText else: th.select)
+    of RoleCode: return (if dark(): color(230, 200, 140) else: color(140, 30, 30))
+    of RoleCodeBg: return (if dark(): color(45, 45, 45) else: color(244, 244, 238))
+    else: return fallback
+  if not dark(): return toColor(c)
+  if adaptedFor != th.field:
+    adapted.clear()
+    adaptedFor = th.field
+  let key = (c and 0x00FFFFFF'u32) or (uint32(ord(use)) shl 24)
+  adapted.withValue(key, v):
+    return v[]
+  result = darkened(c, use)
+  if adapted.len > 4000: adapted.clear()
+  adapted[key] = result
+
+# ---- drawing --------------------------------------------------------------------------------------
+
+type
+  SelPos = tuple[item, off: int]
+  ViewState = object
+    page: int                  ## the page (its serial) the selection is of
+    seen: int                  ## the frame it was last drawn in
+    a, b: SelPos               ## the selection's ends (item -1: none)
+    anchor: SelPos             ## where the mouse went down
+    dragging, moved: bool
+    word: bool                 ## a double click chose a word
+    pressX, pressY: int
+
+var views: Table[Id, ViewState]
+
+proc noSel(): SelPos = (-1, 0)
+
+proc lessEq(a, b: SelPos): bool = a.item < b.item or (a.item == b.item and a.off <= b.off)
+
+proc ordered(v: ViewState): (SelPos, SelPos) =
+  if lessEq(v.a, v.b): (v.a, v.b) else: (v.b, v.a)
+
+proc runeEnd(s: string; start, n: int): int =
+  result = start
+  var k = 0
+  while result < s.len and k < n:
+    result += max(1, runeLenAt(s, result))
+    inc k
+
+proc offsetAt(d: DItem; px: int): int =
+  ## The byte of text item `d` nearest `px` pixels from its left.
+  let s = d.text
+  var rel = px - int(d.x)
+  if d.ts.rtl: rel = int(d.w) - rel
+  if rel <= 0: return 0
+  if rel >= int(d.w): return s.len
+  var lo = 0
+  var hi = s.runeLen
+  while lo < hi:
+    let mid = (lo + hi + 1) div 2
+    let w = textWidth(s[0 ..< runeEnd(s, 0, mid)], d.ts)
+    if w <= rel: lo = mid else: hi = mid - 1
+  # (the nearer edge of the letter)
+  let a = runeEnd(s, 0, lo)
+  if a < s.len:
+    let wa = textWidth(s[0 ..< a], d.ts)
+    let b = runeEnd(s, a, 1)
+    let wb = textWidth(s[0 ..< b], d.ts)
+    if rel - wa > wb - rel: return b
+  a
+
+proc hitText(p: ref Page; px, py: int): SelPos =
+  ## The text position nearest a point of the page.
+  var best = -1
+  var bestScore = high(int)
+  for i, d in p.items:
+    if d.kind != dkText: continue
+    let dy = if py < d.y: int(d.y) - py
+             elif py >= d.y + d.h: py - int(d.y + d.h) + 1
+             else: 0
+    let dx = if px < d.x: int(d.x) - px
+             elif px >= d.x + d.w: px - int(d.x + d.w) + 1
+             else: 0
+    let score = dy * 100_000 + dx
+    if score < bestScore or (score == bestScore and dy == 0):
+      if score < bestScore:
+        bestScore = score
+        best = i
+  if best < 0: return noSel()
+  (best, offsetAt(p.items[best], px))
+
+proc sepText(s: int8): string =
+  case s
+  of 1: " "
+  of 2: "\t"
+  of 3: "\n"
+  of 4: "\n\n"
+  else: ""
+
+proc pieceText(d: DItem): string =
+  if d.kind == dkMarker:
+    if d.text.len > 0: d.text else: "-"
+  else: d.text
+
+proc textBetween(p: ref Page; a, b: SelPos): string =
+  ## The text from `a` to `b`, as it reads (line breaks, tabs between cells).
+  if a.item < 0 or b.item < 0: return ""
+  var first = true
+  for i in a.item .. min(b.item, p.items.high):
+    let d = p.items[i]
+    if d.kind notin {dkText, dkMarker}: continue
+    let t = pieceText(d)
+    let s0 = if i == a.item and d.kind == dkText: clamp(a.off, 0, t.len) else: 0
+    let s1 = if i == b.item and d.kind == dkText: clamp(b.off, 0, t.len) else: t.len
+    if not first: result.add sepText(d.sep)
+    first = false
+    if s1 > s0: result.add t[s0 ..< s1]
+
+proc allText(p: ref Page): string =
+  var last = -1
+  for i in countdown(p.items.high, 0):
+    if p.items[i].kind == dkText:
+      last = i
+      break
+  if last < 0: return ""
+  textBetween(p, (0, 0), (last, p.items[last].text.len))
+
+proc drawBox(d: DItem; r: Rect) =
+  ## A block's background and borders.
+  let bgc = if d.color != 0: colorOf(d.color, th.field, forBg) else: Color()
+  let uniform = d.bw[0] == d.bw[1] and d.bw[1] == d.bw[2] and d.bw[2] == d.bw[3] and
+                d.bc[0] == d.bc[1] and d.bc[1] == d.bc[2] and d.bc[2] == d.bc[3]
+  if d.radius > 0 and d.color != 0:
+    let rad = float(min(int(d.radius), min(r.w, r.h) div 2))
+    if uniform and d.bw[0] > 0:
+      roundRect(r, rad, colorOf(d.bc[0], th.fieldText, forLine))
+      let t = int(d.bw[0])
+      roundRect(rect(r.x + t, r.y + t, r.w - 2 * t, r.h - 2 * t), max(0.0, rad - float(t)), bgc)
+    else:
+      roundRect(r, rad, bgc)
+    if uniform: return
+  elif d.color != 0:
+    fill(r, bgc)
+  for side in 0 .. 3:
+    let t = int(d.bw[side])
+    if t <= 0: continue
+    var c = colorOf(d.bc[side], th.fieldText, forLine)
+    # (inset, outset: the 3D look of old tables)
+    if d.bs[side] in {3'u8, 4'u8}:
+      let lit = (d.bs[side] == 4) == (side in {0, 3})
+      c = if lit: mixColor(c, th.field, 0.55) else: mixColor(c, th.fieldText, 0.2)
+    let er = case side
+      of 0: rect(r.x, r.y, r.w, t)
+      of 1: rect(r.x + r.w - t, r.y, t, r.h)
+      of 2: rect(r.x, r.y + r.h - t, r.w, t)
+      else: rect(r.x, r.y, t, r.h)
+    if d.bs[side] == 2 and (er.w > 3 * t or er.h > 3 * t):
+      # dashed, dotted
+      let step = max(2, 3 * t)
+      if er.w >= er.h:
+        var x = er.x
+        while x < er.x + er.w:
+          fill(rect(x, er.y, min(2 * t, er.x + er.w - x), er.h), c)
+          x += step
+      else:
+        var y = er.y
+        while y < er.y + er.h:
+          fill(rect(er.x, y, er.w, min(2 * t, er.y + er.h - y)), c)
+          y += step
+    else:
+      fill(er, c)
+
+proc drawMissing(d: DItem; r: Rect) =
+  ## A picture that is not there: a light box, its alt text in it.
+  fill(r, colorOf(RoleFaint, th.field))
+  box(r, mixColor(th.fieldText, th.field, 0.75))
+  if d.text.len > 0 and r.w > 12 and r.h > 8:
+    pushClip(intersect(clipRect(), inset(r, 2)))
+    let lh = lineHeight(d.ts)
+    text(r.x + 4, r.y + max(2, (min(r.h, lh + 6) - lh) div 2), d.text, mixColor(th.fieldText, th.field, 0.4), d.ts)
+    popClip()
+
+proc drawMarker(d: DItem; r: Rect; fg: Color) =
+  if d.text.len > 0:
+    text(r.x, r.y, d.text, fg, d.ts)
+    return
+  let s = float(r.w)
+  case d.mk
+  of lsCircle: ring(float(r.x) + s / 2, float(r.y) + s / 2, s / 2, max(1.0, s / 5), fg)
+  of lsSquare: fill(r, fg)
+  else: disc(float(r.x) + s / 2, float(r.y) + s / 2, s / 2, fg)
+
+proc drawPage(p: ref Page; ox, oy: int; clip: Rect; v: ptr ViewState; canClick: bool;
+              hoverLink: var int; overText: var bool) =
+  ## The page with its top left at `ox`, `oy`; only what is in `clip`.
+  let mp = point(ui.mx, ui.my)
+  let fg = th.fieldText
+  var sa, sb: SelPos = noSel()
+  if v != nil and v.a.item >= 0 and v.b.item >= 0 and v.a != v.b:
+    (sa, sb) = v[].ordered
+  let top = clip.y - oy
+  let bottom = clip.y + clip.h - oy
+  for i in 0 ..< p.items.len:
+    let d = addr p.items[i]
+    if d.y > bottom or d.y + d.h < top: continue
+    let r = rect(int(d.x) + ox, int(d.y) + oy, int(d.w), int(d.h))
+    if canClick and d.link >= 0 and r.contains(mp): hoverLink = int(d.link)
+    case d.kind
+    of dkBox: drawBox(d[], r)
+    of dkText:
+      if canClick and r.contains(mp): overText = true
+      let c = colorOf(d.color, fg)
+      if sa.item >= 0 and i >= sa.item and i <= sb.item:
+        let a = if i == sa.item: sa.off else: 0
+        let b = if i == sb.item: sb.off else: d.text.len
+        if b > a:
+          let wa = textWidth(d.text[0 ..< a], d.ts)
+          let wb = if b >= d.text.len: int(d.w) else: textWidth(d.text[0 ..< b], d.ts)
+          let sr = if d.ts.rtl: rect(r.x + r.w - wb, r.y, wb - wa, r.h)
+                   else: rect(r.x + wa, r.y, wb - wa, r.h)
+          fill(sr, th.select)
+          text(r.x, r.y, d.text, c, d.ts)
+          pushClip(intersect(clipRect(), sr))
+          text(r.x, r.y, d.text, th.selectText, d.ts)
+          popClip()
+          continue
+      text(r.x, r.y, d.text, c, d.ts)
+    of dkImage:
+      if d.pic != nil: drawBitmap(r, d.pic)
+    of dkMissing: drawMissing(d[], r)
+    of dkMarker: drawMarker(d[], r, colorOf(d.color, fg))
+    of dkAnchor, dkLinkArea: discard
+
+# ---- the widgets ------------------------------------------------------------------------------------
 
 type HtmlEvent* = object
   link*: string        ## a link clicked (its address as the page has it), or ""
+  hover*: string       ## the link under the pointer, or ""
+  wantedImages*: seq[string]
+    ## pictures the page has that it got no picture for (not `data:`): for
+    ## the app to fetch, then call `htmlImagesChanged`
 
-proc htmlView*(html: string; baseDir = ""; height = -1; key = ""): HtmlEvent {.discardable.} =
+proc htmlView*(html: string; baseDir = ""; height = -1; key = ""; images: HtmlImageSource = nil;
+               padding = -1): HtmlEvent {.discardable.} =
   ## HTML in a framed view that scrolls (wheel, finger, scroll bar, arrows,
-  ## Page keys); pictures load from `baseDir`. Returns the link clicked;
-  ## links to "#a-heading" scroll there themselves. `key` tells several
-  ## views apart.
-  let ev = markdownView(convert(html).md, height = height, baseDir = baseDir,
-                        key = "html:" & key)
-  result.link = unsafeUrl(ev.link)
+  ## Page keys, Space, Home, End). Returns the link clicked (links to
+  ## "#a-name" scroll there themselves) and the one under the pointer.
+  ## Text is selected with the mouse (a double click: a word), Ctrl+C
+  ## copies it (or all of it), Ctrl+A selects all. Pictures: `data:` ones
+  ## from the page, others from `images` or files in `baseDir`; those it
+  ## has none for are in `wantedImages`. `padding` (pixels, -1: a
+  ## comfortable default) is room around the page. `key` tells several
+  ## views apart (each keeps where it is scrolled to).
+  let r = place(0, if height < 0: remainingH() else: height, fill = true)
+  let id = idOf("htmlview" & key)
+  var st = state(id)
+  var hit = interact(id, r)
+  let pad = if padding < 0: dp(12) else: dp(padding)
+  let inner = rect(r.x + 1, r.y + 1, r.w - SbW - 1, r.h - 2)
+  let page = pageOf(html, max(40, inner.w - 2 * pad), baseDir, images)
+  var v = views.getOrDefault(id)
+  if v.page != page.serial:
+    v = ViewState(page: page.serial, a: noSel(), b: noSel(), anchor: noSel())
+  v.seen = ui.frameNo
+  if views.len > 64:
+    # (views not drawn for a while forget their selection)
+    var old: seq[Id]
+    for k, e in views:
+      if ui.frameNo - e.seen > 600: old.add k
+    for k in old: views.del k
+  let maxY = max(0, page.height + 2 * pad - inner.h)
+  var y = clamp(st.scrollY, 0, maxY)
+  scrollWheel(id, y, maxY, r, 3 * FontH)
+  scrollPan(id, y, maxY, r)
+  if hit.focused and canInput():
+    let ctrl = CtrlPressed in ui.mods
+    case ui.key
+    of KeyUp: scrollBy(id, y, -FontH, maxY); ui.keyUsed = true
+    of KeyDown: scrollBy(id, y, FontH, maxY); ui.keyUsed = true
+    of KeyPageUp: scrollBy(id, y, -(inner.h - FontH), maxY); ui.keyUsed = true
+    of KeyPageDown, KeySpace:
+      scrollBy(id, y, (if ShiftPressed in ui.mods and ui.key == KeySpace: -1 else: 1) *
+                      (inner.h - FontH), maxY)
+      ui.keyUsed = true
+    of KeyHome: scrollTo(id, y, 0, maxY); ui.keyUsed = true
+    of KeyEnd: scrollTo(id, y, maxY, maxY); ui.keyUsed = true
+    of KeyC:
+      if ctrl:
+        let t = if v.a.item >= 0 and v.b.item >= 0 and v.a != v.b:
+                  let (a, b) = v.ordered
+                  textBetween(page, a, b)
+                else: allText(page)
+        putClipboardText(t)
+        ui.keyUsed = true
+    of KeyA:
+      if ctrl:
+        var first, last = -1
+        for i, d in page.items:
+          if d.kind in {dkText, dkMarker}:
+            if first < 0: first = i
+            last = i
+        if first >= 0:
+          v.a = (first, 0)
+          v.b = (last, page.items[last].text.len)
+        ui.keyUsed = true
+    else: discard
+  # the mouse: a click (a link), a drag (a selection)
+  let ox = inner.x + pad
+  let oyOf = proc (y: int): int = inner.y + pad - y
+  let overContent = canInput() and mouseIn(inner)
+  if overContent and ui.pressed and not finger() and ui.active == id:
+    v.dragging = true
+    v.moved = false
+    v.word = false
+    v.pressX = ui.mx
+    v.pressY = ui.my
+    v.anchor = hitText(page, ui.mx - ox, ui.my - oyOf(y))
+    if ShiftPressed in ui.mods and v.a.item >= 0:
+      v.b = v.anchor
+      v.anchor = v.a
+      v.moved = true
+    elif ui.clicks >= 2 and v.anchor.item >= 0:
+      # a word
+      let t = page.items[v.anchor.item].text
+      var a = clamp(v.anchor.off, 0, t.len)
+      var b = a
+      while a > 0 and t[a - 1] != ' ': dec a
+      while b < t.len and t[b] != ' ': inc b
+      v.a = (v.anchor.item, a)
+      v.b = (v.anchor.item, b)
+      v.anchor = v.a
+      v.moved = true
+      v.word = true
+      markDouble(id)
+    else:
+      v.a = noSel()
+      v.b = noSel()
+  if v.dragging and (ui.mouseDown or ui.released) and not finger():
+    let far = abs(ui.mx - v.pressX) > 3 or abs(ui.my - v.pressY) > 3
+    if far: v.moved = true
+    if v.moved and v.anchor.item >= 0 and (far or not v.word):
+      # past the top or bottom: it scrolls
+      if ui.my < inner.y: scrollTo(id, y, y - max(4, (inner.y - ui.my) div 2), maxY)
+      elif ui.my > inner.y + inner.h:
+        scrollTo(id, y, y + max(4, (ui.my - inner.y - inner.h) div 2), maxY)
+      if ui.my < inner.y or ui.my > inner.y + inner.h: wakeIn(30)
+      let mx = clamp(ui.mx, inner.x, inner.x + inner.w)
+      let my = clamp(ui.my, inner.y, inner.y + inner.h)
+      v.a = v.anchor
+      v.b = hitText(page, mx - ox, my - oyOf(y))
+  scrollTick(id, y, maxY)
+  y = clamp(y, 0, maxY)
+  scrollBarFor(id + 9, id, rect(r.x + r.w - SbW, r.y, SbW, r.h), true, y,
+               maxY, max(FontH, inner.h - FontH), FontH)
+  fill(inner, colorOf(page.bg, th.field, forBg))
+  fieldFrame(r)
+  pushClip(inner)
+  var hoverLink = -1
+  var overText = false
+  drawPage(page, ox, oyOf(y), inner, addr v, overContent, hoverLink, overText)
+  popClip()
+  if hit.focused: dots(inset(r, 1), th.text)
+  if hoverLink >= 0 and hoverLink < page.links.len:
+    result.hover = page.links[hoverLink]
+    ui.cursor = curHand
+  elif overText and canHover(): ui.cursor = curIbeam
+  if hit.clicked and not v.moved and hoverLink >= 0 and hoverLink < page.links.len:
+    result.link = page.links[hoverLink]
+  if ui.released or not ui.mouseDown: v.dragging = false
+  if result.link.startsWith("#"):
+    let a = page.anchors.getOrDefault(result.link[1 .. ^1], -1)
+    if a >= 0: scrollTo(id, y, a, maxY)          # (it glides there)
+    result.link = ""
+  result.wantedImages = page.wanted
+  if y != st.scrollY:
+    st.scrollY = y
+    ui.redraw = true
+  state(id) = st
+  views[id] = v
+  ui.lastId = id
+  ui.lastRect = r
 
-proc htmlBlock*(html: string; baseDir = ""; w = 0): HtmlEvent {.discardable.} =
+proc htmlBlock*(html: string; baseDir = ""; w = 0; images: HtmlImageSource = nil): HtmlEvent {.discardable.} =
   ## HTML flowing in the layout at its natural height (in a page that
-  ## scrolls, a card, a dialog).
-  let ev = markdown(convert(html).md, baseDir = baseDir, w = w)
-  result.link = unsafeUrl(ev.link)
+  ## scrolls, a card, a dialog). Pictures as in `htmlView`.
+  let width = if w > 0: w else: available()
+  let page = pageOf(html, max(20, width), baseDir, images)
+  let r = place(width, page.height)
+  let id = idOf("htmlblock" & $page.height & $width & $html.len)
+  let hit = interact(id, r, focusable = false)
+  let clip = intersect(r, clipRect())
+  if page.bg != 0: fill(r, colorOf(page.bg, th.field, forBg))
+  var hoverLink = -1
+  var overText = false
+  pushClip(clip)
+  drawPage(page, r.x, r.y, clip, nil, canInput() and mouseIn(clip), hoverLink, overText)
+  popClip()
+  if hoverLink >= 0 and hoverLink < page.links.len:
+    result.hover = page.links[hoverLink]
+    ui.cursor = curHand
+    if hit.clicked: result.link = page.links[hoverLink]
+  result.wantedImages = page.wanted
+  ui.lastId = id
+  ui.lastRect = r
+
+proc htmlToText*(html: string): string =
+  ## The plain text of a mail: paragraphs, "- " bullets, links as "text
+  ## <url>", quotes with "> ", hidden text left out.
+  docOf(html, hash(html)).plainText()
+
+type HtmlPageInfo* = object
+  ## A page as `htmlView` lays it out at a width (for tests, printing,
+  ## tools): its size and what is where, in page coordinates.
+  height*: int                                   ## its content's height
+  right*: int                                    ## where its widest content ends
+  text*: string                                  ## its text as Ctrl+A, Ctrl+C copies it
+  words*: seq[tuple[text: string; r: Rect]]      ## the pieces of text drawn
+  links*: seq[tuple[url: string; r: Rect]]       ## where each link can be clicked
+  images*: seq[tuple[src: string; r: Rect; shown: bool]]  ## pictures (shown: it has the picture)
+  wantedImages*: seq[string]                     ## as `HtmlEvent.wantedImages`
+
+proc htmlPageInfo*(html: string; width: int; baseDir = ""; images: HtmlImageSource = nil): HtmlPageInfo =
+  ## `html` laid out `width` pixels wide (its content, without the view's
+  ## padding), as `htmlView` and `htmlBlock` show it.
+  let p = pageOf(html, max(20, width), baseDir, images)
+  result.height = p.height
+  result.right = p.right
+  result.text = allText(p)
+  result.wantedImages = p.wanted
+  for d in p.items:
+    let r = rect(int(d.x), int(d.y), int(d.w), int(d.h))
+    case d.kind
+    of dkText: result.words.add (d.text, r)
+    of dkImage: result.images.add (d.src, r, true)
+    of dkMissing: result.images.add (d.src, r, false)
+    else: discard
+    if d.link >= 0 and d.kind in {dkText, dkImage, dkMissing, dkLinkArea} and d.link < p.links.len:
+      result.links.add (p.links[d.link], r)
 
 # ---- web pages ----------------------------------------------------------------------------------
 
