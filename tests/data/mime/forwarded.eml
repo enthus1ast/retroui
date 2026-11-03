@@ -1,0 +1,38 @@
+From: Purchasing <purchasing@hotel.example>
+To: sultan@hotel.example
+Subject: FW: towel prices
+Date: Sat, 1 Nov 2025 10:00:00 +0400
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="outer-mixed"
+
+--outer-mixed
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+See the forwarded quote below.
+
+--outer-mixed
+Content-Type: message/rfc822
+Content-Disposition: attachment
+
+From: =?UTF-8?B?2KPYrdmF2K8g2KfZhNit2KfYsdir2Yo=?= <ahmed@supplier.example>
+To: purchasing@hotel.example
+Subject: =?UTF-8?B?2LnYsdi2INij2LPYudin2LEg2KfZhNmF2YbYp9i02YE=?=
+Date: Fri, 31 Oct 2025 11:20:00 +0400
+Message-ID: <quote-2025-118@supplier.example>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="inner-alt"
+
+--inner-alt
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+السعر ٣٫٥ ريال للمنشفة.
+--inner-alt
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<p>السعر <b>٣٫٥</b> ريال للمنشفة.</p>
+--inner-alt--
+
+--outer-mixed--

@@ -1,0 +1,16 @@
+From: Notices <noreply@example.com>
+To: staff@hotel.example
+Subject: =?UTF-8?Q?Caf=C3=A9_menu_=E2=80=93_new_prices?=
+Date: Wed, 5 Nov 2025 07:30:00 -0500
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+
+This is a long line that goes on and on past the seventy-six character li=
+mit, so it is broken with a soft line break.
+Prices: espresso =3D 1.200 OMR, caf=C3=A9 au lait =3D 1.500 OMR.=20
+Arabic split over a soft break: =D8=
+=A7=D9=84=D9=82=D9=87=D9=88=D8=A9   
+Trailing spaces above were added on the way and are dropped.
+A lone = sign stays, and so does =ZZ.
+Last line without a break=

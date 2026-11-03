@@ -1,0 +1,38 @@
+From: HR Office <hr@hotel.example>
+To: sultan@hotel.example
+Subject: Attendance report
+Date: Tue, 04 Nov 2025 08:00:00 +0400
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed-boundary-123"
+
+This is a multi-part message in MIME format.
+
+--mixed-boundary-123
+Content-Type: text/plain; charset=us-ascii
+
+Please find the attendance report attached.
+
+--mixed-boundary-123
+Content-Type: application/pdf; name="=?UTF-8?B?2KrZgtix2YrYsSDYp9mE2K3YttmI2LEgLSDZhtmI2YHZhdio2LEg2aLZoNmi2aUucGRm?="
+Content-Disposition: attachment;
+ filename*0*=utf-8''%D8%AA%D9%82%D8%B1%D9%8A%D8%B1;
+ filename*1*=%20%D8%A7%D9%84%D8%AD%D8%B6%D9%88%D8%B1%20-%20%D9%86%D9%88%D9%81%D9%85%D8%A8%D8%B1%20%D9%A2%D9%A0%D9%A2%D9%A5.pdf
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyA+PiBlbmRvYmoKdHJhaWxlciA8PCAv
+Um9vdCAxIDAgUiA+PgolJUVPRgo=
+--mixed-boundary-123
+Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+Content-Disposition: attachment; filename*=UTF-8''r%C3%A9sum%C3%A9%20final.docx
+Content-Transfer-Encoding: base64
+
+UEsAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYn
+--mixed-boundary-123
+Content-Type: text/calendar; charset=utf-8; method=REQUEST
+Content-Transfer-Encoding: 7bit
+
+BEGIN:VCALENDAR
+VERSION:2.0
+END:VCALENDAR
+--mixed-boundary-123--
+This epilogue is ignored.

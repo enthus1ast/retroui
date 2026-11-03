@@ -1,0 +1,15 @@
+From MAILER-DAEMON Thu Oct 30 12:01:00 2025
+Return-Path: <john@example.com>
+Received: from mail.example.com (mail.example.com [192.0.2.1])
+	by mx.hotel.example; Thu, 30 Oct 2025 12:01:07 +0000
+From: john@example.com (John Smith)
+To: undisclosed-recipients:;
+Subject: Lunch on Thursday?
+Date: Thu, 30 Oct 25 12:01 GMT
+
+Hi,
+
+Are we still on for lunch on Thursday?
+
+--
+John
