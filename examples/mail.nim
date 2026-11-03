@@ -1,0 +1,280 @@
+## Retro Mail: Outlook Express 4 to look at and to use, with what the new
+## Outlook does -- Microsoft 365, Outlook.com and Gmail, signed in in the
+## browser (the services' own pages: no password is ever typed here).
+##
+## - threads, Focused and Other, tags (Outlook categories, Gmail labels),
+##   pin, snooze, flags, rules of thumb in the start page
+## - instant offline search of everything kept (from: to: tag: is: has:)
+## - rich text writing, signatures for new mail and replies, send later
+## - swipe a message right or left on touch screens
+## - the calendar, people, to do and notes beside the mail
+##
+## Each account uses an app registration of your own (Microsoft Entra or
+## Google Cloud): the wizard says where to make one. Nothing is built in.
+##
+##   nim c -r -d:release examples/mail.nim
+##   retroapk examples/mail.nim --permission:INTERNET     (Android)
+##
+## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
+
+import std/[os, strutils, json, times, tables, sets, algorithm, sequtils, unicode, hashes]
+import retro, retro/[db, http, oauth, secrets, mime, richedit]
+import mail/[store, api, sync, graph, gmail]
+
+include mail/ui_state
+include mail/ui_data
+include mail/ui_compose
+include mail/ui_mail
+include mail/ui_wizard
+include mail/ui_start
+include mail/ui_options
+include mail/ui_others
+include mail/ui_phone
+
+# ---- pictures from the web: a thread of their own ------------------------------------------
+
+proc fetchMain(chans: (ptr Channel[string], ptr Channel[string])) {.thread.} =
+  {.gcsafe.}:
+    let (inbox, outbox) = chans
+    while true:
+      let url = inbox[].recv()
+      if url.len == 0: break
+      let p = mailDir() / "pictures" / ($hash(url)).replace("-", "m") & ".img"
+      if not fileExists(p):
+        let r = httpRequest("GET", url, [("User-Agent", "Mozilla/5.0 (Retro Mail)")],
+                            timeoutSec = 30)
+        if r.ok and r.body.len > 0 and r.body.len < 12_000_000:
+          try:
+            createDir(p.parentDir)
+            writeFile(p, r.body)
+          except CatchableError: discard
+      outbox[].send(url & "\t" & p)
+
+# ---- what the threads say ----------------------------------------------------------------
+
+proc handleEvents() =
+  while true:
+    let (ok, ev) = link.events.tryRecv()
+    if not ok: break
+    case ev.kind
+    of seChanged: changed()
+    of seStatus: syncText = ev.text
+    of seError:
+      lastError = ev.text
+      status = (if ev.id > 0: account(ev.id).email & ": " else: "") & ev.text
+    of seSignIn:
+      status = account(ev.id).email & " must sign in again: Tools, Accounts, Sign In Again"
+      changed()
+    of seBody:
+      openVer = -1
+      if ev.text.len > 0: status = ev.text
+      changed()
+    of seAttachment:
+      if ev.text.len > 0: status = "The attachment: " & ev.text
+      elif ev.id == openAttAfter:
+        openAttAfter = 0
+        openAttachment(ev.id)
+        status = ""
+      else: status = "Downloaded the attachment"
+    of seNewMail:
+      if prefBool("notify", true):
+        toast(ev.text, title = (if ev.count == 1: "New mail" else: $ev.count & " new messages"),
+              glyph = pxMail)
+      status = $ev.count & " new: " & ev.text
+    of seSearch:
+      if ev.text == searching:
+        serverIds = ev.ids
+        changed()
+    of seSent:
+      status = "Sent \"" & ev.text & "\""
+      toast("Sent: " & ev.text, glyph = pxMail)
+  var got = false
+  while true:
+    let (ok, s) = fetchDone[].tryRecv()
+    if not ok: break
+    let k = s.find('\t')
+    if k < 0: continue
+    let url = s[0 ..< k]
+    let path = s[k + 1 .. ^1]
+    pictures[url] = (if fileExists(path): loadPicture(path, 1600, 6000) else: nil)
+    got = true
+  if got:
+    htmlImagesChanged()
+    ui.redraw = true
+  wakeIn(if syncText.len > 0 or wizFlow != nil: 250 else: 1500)
+
+# ---- the window ----------------------------------------------------------------------------
+
+proc mailArea() =
+  if query.len > 0:
+    let n = convs.len
+    let a = banner($n & (if n == 1: " thread" else: " threads") & " found in the mail kept here." &
+                   (if searching == query: " The server was asked too." else: ""),
+                   bkInfo, ["Search the server"], closable = false)
+    if a == 1:
+      searching = query
+      link.cmds.send(SyncCmd(kind: scSearch, text: query))
+      status = "Asking the server..."
+  elif isInboxPlace() and prefBool("focused", true):
+    var t = focusTab
+    row:
+      discard tabStrip(["Focused", "Other"], t, closable = false, addButton = false)
+    if t != focusTab:
+      focusTab = t
+      selRow = -1
+      selKey = ""
+      listScroll = 0
+      changed()
+  case pref("pane", "bottom")
+  of "right":
+    split(paneW, -1):
+      mailList()
+    do:
+      readingPane()
+  of "off": mailList()
+  else:
+    vsplit(listH, -1):
+      mailList()
+    do:
+      readingPane()
+
+proc leftPane() =
+  if prefBool("contactspane", true):
+    vsplit(leftH, -1):
+      folderTree()
+    do:
+      contactsPane()
+  else:
+    folderTree()
+
+proc mainWindow() =
+  menus()
+  case view
+  of vMail, vStart: mailToolbar()
+  of vCalendar:
+    setToolbarLook(blTextBelow)
+    toolbar:
+      if barButton(pxBack, "Back"): calDay = calDay.addDays(if calMode == amMonth: -30 elif calMode == amWeek: -7 else: -1)
+      if barButton(pxHome, "Today"): calDay = today()
+      if barButton(pxForward, "Next"): calDay = calDay.addDays(if calMode == amMonth: 30 elif calMode == amWeek: 7 else: 1)
+      toolSeparator()
+      for m in AgendaMode:
+        if barButton(pxCalendar, $m, down = calMode == m): calMode = m
+      toolSeparator()
+      if barButton(pxRefresh, "Refresh"): link.cmds.send(SyncCmd(kind: scSyncNow))
+  else:
+    setToolbarLook(blTextBelow)
+    toolbar:
+      if barButton(pxMail, "New Mail", enabled = accountsC.len > 0): openCompose("new")
+      if barButton(pxRefresh, "Send/Recv", enabled = accountsC.len > 0):
+        link.cmds.send(SyncCmd(kind: scSyncNow))
+  let waiting = store0.actionsWaiting()
+  statusbar(
+    (if status.len > 0: status
+     elif view == vMail: $convs.len & " thread(s), " & $unreadAll() & " unread" else: ""),
+    (if syncText.len > 0: syncText
+     elif waiting > 0: $waiting & " waiting to be sent"
+     elif accountsC.len == 0: "No account yet"
+     else: "Working Online"),
+    $store0.messageCount() & " messages offline")
+  split(barW, -1):
+    outlookBar()
+  do:
+    case view
+    of vStart:
+      folderBar(appName, (if accountsC.len == 0: "no account yet" elif accountsC.len == 1: "1 account" else: $accountsC.len & " accounts"))
+      split(treeW, -1):
+        leftPane()
+      do:
+        startPage()
+    of vMail:
+      let sub = if place.kind == plFolder: account(folderOf(place.folder).account).email
+                elif place.kind == plTag: "in every folder"
+                else: (if accountsC.len == 1: accountsC[0].email else: "every account")
+      folderBar((if query.len > 0: "Search" else: placeTitle()), sub,
+                if place.kind == plTag and query.len == 0: place.tag else: "")
+      for a in accountsC:
+        if a.state == "signin":
+          if banner(a.email & " must sign in again.", bkWarning, ["Sign In"], closable = false) == 1:
+            signInAgain(a)
+      split(treeW, -1):
+        leftPane()
+      do:
+        if prefBool("myday", true) and available() > dp(1000):
+          split(mainW, -1):
+            mailArea()
+          do:
+            myDayPane()
+        else:
+          mailArea()
+    of vCalendar:
+      folderBar("Calendar", calDay.year.`$`)
+      calendarView()
+    of vPeople:
+      folderBar("People", "the address book")
+      peopleView()
+    of vTodo:
+      folderBar("To Do", "")
+      todoView()
+    of vNotes:
+      folderBar("Notes", "kept on this device")
+      notesView()
+  mailKeys()
+
+# ---- start -------------------------------------------------------------------------------
+
+var started = false
+var fetchIn, fetchOut: Channel[string]
+
+proc startup() =
+  ## (on the first frame: on Android the app's folder is known only then)
+  started = true
+  if getEnv("RETRO_MAIL_HOME").len == 0:
+    when defined(android): putEnv("RETRO_MAIL_HOME", dataDir("RetroMail"))
+    else: discard
+  prefs = loadSettings("retro-mail")
+  restoreAppearance(prefs)
+  store0 = openStore()
+  link.cmds.open()
+  link.events.open()
+  link.dbPath = mailDir() / "mail.db"
+  createThread(syncThread, syncMain, addr link)
+  link.cmds.send(SyncCmd(kind: scSettings, count: prefInt("interval", 1)))
+  fetchIn.open()
+  fetchOut.open()
+  fetchLink = addr fetchIn
+  fetchDone = addr fetchOut
+  createThread(fetchThread, fetchMain, (addr fetchIn, addr fetchOut))
+  if store0.signatures().len == 0:
+    discard store0.saveSignature(0, "Simple", "<p>--<br>Sent with Retro Mail</p>")
+  reload()
+  if accountsC.len == 0:
+    view = vStart
+    openWizard()
+  elif prefBool("startInbox", false):
+    view = vMail
+    treeSel = "fav:inbox"
+    lastTreeSel = treeSel
+    place = Place(kind: plAllInbox)
+
+app appName, 1280, 800:
+  if not started: startup()
+  handleEvents()
+  reload()
+  if isCompact():
+    phoneUi()
+  elif composing:
+    composeWindow()
+  else:
+    mainWindow()
+  tagMenu()
+  smallDialogs()
+  optionsDialog()
+  aboutDialog()
+  wizardDialog()
+
+if started:
+  link.cmds.send(SyncCmd(kind: scQuit))
+  fetchIn.send("")
+  savePrefs()
+  store0.close()

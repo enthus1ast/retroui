@@ -18,6 +18,7 @@ examples/build/
 tests/*
 !tests/*.nim
 !tests/*.nims
+!tests/*.py
 !tests/*/
 tests/fuzz/fuzz
 tests/fuzz/fuzzui
