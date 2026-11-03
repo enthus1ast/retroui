@@ -9,8 +9,8 @@ Microsoft 365 (work or school), Outlook.com and Gmail, side by side.
   (DPAPI on Windows, the keychain on macOS, libsecret or an encrypted file
   on Linux, the app's private folder on Android).
 - **Official APIs only:** Microsoft Graph and the Gmail API (and Google
-  Calendar). No IMAP passwords, no screen scraping, nothing built in: each
-  account uses an app registration of your own (below).
+  Calendar). No IMAP passwords, no screen scraping: one click to add an
+  account (below).
 - **Offline first.** Mail is kept in a local SQLite file with a full-text
   index: the list opens at once, search answers in milliseconds without the
   network, and changes made offline go out when the network comes back.
@@ -30,32 +30,56 @@ Microsoft 365 (work or school), Outlook.com and Gmail, side by side.
   pictures from the web wait until you ask, so senders cannot see when you
   read their mail.
 
-## Your Microsoft app registration
+## Adding an account
 
-1. Open <https://entra.microsoft.com> (your company's IT may do this for
-   you), **App registrations > New registration**.
-2. Name it "Retro Mail". Supported accounts: your organisation only, any
-   organisation, or also personal Microsoft accounts (for Outlook.com).
-3. **Authentication > Add a platform > Mobile and desktop applications**:
-   add `http://localhost`. Set **Allow public client flows** to *Yes*.
-4. **API permissions > Add > Microsoft Graph > Delegated**: `Mail.ReadWrite`,
+File > Add Account (it opens by itself the first time): click **Microsoft
+365 or Outlook.com** or **Gmail or Google Workspace**. Your browser opens
+the service's own sign-in page; sign in, allow Retro Mail, and the window
+goes on by itself. That is all.
+
+(An organisation that allows only apps it registered itself: *Advanced:
+my organisation's own app registration* takes its Application ID.)
+
+## For whoever builds it: the app registrations, once
+
+A program signs in to Microsoft and Google as a registered app. Make the two
+registrations once, as the developer, and build them in: every user then
+signs in with one click. A client ID names the app, not anyone's account,
+and is public (every desktop mail program carries one); Google says a
+desktop client's "secret" is not kept secret either.
+
+**Microsoft** (<https://entra.microsoft.com>, App registrations > New registration):
+
+1. Name "Retro Mail"; supported accounts: *any organisational directory and
+   personal Microsoft accounts*.
+2. Authentication > Add a platform > *Mobile and desktop applications*:
+   `http://localhost`. *Allow public client flows*: Yes.
+3. API permissions > Microsoft Graph > Delegated: `Mail.ReadWrite`,
    `Mail.Send`, `Calendars.Read`, `MailboxSettings.Read`, `User.Read`,
-   `offline_access`. If your organisation requires it, an administrator
-   clicks *Grant admin consent* once.
-5. Copy the **Application (client) ID** (and, for a single-organisation app,
-   the **Directory (tenant) ID**) into the wizard.
+   `offline_access`.
+4. Branding: verify the publisher (an organisation's users can then allow
+   it themselves where their admins let them; some companies still have an
+   administrator approve new apps once).
 
-## Your Google app
+**Google** (<https://console.cloud.google.com>):
 
-1. Open <https://console.cloud.google.com>, make a project.
-2. **APIs & Services > Library**: enable the *Gmail API* and the *Google
-   Calendar API*.
-3. **OAuth consent screen**: External (or Internal for Workspace), add your
-   address as a test user, add the scopes `gmail.modify` and
-   `calendar.readonly`.
-4. **Credentials > Create credentials > OAuth client ID > Desktop app**.
-5. Copy its **client ID** and **client secret** into the wizard (Google
-   calls it a secret; for desktop apps it is not one, but it is needed).
+1. A project; enable the *Gmail API* and the *Google Calendar API*.
+2. OAuth consent screen: External; scopes `gmail.modify` and
+   `calendar.readonly`. Until Google verifies the app, only the test users
+   you list (up to 100) can sign in, and they see an "unverified app"
+   page; Gmail's scopes need Google's verification (and its yearly security
+   review) before anyone at all can.
+3. Credentials > Create credentials > OAuth client ID > *Desktop app*.
+
+Then put the three values in `examples/mail/appids.nim`, or give them when
+building (GitHub Actions takes them from repository secrets of the same
+names):
+
+```sh
+RETRO_MAIL_MICROSOFT_ID=... RETRO_MAIL_GOOGLE_ID=... RETRO_MAIL_GOOGLE_SECRET=... nimble mailapk
+```
+
+A build without them asks each user for an app registration of their own.
 
 ## Using it
 

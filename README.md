@@ -1011,8 +1011,9 @@ It is the toolkit's network modules at work:
 Threads with + and - boxes, Focused and Other, tags in their colors,
 flags, pin, snooze, quick replies, send later, the calendar, people, to do
 and notes; on a phone, swipe a message right to archive it, left to delete
-it. Each account uses an app registration of your own: `docs/retromail.md`
-says how, step by step.
+it. Adding an account is one click: Microsoft or Google, the browser opens
+its sign-in page, done (`docs/retromail.md`: the app registrations a build
+carries, made once).
 
 | | |
 |---|---|

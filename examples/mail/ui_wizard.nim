@@ -1,15 +1,18 @@
 # Retro Mail: the Add Account wizard and signing in (again) in the browser.
+# One click: "Microsoft" or "Google", the browser opens the service's own
+# sign-in page, you sign in there, the account is here. (An organisation
+# that allows only its own app registrations: "Advanced" takes its ID.)
 # Included by examples/mail.nim.
 #
 # Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 var
   wizOpen = false
-  wizStep = 0
-  wizKind = 0               ## 0 Microsoft 365 (work or school), 1 Outlook.com, 2 Gmail
+  wizStep = 0               ## 0 choose, 1 an app registration of your own, 2 signing in, 3 done
+  wizKind = 0               ## 0 Microsoft (work, school or personal), 2 Google
   wizName, wizMail: string
+  wizOwn = false            ## an app registration of your own, not the built-in one
   wizClient, wizSecret, wizTenant: string
-  wizRemember = true
   wizFlow: OAuthFlow
   wizError = ""
   wizAccount = 0            ## signing in again to this account (0: a new one)
@@ -29,10 +32,19 @@ var testBrowserT: Thread[string]
 proc testBrowser(url: string) {.gcsafe.} =
   {.gcsafe.}: createThread(testBrowserT, testBrowserThread, url)
 
+proc builtinId(kind: int): string =
+  if kind == 2: googleAppId else: microsoftAppId
+
 proc wizAccountObj(): Account =
-  Account(id: wizAccount, kind: (if wizKind == 2: akGmail else: akGraph), clientId: wizClient.strip,
-          tenant: (if wizKind == 1: "consumers" elif wizTenant.strip.len > 0: wizTenant.strip
-                   else: "organizations"))
+  let own = wizOwn or builtinId(wizKind).len == 0
+  Account(id: wizAccount, kind: (if wizKind == 2: akGmail else: akGraph),
+          clientId: (if own: wizClient.strip else: builtinId(wizKind)),
+          tenant: (if own and wizTenant.strip.len > 0: wizTenant.strip else: "common"))
+
+proc wizSecretNow(): string =
+  if wizKind != 2: ""
+  elif wizOwn or googleAppId.len == 0: wizSecret.strip
+  else: googleAppSecret
 
 proc openWizard() =
   wizOpen = true
@@ -40,32 +52,46 @@ proc openWizard() =
   wizAccount = 0
   wizError = ""
   wizFlow = nil
-  if wizName.len == 0:
-    wizName = if accountsC.len > 0: accountsC[0].name else: ""
+  wizOwn = false
   wizMail = ""
-  wizKind = prefInt("wizKind", 0)
-  wizClient = pref(if wizKind == 2: "gClient" else: "msClient")
-  wizTenant = pref("msTenant")
-  wizSecret = if wizKind == 2: loadSecret(secretApp, "google-client-secret") else: ""
+  wizName = if accountsC.len > 0: accountsC[0].name else: ""
+  wizClient = ""
+  wizTenant = ""
+  wizSecret = ""
+
+proc startSignIn() =
+  ## Opens the service's sign-in page in the browser, and waits for it.
+  wizError = ""
+  wizStep = 2
+  let acc = wizAccountObj()
+  let p = providerFor(acc, wizSecretNow())
+  let browser: proc (url: string) {.gcsafe.} =
+    if getEnv("RETRO_MAIL_TEST_BROWSER").len > 0: testBrowser else: nil
+  wizFlow = beginSignIn(p, wizMail.strip, browser)
+
+proc chooseService(kind: int) =
+  wizKind = kind
+  if builtinId(kind).len == 0:
+    # (a build without its own registration: yours, once)
+    wizOwn = true
+    wizClient = pref(if kind == 2: "gClient" else: "msClient")
+    wizTenant = if kind == 2: "" else: pref("msTenant")
+    wizSecret = if kind == 2: loadSecret(secretApp, "google-client-secret") else: ""
+    wizStep = 1
+  else:
+    startSignIn()
 
 proc signInAgain(acc: Account) =
   openWizard()
   wizAccount = acc.id
-  wizKind = if acc.kind == akGmail: 2 elif acc.tenant == "consumers": 1 else: 0
+  wizKind = if acc.kind == akGmail: 2 else: 0
   wizMail = acc.email
   wizName = acc.name
+  wizOwn = acc.clientId != builtinId(wizKind) or builtinId(wizKind).len == 0
   wizClient = acc.clientId
   wizTenant = if acc.tenant in ["organizations", "consumers", "common"]: "" else: acc.tenant
   if acc.kind == akGmail: wizSecret = loadSecret(secretApp, secretKey(acc.id))
-  wizStep = 2
-
-proc startSignIn() =
-  wizError = ""
-  let acc = wizAccountObj()
-  let p = providerFor(acc, wizSecret.strip)
-  let browser: proc (url: string) {.gcsafe.} =
-    if getEnv("RETRO_MAIL_TEST_BROWSER").len > 0: testBrowser else: nil
-  wizFlow = beginSignIn(p, wizMail.strip, browser)
+  startSignIn()
 
 proc finishSignIn() =
   ## The browser said yes: who is it, then the account is kept.
@@ -95,12 +121,12 @@ proc finishSignIn() =
            else: store0.addAccount(acc.kind, email, name, acc.clientId, acc.tenant,
                                    prefInt("syncDays", 90))
   discard saveSecret(secretApp, tokenKey(id), $(%t))
-  if acc.kind == akGmail: discard saveSecret(secretApp, secretKey(id), wizSecret.strip)
-  if wizRemember:
-    prefs.put("wizKind", wizKind)
+  if acc.kind == akGmail: discard saveSecret(secretApp, secretKey(id), wizSecretNow())
+  if wizOwn:
+    # (your own registration: kept for the next account)
     if acc.kind == akGmail:
       prefs.put("gClient", acc.clientId)
-      discard saveSecret(secretApp, "google-client-secret", wizSecret.strip)
+      discard saveSecret(secretApp, "google-client-secret", wizSecretNow())
     else:
       prefs.put("msClient", acc.clientId)
       prefs.put("msTenant", wizTenant.strip)
@@ -120,6 +146,21 @@ proc wizardArt(w, h: int) =
   image(r.x + (w - 3 * m.w) div 2, r.y + dp(140), m, 3)
   sunken(r)
 
+proc serviceButton(px, title, detail: string): bool =
+  ## A big button that names a service (Microsoft, Google).
+  let lh = lineHeight()
+  let r = place(available(), 2 * lh + dp(22), fill = true)
+  let hit = interact(idOf("svc" & title), r)
+  fill(r, if hit.hover: rgb(232, 232, 244) else: ui.theme.face)
+  if hit.down: sunken(r) else: raised(r, 2)
+  box(r, ui.theme.frame)
+  let ic = pixelIcon(px, big = true)
+  image(r.x + dp(10), r.y + (r.h - ic.h) div 2, ic)
+  text(r.x + dp(54), r.y + dp(8), title, ui.theme.text, style(bold = true))
+  text(r.x + dp(54), r.y + dp(10) + lh, detail, ui.theme.gray)
+  if hit.focused: focusDots(inset(r, 4))
+  hit.clicked
+
 proc wizardDialog() =
   if wizFlow != nil and wizStep == 2:
     case wizFlow.state
@@ -135,80 +176,70 @@ proc wizardDialog() =
   let width = if compact: ui.w - dp(16) else: dp(640)
   dialog wizOpen, (if wizAccount > 0: "Sign In Again" else: "Add Account Wizard"), width:
     row([(if compact: 0 else: dp(150)), -1]):
-      if not compact: wizardArt(dp(150), dp(360))
+      if not compact: wizardArt(dp(150), dp(330))
       col:
         case wizStep
         of 0:
-          label "Your E-mail Account", bold = true
-          paragraph "Step 1 of 3. Your name is what people see in the From field " &
-                    "of what you send."
-          form dp(110):
-            field "&Display name:": edit wizName
-            field "&E-mail address:": edit wizMail
-          label "My mail is with:"
-          if radio("&Microsoft 365 -- work or school", wizKind, 0) or
-             radio("&Outlook.com, Hotmail or Live", wizKind, 1):
+          label "Add an E-mail Account", bold = true
+          paragraph "Where is your mail? Retro Mail opens the service's own sign-in page " &
+                    "in your browser: sign in there, allow Retro Mail, and come back. It " &
+                    "never sees your password."
+          space()
+          if serviceButton(pxGlobe, "Microsoft 365 or Outlook.com",
+                           "Work, school, Outlook.com, Hotmail, Live"):
+            chooseService(0)
+          space()
+          if serviceButton(pxMail, "Gmail or Google Workspace", "Your Google account"):
+            chooseService(2)
+          space()
+          form dp(130):
+            field "E-mail (if you like):": edit wizMail
+          label "It fills in the sign-in page for you.", color = ui.theme.gray
+          if link("Advanced: my organisation's own app registration..."):
+            wizOwn = true
             wizClient = pref("msClient")
-          if radio("&Gmail or Google Workspace", wizKind, 2):
-            wizClient = pref("gClient")
-            wizSecret = loadSecret(secretApp, "google-client-secret")
-          paragraph "Retro Mail signs in with the service's own page, in your browser: it " &
-                    "never sees your password and keeps only an encrypted sign-in token."
+            wizTenant = pref("msTenant")
+            wizStep = 1
         of 1:
+          label (if wizKind == 2: "Your Google App" else: "Your Organisation's App"), bold = true
           if wizKind == 2:
-            label "Your Google App", bold = true
-            paragraph "Step 2 of 3. Retro Mail talks to Gmail through your own Google Cloud " &
-                      "project (no one else's key is in it). In console.cloud.google.com: " &
-                      "enable the Gmail API and the Google Calendar API, set up the OAuth " &
-                      "consent screen, then Credentials, Create, OAuth client ID, \"Desktop " &
-                      "app\". Copy its ID and secret here."
+            paragraph "In console.cloud.google.com: enable the Gmail and Google Calendar " &
+                      "APIs, then Credentials, OAuth client ID, \"Desktop app\"."
             form dp(110):
               field "&Client ID:": edit wizClient
               field "Client &secret:": edit(wizSecret, password = true)
           else:
-            label "Your Microsoft App", bold = true
-            paragraph "Step 2 of 3. Retro Mail talks to Microsoft 365 through an app " &
-                      "registration of your own (or your IT department's). In " &
-                      "entra.microsoft.com: App registrations, New registration; under " &
-                      "Authentication add the platform \"Mobile and desktop applications\" " &
-                      "with the address http://localhost and allow public client flows; " &
-                      "under API permissions add Microsoft Graph's Mail.ReadWrite, Mail.Send, " &
-                      "Calendars.Read, MailboxSettings.Read, User.Read and offline_access."
+            paragraph "For an organisation that allows only its own apps: the Application " &
+                      "ID of its registration (entra.microsoft.com, App registrations: " &
+                      "\"Mobile and desktop\" with http://localhost, public client flows on, " &
+                      "Mail.ReadWrite, Mail.Send, Calendars.Read)."
+            row:
+              radio("&Microsoft", wizKind, 0)
+              radio("&Google", wizKind, 2)
             form dp(110):
               field "&Application ID:": edit wizClient
               if wizKind == 0:
                 field "&Tenant ID:": edit wizTenant
-            if wizKind == 0:
-              label "Tenant: empty for any organisation, or your directory's ID.",
-                    color = ui.theme.gray
-            paragraph "If your company asks an administrator to approve new apps, they " &
-                      "approve this one once."
-          checkbox("&Remember these for my next account", wizRemember)
+          label "Kept for your next account.", color = ui.theme.gray
         of 2:
           label "Sign In", bold = true
-          if wizFlow == nil:
-            paragraph "Step 3 of 3. Your browser opens " &
-                      (if wizKind == 2: "Google's" else: "Microsoft's") &
-                      " sign-in page. Sign in there and allow Retro Mail to read and send " &
-                      "your mail; then come back here."
-            if button(if wizKind == 2: "Sign in with Google..." else: "Sign in with Microsoft...",
-                      pxKey, isDefault = true):
-              startSignIn()
-          else:
+          if wizFlow != nil:
             row:
               spinner()
-              label "Waiting for the browser...", bold = true
-            paragraph "Finish signing in in your browser. If it did not open, copy this " &
-                      "address into it:"
+              label "Waiting for " & (if wizKind == 2: "Google" else: "Microsoft") & "...", bold = true
+            paragraph "Your browser opened the sign-in page. Sign in there and allow Retro " &
+                      "Mail to read and send your mail; this window goes on by itself."
             row:
-              if link("Copy the address"): putClipboardText(wizFlow.url)
               if link("Open it again"): discard openUrl(wizFlow.url)
+              if link("Copy the address"): putClipboardText(wizFlow.url)
             if button("Cancel"):
               wizFlow.cancel()
               wizFlow = nil
+              wizStep = 0
           if wizError.len > 0:
             label "It did not work:", bold = true, color = rgb(200, 0, 0)
             paragraph wizError
+            if button("Try Again", pxRefresh, isDefault = true): startSignIn()
         else:
           label "Congratulations", bold = true
           paragraph "You are signed in as " & wizDoneText & ". Retro Mail is downloading " &
@@ -218,12 +249,12 @@ proc wizardDialog() =
       space available() - 3 * (dp(84) + Gap) + Gap
       if button("< &Back", enabled = wizStep in 1 .. 2 and wizFlow == nil and wizAccount == 0,
                 w = dp(84)):
-        dec wizStep
-      if wizStep < 2:
-        let ok = if wizStep == 0: true
-                 elif wizKind == 2: wizClient.strip.len > 10 and wizSecret.strip.len > 4
+        wizStep = 0
+        wizError = ""
+      if wizStep == 1:
+        let ok = if wizKind == 2: wizClient.strip.len > 10 and wizSecret.strip.len > 4
                  else: wizClient.strip.len > 10
-        if button("&Next >", isDefault = true, enabled = ok, w = dp(84)): inc wizStep
+        if button("&Sign In", isDefault = true, enabled = ok, w = dp(84)): startSignIn()
       elif wizStep == 3:
         if button("&Finish", isDefault = true, w = dp(84)):
           wizOpen = false

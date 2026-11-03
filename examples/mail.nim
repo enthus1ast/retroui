@@ -9,8 +9,9 @@
 ## - swipe a message right or left on touch screens
 ## - the calendar, people, to do and notes beside the mail
 ##
-## Each account uses an app registration of your own (Microsoft Entra or
-## Google Cloud): the wizard says where to make one. Nothing is built in.
+## Adding an account is one click: Microsoft or Google, the browser opens
+## its sign-in page, done. The app registrations it signs in with are made
+## once by whoever builds it (examples/mail/appids.nim, docs/retromail.md).
 ##
 ##   nim c -r -d:release examples/mail.nim
 ##   retroapk examples/mail.nim --permission:INTERNET     (Android)
@@ -19,7 +20,7 @@
 
 import std/[os, strutils, json, times, tables, sets, algorithm, sequtils, unicode, hashes]
 import retro, retro/[db, http, oauth, secrets, mime, richedit]
-import mail/[store, api, sync, graph, gmail]
+import mail/[store, api, sync, graph, gmail, appids]
 
 include mail/ui_state
 include mail/ui_data

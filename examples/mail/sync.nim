@@ -8,7 +8,7 @@
 
 import std/[json, strutils, times, tables, os, hashes, sets]
 import retro/[db, http, oauth, secrets, mime]
-import api, store, graph, gmail
+import api, store, graph, gmail, appids
 
 const secretApp* = "RetroMail"
 
@@ -60,8 +60,9 @@ proc providerFor*(acc: Account; clientSecret = ""): OAuthProvider {.gcsafe.} =
       result.authUrl = base & "/" & tenant & "/oauth2/v2.0/authorize"
       result.tokenUrl = base & "/" & tenant & "/oauth2/v2.0/token"
   of akGmail:
-    let secret = if clientSecret.len > 0: clientSecret
+    var secret = if clientSecret.len > 0: clientSecret
                  else: loadSecret(secretApp, secretKey(acc.id))
+    if secret.len == 0 and acc.clientId == googleAppId: secret = googleAppSecret
     result = googleProvider(acc.clientId, secret, gmailScopes)
     result.authUrl = gAuthUrl()
     result.tokenUrl = gTokenUrl()

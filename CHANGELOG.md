@@ -6,9 +6,10 @@
   to look at and to use, with what the new Outlook does, for Microsoft 365,
   Outlook.com and Gmail. Signed in in the browser (the services' own pages:
   no password typed here, the tokens kept encrypted); Microsoft Graph and
-  the Gmail API only, through app registrations of your own (the Add
-  Account Wizard says where to make them, `docs/retromail.md` step by
-  step). Everything is kept in a local SQLite store: the list opens at
+  the Gmail API only. Adding an account is one click: Microsoft or
+  Google, the browser opens its sign-in page, done (the app registrations
+  are built in: `examples/mail/appids.nim` or CI secrets; `docs/retromail.md`
+  says how to make them once). Everything is kept in a local SQLite store: the list opens at
   once, search answers offline in milliseconds (`from:`, `tag:`, `is:`,
   `has:attachment`, `before:`), and changes made offline go out later.
   The start page, the Outlook bar, the folder tree with sub-folders and
