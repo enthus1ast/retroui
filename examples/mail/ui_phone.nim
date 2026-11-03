@@ -34,20 +34,38 @@ proc phoneRow(i: int; c: Conv; rr0: Rect) =
     c2.x += dx
   pushClip(rr0)
   let hit = interact(idOf("prow" & c.key), c2, focusable = false)
-  if hit.clicked and dx == 0:
-    selectRow(i)
-    phone = phRead
+  let key = rowKey(i)
   if longPressed() and mouseIn(c2) and canInput():
-    selectRow(i)
-    openPopupMenu("rowmenu", ui.mx, ui.my)
-  let selected = i == selRow
-  fill(c2, if c.pinned: rgb(255, 255, 225) else: ui.theme.field)
+    # a long press: choosing several (as phones do), this one first
+    if not phoneChoosing:
+      phoneChoosing = true
+      multiSel.clear()
+    multiSel.incl key
+    discard vibrate(20)
+    ui.pressUsed = true
+  elif hit.clicked and dx == 0:
+    if phoneChoosing:
+      if key in multiSel: multiSel.excl key else: multiSel.incl key
+      if multiSel.len == 0: phoneChoosing = false
+    else:
+      selectRow(i)
+      phone = phRead
+  let chosen = phoneChoosing and key in multiSel
+  let selected = i == selRow and not phoneChoosing
+  fill(c2, if chosen: rgb(204, 224, 255) elif c.pinned: rgb(255, 255, 225) else: ui.theme.field)
   let unread = c.unread > 0
   if unread: fill(rect(c2.x, c2.y, dp(4), c2.h), rgb(0, 0, 200))
   let fg = ui.theme.fieldText
   let dim = ui.theme.gray
-  let ic = if unread: pixelIcon(pxMail) else: glyphIcon(nfEnvelope, dim)
-  image(c2.x + dp(10), c2.y + dp(8), ic)
+  if phoneChoosing:
+    # its check box, where the envelope was
+    let b = rect(c2.x + dp(8), c2.y + dp(8), dp(18), dp(18))
+    fill(b, ui.theme.field)
+    box(b, ui.theme.text)
+    if chosen: text(b.x + dp(3), b.y + (b.h - lh) div 2, nfCheck, rgb(0, 0, 160))
+  else:
+    let ic = if unread: pixelIcon(pxMail) else: glyphIcon(nfEnvelope, dim)
+    image(c2.x + dp(10), c2.y + dp(8), ic)
   let x = c2.x + dp(34)
   let st = style(bold = unread)
   let who0 = if c.msgs.len > 1: c.people else: who(m)
@@ -89,10 +107,32 @@ proc phoneList() =
     total += (if row.group.len > 0: gh else: rh)
   let hi = max(0, total - r.h)
   scrollWheel(id, listScroll, hi, r, rh)
-  if not swiping: scrollPan(id, listScroll, hi, r)
+  # pull down from the top: send and receive
+  if canInput() and ui.pressed and mouseIn(r) and listScroll <= 0:
+    pullFrom = ui.my
+  if pullFrom >= 0 and ui.mouseDown and not swiping:
+    pullBy = max(0, ui.my - pullFrom)
+    if pullBy > dp(70) and not pullReady:
+      pullReady = true
+      discard vibrate(15)
+    elif pullBy <= dp(70): pullReady = false
+    ui.redraw = true
+  elif pullFrom >= 0:
+    if pullReady:
+      link.cmds.send(SyncCmd(kind: scSyncNow))
+      syncText = "Checking for new mail..."
+    pullFrom = -1
+    pullBy = 0
+    pullReady = false
+  if not swiping and pullBy < dp(8): scrollPan(id, listScroll, hi, r)
   scrollTick(id, listScroll, hi)
   pushClip(r)
-  var y = r.y - listScroll
+  if pullBy > 0:
+    let ph = min(pullBy, dp(90))
+    fill(rect(r.x, r.y, r.w, ph), ui.theme.face)
+    let t = if pullReady: "Let go to check for new mail" else: "Pull down to check for new mail"
+    if ph > lh: text(r.x + (r.w - textWidth(t)) div 2, r.y + ph - lh - dp(6), t, ui.theme.text)
+  var y = r.y - listScroll + min(pullBy, dp(90))
   for i, row in rows:
     if row.msg >= 0: continue
     let h = if row.group.len > 0: gh else: rh
@@ -108,6 +148,53 @@ proc phoneList() =
     text(r.x + dp(16), r.y + dp(16), (if accountsC.len == 0: "No account yet." else: "No messages here."),
          ui.theme.gray)
   popClip()
+  # the round Compose button, over the list (not while choosing)
+  if not phoneChoosing and accountsC.len > 0:
+    let d = dp(56)
+    let fab = rect(r.x + r.w - d - dp(16), r.y + r.h - d - dp(16), d, d)
+    let hit = interact(idOf("composefab"), fab, focusable = false)
+    disc(float(fab.x + d div 2 + 2), float(fab.y + d div 2 + 3), float(d) / 2, ui.theme.shadow)
+    disc(float(fab.x + d div 2), float(fab.y + d div 2), float(d) / 2,
+         if hit.down: rgb(0, 60, 150) else: rgb(0, 90, 200))
+    let ic = pixelIcon(pxMail, big = true)
+    image(fab.x + (d - ic.w) div 2, fab.y + (d - ic.h) div 2, ic)
+    if hit.clicked: openCompose("new")
+
+proc phoneChooseBar() =
+  ## While choosing several: what to do with them, in place of the Outlook bar.
+  let barH = dp(56)
+  let r = place(available(), barH, fill = true)
+  fill(r, rgb(0, 60, 150))
+  let ms = selectedMsgs()
+  let items = [(pxArchive, "Archive"), (pxDelete, "Delete"), (nfEnvelope, "Read"),
+               (nfFlag, "Flag"), (pxFolder, "Move"), (nfTags, "Tags"), (nfTimes, "Cancel")]
+  let w = r.w div items.len
+  for k, (px, name) in items:
+    let cell = rect(r.x + k * w, r.y, w, r.h)
+    let hit = interact(idOf("pchoose" & name), cell, focusable = false)
+    if hit.down: fill(inset(cell, 3), rgb(0, 90, 200))
+    if px.startsWith("\u{10F}") or px.len == 4 and ord(px[0]) == 0xF4:
+      let ic = pixelIcon(px)
+      image(cell.x + (cell.w - ic.w) div 2, cell.y + dp(10), ic)
+    else:
+      text(cell.x + (cell.w - textWidth(px)) div 2, cell.y + dp(10), px, rgb(255, 255, 255))
+    text(cell.x + (cell.w - textWidth(name)) div 2, cell.y + dp(34), name, rgb(255, 255, 255))
+    if hit.clicked:
+      case name
+      of "Archive": archiveMsgs(ms)
+      of "Delete": deleteMsgs(ms)
+      of "Read": markRead(ms, ms.allIt(not it.unread))
+      of "Flag": toggleFlag(ms)
+      of "Move":
+        moveOpen = true
+        continue
+      of "Tags":
+        tagMenuAt = rect(cell.x, cell.y - dp(300), cell.w, 0)
+        tagMenuOpen = true
+        continue
+      else: discard
+      phoneChoosing = false
+      clearMulti()
 
 proc phoneFolders() =
   toolbar:
@@ -140,6 +227,21 @@ proc phoneRead() =
   if c == nil:
     phone = phList
     return
+  # a swipe sideways over the message: the next one (left) or the one before (right)
+  let area = rect(0, ui.barY, ui.w, ui.h - ui.barY)
+  if canInput() and ui.pressed and mouseIn(area):
+    readSwipeX = ui.mx
+    readSwipeY = ui.my
+    readSwipeT = epochTime()
+  if readSwipeX >= 0 and not ui.mouseDown:
+    let dx = ui.mx - readSwipeX
+    let dy = ui.my - readSwipeY
+    if abs(dx) > dp(90) and abs(dx) > 2 * abs(dy) and epochTime() - readSwipeT < 0.6 and
+       readZoom <= 1.0:
+      clearMulti()
+      moveRow(if dx < 0: 1 else: -1)
+      discard vibrate(10)
+    readSwipeX = -1
   readingPane()
 
 proc phoneUi() =
@@ -188,5 +290,6 @@ proc phoneUi() =
       if t != focusTab:
         focusTab = t
         changed()
+    if phoneChoosing and multiSel.len == 0: phoneChoosing = false
     phoneList()
-    phoneBottom()
+    if phoneChoosing: phoneChooseBar() else: phoneBottom()

@@ -170,22 +170,61 @@ proc buildConvs(ms0: seq[Msg]) =
       c.latest = c.msgs[0].date
       c.subject = c.msgs[^1].subject
       if c.subject.len == 0: c.subject = c.msgs[0].subject
+  # the order the list is arranged by (View, Arrange By; or a column's header)
+  let by = pref("sortBy", "date")
+  let asc = prefBool("sortAsc", false)
   convs.sort(proc (a, b: Conv): int =
-    if a.pinned != b.pinned: (if a.pinned: -1 else: 1) else: cmp(b.latest, a.latest))
+    if a.pinned != b.pinned: return (if a.pinned: -1 else: 1)
+    var r = case by
+      of "from": cmpIgnoreCase(a.people, b.people)
+      of "subject": cmpIgnoreCase(a.subject.strip(chars = {' '}), b.subject)
+      of "size": cmp(a.size, b.size)
+      of "flag": cmp(ord(a.flagged), ord(b.flagged))
+      of "unread": cmp(ord(a.unread > 0), ord(b.unread > 0))
+      else: cmp(a.latest, b.latest)
+    if r == 0: r = cmp(a.latest, b.latest)
+    if asc: r else: -r)
+
+proc sizeGroup(n: int): string =
+  if n > 10_000_000: "Huge (over 10 MB)"
+  elif n > 1_000_000: "Large (1 - 10 MB)"
+  elif n > 100_000: "Medium (100 KB - 1 MB)"
+  else: "Small (under 100 KB)"
 
 proc buildRows() =
   rows.setLen(0)
   var last = ""
-  let grouped = query.len == 0
+  let by = pref("sortBy", "date")
+  let grouped = query.len == 0 and by in ["date", "from", "size", "flag"]
   for i, c in convs:
     if grouped:
-      let g = if c.pinned: "Pinned" else: groupOf(c.latest)
+      let g = if c.pinned: "Pinned"
+              else:
+                case by
+                of "from": (if c.msgs.len > 0: who(c.msgs[^1]) else: "")
+                of "size": sizeGroup(c.size)
+                of "flag": (if c.flagged: "Flagged" else: "Not flagged")
+                else: groupOf(c.latest)
       if g != last:
         rows.add LRow(group: g, conv: i, msg: -1)
         last = g
     rows.add LRow(conv: i, msg: -1)
     if c.msgs.len > 1 and c.key in expanded:
       for k in 0 ..< c.msgs.len: rows.add LRow(conv: i, msg: k)
+
+proc rowKey(i: int): string =
+  ## A row's identity across reloads: its conversation, or one message of it.
+  if i < 0 or i >= rows.len or rows[i].group.len > 0: return ""
+  let r = rows[i]
+  if r.msg < 0: "c:" & convs[r.conv].key else: "m:" & $convs[r.conv].msgs[r.msg].id
+
+proc rowMsgs(i: int): seq[Msg] =
+  ## The messages a row stands for (a conversation: those in this folder).
+  if i < 0 or i >= rows.len: return
+  let r = rows[i]
+  if r.group.len > 0: return
+  if r.msg >= 0: @[convs[r.conv].msgs[r.msg]]
+  else: convs[r.conv].msgs.filterIt(it.id notin mates)
 
 proc reload() =
   ## Reads what the window shows from the store again (when it changed).
@@ -197,6 +236,13 @@ proc reload() =
   tagsC = store0.tags()
   buildConvs(loadMessages())
   buildRows()
+  # rows selected together that are gone (moved, deleted) are no longer selected
+  if multiSel.len > 0:
+    var keep: OrderedSet[string]
+    for i in 0 ..< rows.len:
+      let k = rowKey(i)
+      if k in multiSel: keep.incl k
+    multiSel = if keep.len > 1: keep else: initOrderedSet[string]()
   # keep the selection on its conversation
   selRow = -1
   for i, r in rows:
@@ -210,13 +256,26 @@ proc selectedConv(): ptr Conv =
     return addr convs[rows[selRow].conv]
   nil
 
+proc multiSelecting(): bool = multiSel.len > 1
+  ## More than one row is selected (Ctrl / Shift + click, Ctrl+A, a long press).
+
 proc selectedMsgs(): seq[Msg] =
-  ## What an action acts on: the selected message, or the whole conversation.
-  if selRow < 0 or selRow >= rows.len: return
-  let r = rows[selRow]
-  if r.group.len > 0: return
-  if r.msg >= 0: @[convs[r.conv].msgs[r.msg]]
-  else: convs[r.conv].msgs.filterIt(it.id notin mates)
+  ## What an action acts on: the selected rows' messages, else the selected
+  ## message, or the whole conversation.
+  if multiSel.len > 0:
+    var seen: HashSet[int]
+    for i in 0 ..< rows.len:
+      if rowKey(i) in multiSel:
+        for m in rowMsgs(i):
+          if m.id notin seen:
+            seen.incl m.id
+            result.add m
+    if result.len > 0 or multiSel.len > 1: return
+  rowMsgs(selRow)
+
+proc clearMulti() =
+  multiSel.clear()
+  selAnchor = -1
 
 proc loadOpen() =
   ## The selected conversation for the reading pane (every folder, bodies).
@@ -287,10 +346,10 @@ proc imagesFor(m: Msg): HtmlImageSource =
 
 # ---- changes ---------------------------------------------------------------------------
 
-proc queue(m: Msg; kind: string; data: JsonNode) =
+proc queue(m: Msg; kind: string; data: JsonNode; due = 0.0): int {.discardable.} =
   data["id"] = %m.id
   data["remote"] = %m.remoteId
-  discard store0.queueAction(m.account, kind, data)
+  store0.queueAction(m.account, kind, data, due)
 
 proc markRead(ms: seq[Msg]; unread = false) =
   store0.transaction:
@@ -334,7 +393,15 @@ proc clearTags(ms: seq[Msg]) =
   for m in ms:
     for t in m.tags: setMsgTags(@[m], t, false)
 
-proc moveMsgs(ms: seq[Msg]; role: string; folderId = 0) =
+const undoSecs = 8.0   ## how long a move waits here before the server hears of it (Undo)
+
+proc moveMsgs(ms: seq[Msg]; role: string; folderId = 0; undoable = true) =
+  ## Messages moved to a folder (by its role, or `folderId`): here at once,
+  ## on the server a few seconds later, so that Undo can take it back.
+  var moved: seq[UndoMove]
+  var gone = 0
+  let due = if undoable: epochTime() + undoSecs else: 0.0
+  var where = ""
   store0.transaction:
     for m in ms:
       let dest = if folderId > 0: folderOf(folderId) else: roleFolder(m.account, role)
@@ -344,10 +411,46 @@ proc moveMsgs(ms: seq[Msg]; role: string; folderId = 0) =
         if account(m.account).kind == akGmail: continue   # (Gmail empties its Trash itself)
         queue(m, "move", %*{"folder": dest.id})
         store0.deleteMessage(m.id)
+        inc gone
       else:
-        queue(m, "move", %*{"folder": dest.id})
+        let aid = queue(m, "move", %*{"folder": dest.id}, due)
         store0.moveLocal(m.id, dest.id)
+        moved.add UndoMove(msg: m.id, account: m.account, fromFolder: m.folder,
+                           toFolder: dest.id, action: aid)
+        where = dest.name
   for a in accountsC: store0.recount(a.id)
+  if moved.len > 0 and undoable:
+    undoMoves = moved
+    undoWhat = "move"
+    let n = moved.len
+    let what = if n == 1: "1 message" else: $n & " messages"
+    showSnackbar(case role
+                 of "trash": what & " deleted"
+                 of "archive": what & " archived"
+                 of "junk": what & " moved to Junk"
+                 else: what & " moved to " & where, "Undo", int(undoSecs * 1000) - 500)
+  elif gone > 0:
+    status = $gone & " deleted for good"
+  wake()
+  changed()
+
+proc undoLastMove() =
+  ## Undo: the messages go back where they were (and the server never hears
+  ## of the move while it still waits here).
+  var n = 0
+  store0.transaction:
+    for u in undoMoves:
+      let waiting = store0.value("SELECT count(*) FROM actions WHERE id = ? AND error = ''",
+                                 u.action).num > 0
+      if waiting: store0.doneAction(u.action)
+      else:
+        let m = store0.message(u.msg)
+        if m.id > 0: queue(m, "move", %*{"folder": u.fromFolder})
+      store0.moveLocal(u.msg, u.fromFolder)
+      inc n
+  undoMoves.setLen(0)
+  for a in accountsC: store0.recount(a.id)
+  status = (if n == 1: "1 message" else: $n & " messages") & " put back"
   wake()
   changed()
 

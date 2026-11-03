@@ -2,8 +2,10 @@
 """A small stand-in for the services Retro Mail talks to, for its tests:
 Microsoft's and Google's sign-in (OAuth 2.0 with PKCE), Microsoft Graph's
 mail, categories and calendar, the Gmail API (with its batch and upload
-endpoints) and Google Calendar. State lives in memory; GET /test/state shows
-it, POST /test/newmail adds a message to both inboxes.
+endpoints) and Google Calendar; meeting invitations, automatic replies, raw
+messages and Anthropic's Messages API (under /ai) for tests/test_mailextra.nim.
+State lives in memory; GET /test/state shows it, POST /test/newmail adds a
+message to both inboxes.
 
     python3 tests/mailmock.py 8765
 
@@ -71,7 +73,9 @@ def seed():
     add("m1", "f-inbox", ("Ahmed Al Rawahi", "ahmed@contoso.com"), "Meeting about the Photo app",
         "<p>Tuesday at 2 is good for me. Should I bring the test images?</p>", NOW - 3600, "c1")
     add("m2", "f-sent", ("Sultan Al Isaiee", "sultan@contoso.com"), "Re: Meeting about the Photo app",
-        "<p>Yes please, the RAW ones too.</p>", NOW - 3000, "c1", read=True, to="ahmed@contoso.com")
+        "<p>Yes please, the RAW ones too.</p><div id=\"Signature\"><p><b>Sultan Al Isaiee</b><br>Retro Nim UI</p></div>"
+        "<hr><div id=\"divRplyFwdMsg\"><b>From:</b> Ahmed</div><div id=\"Signature\"><p>Ahmed's own</p></div>",
+        NOW - 3000, "c1", read=True, to="ahmed@contoso.com")
     add("m3", "f-inbox", ("Retro Weekly", "news@retroweekly.example"), "Retro Weekly: three new toolkits",
         NEWSLETTER, NOW - 7200, "c3", cats=["Retro"], att=True, focused=False)
     g["messages"]["m3"]["attachments"] = [
@@ -185,6 +189,7 @@ class H(BaseHTTPRequestHandler):
                 if path.startswith("/upload/gmail/v1/users/me/messages/send"): return self.gsend_upload()
                 if path.startswith("/gmail/v1/users/me"): return self.gmail(meth, path[18:], q)
                 if path.startswith("/calendar/v3/"): return self.gcal(q)
+                if path.startswith("/ai/"): return ai(self, meth, path)
             self.send(404, {"error": {"message": "no such endpoint " + path}})
         except Exception as e:
             import traceback; traceback.print_exc()
@@ -214,6 +219,7 @@ class H(BaseHTTPRequestHandler):
         if path == "/test/expire":
             for t in S["tokens"].values(): t["exp"] = 0
             return self.send(200, {})
+        if path in ("/test/invites", "/test/extra"): return test_extra(self, path)
         self.send(404, {})
 
     # ---- OAuth ----
@@ -290,6 +296,14 @@ class H(BaseHTTPRequestHandler):
                     f["totalItemCount"] = sum(1 for x in g["messages"].values() if x["parentFolderId"] == f["id"])
                     vals.append(f)
             return self.send(200, {"value": vals})
+        m = re.match(r"^/me/mailFolders/([^/]+)/messages$", path)
+        if m and meth == "GET":
+            names = {"sentitems": "f-sent", "inbox": "f-inbox"}
+            fid = names.get(m.group(1), m.group(1))
+            ms = sorted([x for x in g["messages"].values() if x["parentFolderId"] == fid],
+                        key=lambda x: x["receivedDateTime"], reverse=True)
+            return self.send(200, {"value": [{"id": x["id"], "subject": x["subject"], "body": x["body"],
+                                              "from": x["from"], "sentDateTime": x["receivedDateTime"]} for x in ms]})
         m = re.match(r"^/me/mailFolders/([^/]+)/messages/delta$", path)
         if m:
             fid = m.group(1)
@@ -323,7 +337,10 @@ class H(BaseHTTPRequestHandler):
             mid, rest = m.group(1), m.group(2) or ""
             x = g["messages"].get(mid)
             if x is None: return self.send(404, {"error": {"code": "ErrorItemNotFound", "message": "The specified object was not found in the store."}})
+            if rest == "" and meth == "GET" and "_event" in x and "eventMessage/event" in q.get("$expand", [""])[0]:
+                return self.send(200, dict({k: v for k, v in x.items() if not k.startswith("_")}, event=x["_event"]))
             if rest == "" and meth == "GET": return self.send(200, x)
+            if rest == "/$value" and meth == "GET": return self.send(200, raw=graph_mime(x), ctype="text/plain")
             if rest == "" and meth == "PATCH":
                 ch = json.loads(self.body())
                 for k, v in ch.items():
@@ -402,6 +419,7 @@ class H(BaseHTTPRequestHandler):
             return self.send(201, c)
         if path == "/me/calendarView":
             return self.send(200, {"value": g["events"]})
+        if graph_extra(self, meth, path): return
         self.send(404, {"error": {"code": "BadRequest", "message": "no such Graph path " + path}})
 
     def upload(self, meth, path):
@@ -426,6 +444,11 @@ class H(BaseHTTPRequestHandler):
         gm = S["gmail"]
         if path == "/profile": return self.send(200, {"emailAddress": gm["email"], "historyId": str(gm["history"])})
         if path == "/labels" and meth == "GET": return self.send(200, {"labels": gm["labels"]})
+        if path == "/settings/sendAs":
+            return self.send(200, {"sendAs": [
+                {"sendAsEmail": "other@alias.example", "signature": "<div>alias</div>"},
+                {"sendAsEmail": gm["email"], "isPrimary": True, "isDefault": True,
+                 "signature": "<div dir=\"ltr\"><b>Sultan</b><br>www.foxoman.net</div>"}]})
         if path == "/labels" and meth == "POST":
             b = json.loads(self.body())
             if "color" in b and b["color"]["backgroundColor"] not in ("#4a86e8", "#16a766", "#cc3a21", "#ffad47", "#a479e2", "#2da2bb"):
@@ -478,10 +501,14 @@ class H(BaseHTTPRequestHandler):
                 gm["historyLog"].append((gm["history"], "labels", mid))
                 return self.send(200, {"id": mid, "labelIds": x["labelIds"]})
             m2 = re.match(r"^/attachments/([^/]+)$", rest)
+            if m2 and m2.group(1) in x.get("_atts", {}): return self.send(200, x["_atts"][m2.group(1)])
             if m2: return self.send(200, {"size": 4, "data": b64u(b"\xff\xd8\xff\xd9")})
+        if gmail_extra(self, meth, path): return
         self.send(404, {"error": {"code": 404, "message": "no such Gmail path " + path}})
 
     def gview(self, x, fmt):
+        if fmt == "raw":
+            return {"id": x["id"], "threadId": x["threadId"], "labelIds": x["labelIds"], "raw": b64u(gmail_mime(x))}
         y = json.loads(json.dumps(x))
         if fmt == "metadata":
             y["payload"] = {"mimeType": x["payload"]["mimeType"], "headers": x["payload"]["headers"]}
@@ -526,6 +553,7 @@ class H(BaseHTTPRequestHandler):
                 raw = p.split(b"\r\n\r\n", 1)[1]
                 if raw.endswith(b"\r\n"): raw = raw[:-2]
         msg = message_from_bytes(raw, policy=policy.default)
+        extra()["raw_sent"].append(raw.decode("utf-8", "replace"))
         gm = S["gmail"]
         gid = "gs%d" % (len(gm["sent"]) + 1)
         gm["sent"].append({"threadId": meta.get("threadId", ""), "subject": str(msg["subject"]), "to": str(msg["to"]),
@@ -536,6 +564,244 @@ class H(BaseHTTPRequestHandler):
     def gcal(self, q):
         if not self.authed(): return
         return self.send(200, {"items": S["gmail"]["events"]})
+
+# ---- meeting invitations, automatic replies, raw messages, the assistant ----
+# POST /test/invites adds two invitations to each service (not there before,
+# so the first sync's counts stay); GET /test/extra shows the answers given,
+# the settings, the raw mail Gmail sent and the assistant's requests.
+
+def extra():
+    return S.setdefault("extra", {"answers": [], "ai": [], "raw_sent": [], "patches": []})
+
+def enc_word(s):
+    return s if s.isascii() else "=?UTF-8?B?%s?=" % base64.b64encode(s.encode()).decode()
+
+def mime_of(headers, html):
+    """A message's MIME source: its headers, the HTML base64-encoded."""
+    out = "".join("%s: %s\r\n" % (k, v) for k, v in headers)
+    body = base64.encodebytes(html.encode()).decode().replace("\n", "\r\n")
+    return (out + "MIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n"
+            "Content-Transfer-Encoding: base64\r\n\r\n" + body).encode()
+
+def graph_mime(x):
+    f = x["from"]["emailAddress"]
+    t = time.strptime(x["receivedDateTime"][:19], "%Y-%m-%dT%H:%M:%S")
+    return mime_of([("From", "%s <%s>" % (enc_word(f["name"]), f["address"])),
+                    ("To", ", ".join(r["emailAddress"]["address"] for r in x["toRecipients"])),
+                    ("Subject", enc_word(x["subject"])), ("Message-ID", x["internetMessageId"]),
+                    ("Date", time.strftime("%a, %d %b %Y %H:%M:%S +0000", t))], x["body"]["content"])
+
+def gmail_mime(x):
+    def html_of(p):
+        if p.get("mimeType") == "text/html" and p.get("body", {}).get("data"):
+            return base64.urlsafe_b64decode(p["body"]["data"] + "==").decode()
+        for c in p.get("parts", []):
+            h = html_of(c)
+            if h: return h
+        return ""
+    return mime_of([(h["name"], h["value"]) for h in x["payload"]["headers"]], html_of(x["payload"]))
+
+def ics(lines):
+    """iCalendar lines, CRLF-ended and folded at 75 octets (as RFC 5545 wants)."""
+    out = []
+    for l in lines:
+        b, first = l.encode(), True
+        while len(b) > (75 if first else 74):
+            n = 75 if first else 74
+            while (b[n] & 0xC0) == 0x80: n -= 1
+            out.append((b"" if first else b" ") + b[:n])
+            b, first = b[n:], False
+        out.append((b"" if first else b" ") + b)
+    return b"\r\n".join(out) + b"\r\n"
+
+ICS_GOOGLE = ics([
+    "BEGIN:VCALENDAR", "PRODID:-//Google Inc//Google Calendar 70.9054//EN", "VERSION:2.0",
+    "CALSCALE:GREGORIAN", "METHOD:REQUEST", "BEGIN:VTIMEZONE", "TZID:Asia/Muscat",
+    "X-LIC-LOCATION:Asia/Muscat", "BEGIN:STANDARD", "TZOFFSETFROM:+0400", "TZOFFSETTO:+0400",
+    "TZNAME:+04", "DTSTART:19700101T000000", "END:STANDARD", "END:VTIMEZONE", "BEGIN:VEVENT",
+    "DTSTART;TZID=Asia/Muscat:20261110T100000", "DTEND;TZID=Asia/Muscat:20261110T113000",
+    "DTSTAMP:20261103T080000Z", "ORGANIZER;CN=Khalid Al Siyabi:mailto:khalid@example.om",
+    "UID:7kq3trip2026@google.com",
+    "ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;CN=Khalid Al Siyabi;X-NUM-GUESTS=0:mailto:khalid@example.om",
+    "ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=foxoman@gmail.example;X-NUM-GUESTS=0:mailto:foxoman@gmail.example",
+    "CREATED:20261103T075900Z",
+    "DESCRIPTION:Agenda:\\n1. Photos\\, maps and the route\\n2. Who drives – رحلة جبل شمس\\; bring water",
+    "LAST-MODIFIED:20261103T080000Z", "LOCATION:Jebel Shams\\, Al Hamra", "SEQUENCE:2",
+    "STATUS:CONFIRMED", "SUMMARY:Trip planning", "TRANSP:OPAQUE", "END:VEVENT", "END:VCALENDAR"])
+
+ICS_OUTLOOK = ics([
+    "BEGIN:VCALENDAR", "METHOD:REQUEST", "PRODID:Microsoft Exchange Server 2010", "VERSION:2.0",
+    "BEGIN:VTIMEZONE", "TZID:Arabian Standard Time", "BEGIN:STANDARD", "DTSTART:16010101T000000",
+    "TZOFFSETFROM:+0400", "TZOFFSETTO:+0400", "END:STANDARD", "BEGIN:DAYLIGHT", "DTSTART:16010101T000000",
+    "TZOFFSETFROM:+0400", "TZOFFSETTO:+0400", "END:DAYLIGHT", "END:VTIMEZONE", "BEGIN:VEVENT",
+    "ORGANIZER;CN=Muna Al Balushi:mailto:muna@contoso.com",
+    "ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Sultan:mailto:FOXOMAN@gmail.example",
+    "DESCRIPTION;LANGUAGE=en-US:Closing the year.\\n", "UID:040000008200E00074C5B7101A82E0080000000050F1C2",
+    "SUMMARY;LANGUAGE=en-US:National Day holiday", "DTSTART;VALUE=DATE:20261118",
+    "DTEND;VALUE=DATE:20261120", "CLASS:PUBLIC", "PRIORITY:5", "DTSTAMP:20261103T090000Z",
+    "TRANSP:TRANSPARENT", "STATUS:CONFIRMED", "SEQUENCE:0", "LOCATION;LANGUAGE=en-US:",
+    "X-MICROSOFT-CDO-ALLDAYEVENT:TRUE", "END:VEVENT", "END:VCALENDAR"])
+
+def seed_invites():
+    g, gm = S["graph"], S["gmail"]
+    if "inv1" in g["messages"]: return
+    evs = g.setdefault("evs", {})
+    evs["ev-1"] = {"id": "ev-1", "iCalUId": "040000008200E00074C5B7101A82E00800000000A1B2C3", "subject": "Photo app review",
+                   "start": {"dateTime": "2026-11-12T06:00:00.0000000", "timeZone": "UTC"},
+                   "end": {"dateTime": "2026-11-12T07:00:00.0000000", "timeZone": "UTC"},
+                   "isAllDay": False, "location": {"displayName": "Room 2"}, "type": "singleInstance",
+                   "organizer": {"emailAddress": {"name": "Ahmed Al Rawahi", "address": "ahmed@contoso.com"}},
+                   "responseStatus": {"response": "notResponded", "time": "0001-01-01T00:00:00Z"},
+                   "responseRequested": True, "isCancelled": False, "bodyPreview": "Let us go through the photo app."}
+    evs["ev-2"] = dict(evs["ev-1"], id="ev-2", iCalUId="040000008200E00074C5B7101A82E00800000000D4E5F6",
+                       subject="Budget 2027", isCancelled=True)
+    for mid, ev, mt, subj in (("inv1", "ev-1", "meetingRequest", "Photo app review"),
+                              ("inv2", "ev-2", "meetingCancelled", "Canceled: Budget 2027")):
+        x = json.loads(json.dumps(g["messages"]["m1"]))
+        x.update({"id": mid, "conversationId": "c" + mid, "subject": subj, "isRead": False,
+                  "@odata.type": "#microsoft.graph.eventMessageRequest" if mt == "meetingRequest" else "#microsoft.graph.eventMessage",
+                  "meetingMessageType": mt, "internetMessageId": "<%s@contoso.com>" % mid, "_event": evs[ev]})
+        g["messages"][mid] = x
+    def part(pid, mime, data=None, att=None, ctype=None, fname="", disp=None):
+        hs = [{"name": "Content-Type", "value": ctype or mime}]
+        if disp: hs.append({"name": "Content-Disposition", "value": disp})
+        body = {"size": len(data or b"")}
+        if att: body["attachmentId"] = att
+        else: body["data"] = b64u(data)
+        return {"partId": pid, "mimeType": mime, "filename": fname, "headers": hs, "body": body}
+    def msg(mid, thread, frm, subj, parts, atts):
+        gm["messages"][mid] = {
+            "id": mid, "threadId": thread, "labelIds": ["INBOX", "UNREAD"], "snippet": subj,
+            "internalDate": str(int(time.time() * 1000)), "sizeEstimate": 5000, "_atts": atts,
+            "payload": {"mimeType": "multipart/mixed", "headers": [
+                {"name": "From", "value": "%s <%s>" % frm}, {"name": "To", "value": gm["email"]},
+                {"name": "Subject", "value": subj}, {"name": "Message-ID", "value": "<%s@mail.gmail.example>" % mid},
+                {"name": "Date", "value": time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())}],
+                "parts": parts}}
+    msg("gi1", "ti1", ("Khalid Al Siyabi", "khalid@example.om"),
+        "Invitation: Trip planning @ Tue 10 Nov 2026 10am - 11:30am (GST) (foxoman@gmail.example)",
+        [{"partId": "0", "mimeType": "multipart/alternative", "filename": "", "headers": [], "body": {"size": 0}, "parts": [
+            part("0.0", "text/plain", b"Khalid Al Siyabi has invited you to Trip planning", ctype='text/plain; charset="UTF-8"'),
+            part("0.1", "text/html", b"<p>Khalid Al Siyabi has invited you to <b>Trip planning</b></p>", ctype='text/html; charset="UTF-8"'),
+            part("0.2", "text/calendar", ICS_GOOGLE, ctype='text/calendar; charset="UTF-8"; method=REQUEST')]},
+         part("1", "application/ics", att="ics-gi1", ctype='application/ics; name="invite.ics"', fname="invite.ics",
+              disp='attachment; filename="invite.ics"')],
+        {"ics-gi1": {"size": len(ICS_GOOGLE), "data": b64u(ICS_GOOGLE)}})
+    msg("gi2", "ti2", ("Muna Al Balushi", "muna@contoso.com"), "National Day holiday",
+        [part("0", "text/html", b"<p>Closing the year.</p>", ctype="text/html; charset=utf-8"),
+         part("1", "text/calendar", att="cal-gi2", ctype='text/calendar; charset="utf-8"; method=REQUEST')],
+        {"cal-gi2": {"size": len(ICS_OUTLOOK), "data": b64u(ICS_OUTLOOK)}})
+
+def test_extra(h, path):
+    if path == "/test/invites":
+        seed_invites()
+        return h.send(200, {"graph": ["inv1", "inv2"], "gmail": ["gi1", "gi2"]})
+    g, gm = S["graph"], S["gmail"]
+    return h.send(200, {"extra": extra(), "autoReply": g.get("autoReply"), "vacation": gm.get("vacation"),
+                        "events": g.get("evs", {}), "sent": g["sent"], "gsent": gm["sent"]})
+
+def bad(h, msg):
+    h.send(400, {"error": {"code": "BadRequest", "message": msg}})
+    return True
+
+def graph_extra(h, meth, path):
+    g = S["graph"]
+    m = re.match(r"^/me/events/([^/]+)/(accept|tentativelyAccept|decline)$", path)
+    if m and meth == "POST":
+        ev = g.get("evs", {}).get(m.group(1))
+        if ev is None:
+            h.send(404, {"error": {"code": "ErrorItemNotFound", "message": "The specified object was not found in the store."}})
+            return True
+        b = json.loads(h.body() or b"{}")
+        if any(k not in ("comment", "sendResponse", "proposedNewTime") for k in b) or \
+           not isinstance(b.get("sendResponse", True), bool) or not isinstance(b.get("comment", ""), str):
+            return bad(h, "Invalid request body")
+        extra()["answers"].append({"event": m.group(1), "action": m.group(2), "comment": b.get("comment", ""),
+                                   "sendResponse": b.get("sendResponse", True)})
+        ev["responseStatus"] = {"response": {"accept": "accepted", "tentativelyAccept": "tentativelyAccepted",
+                                             "decline": "declined"}[m.group(2)]}
+        h.send(202, raw=b"")
+        return True
+    ar = g.setdefault("autoReply", {
+        "status": "disabled", "externalAudience": "all", "internalReplyMessage": "", "externalReplyMessage": "",
+        "scheduledStartDateTime": {"dateTime": "2026-11-20T08:00:00.0000000", "timeZone": "Arabian Standard Time"},
+        "scheduledEndDateTime": {"dateTime": "2026-11-27T17:00:00.0000000", "timeZone": "Arabian Standard Time"}})
+    if path == "/me/mailboxSettings/automaticRepliesSetting" and meth == "GET":
+        h.send(200, ar)
+        return True
+    if path == "/me/mailboxSettings" and meth == "GET":
+        h.send(200, {"automaticRepliesSetting": ar, "timeZone": "Arabian Standard Time"})
+        return True
+    if path == "/me/mailboxSettings" and meth == "PATCH":
+        b = json.loads(h.body() or b"{}")
+        new = b.get("automaticRepliesSetting")
+        if not isinstance(new, dict): return bad(h, "automaticRepliesSetting is missing")
+        st, aud = new.get("status", ar["status"]), new.get("externalAudience", ar["externalAudience"])
+        if st not in ("disabled", "alwaysEnabled", "scheduled"): return bad(h, "bad status " + str(st))
+        if aud not in ("none", "contactsOnly", "all"): return bad(h, "bad externalAudience " + str(aud))
+        if st == "scheduled":
+            for k in ("scheduledStartDateTime", "scheduledEndDateTime"):
+                v = new.get(k, ar.get(k))
+                if not (isinstance(v, dict) and v.get("dateTime") and v.get("timeZone")):
+                    return bad(h, k + " is required when scheduled")
+        extra()["patches"].append(b)
+        ar.update(new)
+        h.send(200, {"automaticRepliesSetting": ar})
+        return True
+    return False
+
+def gmail_extra(h, meth, path):
+    gm = S["gmail"]
+    if path != "/settings/vacation": return False
+    v = gm.setdefault("vacation", {"enableAutoReply": False, "responseSubject": "", "responseBodyPlainText": "",
+                                   "responseBodyHtml": "", "restrictToContacts": False, "restrictToDomain": False})
+    if meth == "GET":
+        h.send(200, v)
+        return True
+    if meth == "PUT":
+        b = json.loads(h.body() or b"{}")
+        if not isinstance(b.get("enableAutoReply"), bool): return bad(h, "enableAutoReply is required")
+        for k in ("startTime", "endTime"):
+            if k in b and not (isinstance(b[k], str) and b[k].isdigit()): return bad(h, k + ": an int64 (as a string)")
+        if "startTime" in b and "endTime" in b and int(b["startTime"]) >= int(b["endTime"]):
+            return bad(h, "Start time must be before end time")
+        gm["vacation"] = b
+        h.send(200, b)
+        return True
+    return False
+
+def ai(h, meth, path):
+    """Anthropic's Messages API, as far as the tests need: the headers checked, a canned answer."""
+    def err(code, kind, msg, headers=()):
+        h.send(code, {"type": "error", "error": {"type": kind, "message": msg}}, headers=headers)
+    if path != "/ai/v1/messages" or meth != "POST": return err(404, "not_found_error", "Not found")
+    hd = {k.lower(): v for k, v in h.headers.items()}
+    rec = {"headers": {k: hd.get(k, "") for k in ("x-api-key", "anthropic-version", "content-type")}, "body": None}
+    extra()["ai"].append(rec)
+    key = hd.get("x-api-key", "")
+    if key == "sk-ant-busy":
+        return err(429, "rate_limit_error", "Number of request tokens has exceeded your per-minute rate limit",
+                   headers=[("retry-after", "7")])
+    if key != "sk-ant-test": return err(401, "authentication_error", "invalid x-api-key")
+    if hd.get("anthropic-version") != "2023-06-01": return err(400, "invalid_request_error", "anthropic-version: bad or missing")
+    if not hd.get("content-type", "").startswith("application/json"):
+        return err(400, "invalid_request_error", "content-type must be application/json")
+    try: b = json.loads(h.body())
+    except ValueError: return err(400, "invalid_request_error", "the body is not JSON")
+    rec["body"] = b
+    ms = b.get("messages")
+    if not isinstance(b.get("model"), str) or not isinstance(b.get("max_tokens"), int) or not ms or \
+       ms[0].get("role") != "user" or not isinstance(ms[0].get("content"), str):
+        return err(400, "invalid_request_error", "model, max_tokens and messages are required")
+    sysp = b.get("system", "")
+    if sysp.startswith("Translate"): text = "مرحبا أحمد، الثلاثاء الساعة 2 مناسب."
+    elif "suggest replies" in sysp:
+        text = 'Here they are:\n["Yes, Tuesday at 2 works for me.", "Which room is it in?", "Sorry, I cannot make it this week."]'
+    else:
+        text = "- The photo app meeting is on Tuesday at 2.\n- Ahmed brings the test images.\n\nWhat is asked of you:\n- Confirm the time."
+    h.send(200, {"id": "msg_mock_%d" % len(extra()["ai"]), "type": "message", "role": "assistant", "model": b["model"],
+                 "content": [{"type": "text", "text": text}], "stop_reason": "end_turn", "stop_sequence": None,
+                 "usage": {"input_tokens": 10, "output_tokens": 20}})
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765

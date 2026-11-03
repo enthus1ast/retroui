@@ -124,6 +124,11 @@ proc openStore*(path = ""): Db =
   let p = if path.len > 0: path else: mailDir() / "mail.db"
   result = openDb(p)
   result.execScript(schema)
+  # (columns added since 1.0: a store made by an older version gets them)
+  var cols: seq[string]
+  for r in result.rows("PRAGMA table_info(messages)"): cols.add r[1].str
+  if "follow" notin cols:
+    result.exec("ALTER TABLE messages ADD COLUMN follow REAL DEFAULT 0")
 
 # ---- tags as stored: "\nA\nB\n" so a tag is found with instr ----------------------------
 
@@ -282,8 +287,8 @@ proc indexMessage*(db: Db; id: int) =
 proc upsertMessage*(db: Db; m: Msg): int =
   ## Stores what the server says about a message (keeping what only this
   ## app knows: pinned, snoozed, the body); its id.
-  let old = db.one("SELECT id, body_state FROM messages WHERE account = ? AND remote_id = ?",
-                   m.account, m.remoteId)
+  let old = db.one("SELECT id, body_state, unread, flagged, tags, folder FROM messages " &
+                   "WHERE account = ? AND remote_id = ?", m.account, m.remoteId)
   if old.len == 0:
     db.exec("INSERT INTO messages(account, remote_id, folder, thread, subject, from_name, " &
             "from_email, to_list, cc_list, date, size, snippet, unread, flagged, important, " &
@@ -296,6 +301,17 @@ proc upsertMessage*(db: Db; m: Msg): int =
     result = int db.lastInsertId
   else:
     result = int old[0].num
+    # a change made here that has not reached the server yet stays (the
+    # server's answer may have been read before it went out)
+    var m = m
+    for r in db.rows("SELECT kind FROM actions WHERE error = '' AND " &
+                     "json_extract(data, '$.id') = ?", result):
+      case r[0].str
+      of "read": m.unread = old[2].num != 0
+      of "flag": m.flagged = old[3].num != 0
+      of "tags": m.tags = unpackTags(old[4].str)
+      of "move": m.folder = int old[5].num
+      else: discard
     db.exec("UPDATE messages SET folder = ?, thread = ?, subject = ?, from_name = ?, " &
             "from_email = ?, to_list = CASE WHEN ? = '' THEN to_list ELSE ? END, " &
             "cc_list = CASE WHEN ? = '' THEN cc_list ELSE ? END, date = ?, " &
@@ -615,3 +631,33 @@ proc drafts*(db: Db): seq[tuple[id: int; data: JsonNode; updated: float]] =
 proc deleteDraft*(db: Db; id: int) = db.exec("DELETE FROM drafts WHERE id = ?", id)
 
 proc messageCount*(db: Db): int = int db.value("SELECT count(*) FROM messages").num
+
+# ---- follow up: a flag with a day ------------------------------------------------------------
+
+proc setFollow*(db: Db; id: int; at: float) =
+  ## A reminder on a flagged message: `at` (0: none).
+  db.exec("UPDATE messages SET follow = ? WHERE id = ?", at, id)
+
+proc followOf*(db: Db; id: int): float =
+  ## When the message is to be followed up (0: no day).
+  let v = db.value("SELECT follow FROM messages WHERE id = ?", id)
+  if v.isNull: 0.0 else: v.flt
+
+proc dueFollowUps*(db: Db; now: float): seq[tuple[id: int; subject: string; at: float]] =
+  ## Flagged messages whose day has come, the oldest first.
+  for r in db.rows("SELECT id, subject, follow FROM messages WHERE flagged = 1 AND follow > 0 " &
+                   "AND follow <= ? ORDER BY follow", now):
+    result.add (int r[0].num, r[1].str, r[2].flt)
+
+# ---- message rules: kept as their JSON (examples/mail/rules.nim reads it) -------------------
+
+proc rulesJson*(db: Db): string =
+  ## The message rules, as one JSON array ("" none yet).
+  db.exec("CREATE TABLE IF NOT EXISTS rules(id INTEGER PRIMARY KEY CHECK (id = 1), json TEXT)")
+  let v = db.value("SELECT json FROM rules WHERE id = 1")
+  if v.isNull: "" else: v.str
+
+proc saveRulesJson*(db: Db; json: string) =
+  db.exec("CREATE TABLE IF NOT EXISTS rules(id INTEGER PRIMARY KEY CHECK (id = 1), json TEXT)")
+  db.exec("INSERT INTO rules(id, json) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET json = excluded.json",
+          json)

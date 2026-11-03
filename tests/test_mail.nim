@@ -7,7 +7,7 @@
 
 import std/[os, osproc, json, strutils, times, net, sequtils, exitprocs, tables]
 import retro/[db, http, oauth, secrets]
-import ../examples/mail/[store, api, sync]
+import ../examples/mail/[store, api, sync, sigfind]
 
 proc freePort(): int =
   let s = newSocket()
@@ -208,6 +208,39 @@ check gsent.len == 1 and gsent[0]["threadId"].getStr == "t1", "Gmail: sent in it
 if gsent.len == 1:
   check gsent[0]["in_reply_to"].getStr == "<g1@mail.gmail.example>", "Gmail: In-Reply-To set"
   check "note.txt" in gsent[0]["attachments"].getElems.mapIt(it.getStr), "Gmail: the attachment in the raw message"
+
+echo "signatures from the web"
+link.cmds.send(SyncCmd(kind: scSignatures, id: gg.id))
+let gs = parseJson(waitFor(seSignature, id = gg.id).text)
+check "www.foxoman.net" in gs{"new"}.getStr and "alias" notin gs{"new"}.getStr,
+      "Gmail: the address's own signature from its settings"
+link.cmds.send(SyncCmd(kind: scSignatures, id: ms.id))
+let mss = parseJson(waitFor(seSignature, id = ms.id).text)
+check "Retro Nim UI" in mss{"reply"}.getStr and "Ahmed" notin mss{"reply"}.getStr,
+      "Outlook: the signature of a sent reply, not the quoted one"
+check mss{"new"}.getStr == mss{"reply"}.getStr, "Outlook: one signature for both when only replies were sent"
+check signatureIn("<p>Hi</p><div id=\"Signature\"><div><p>A</p></div><p>B</p></div><p>after</p>") ==
+      "<div id=\"Signature\"><div><p>A</p></div><p>B</p></div>", "a nested signature element taken whole"
+check signatureIn("<p>Hi</p><p class=MsoNormal><a name=\"_MailAutoSig\"></a>Sultan<br>Muscat</p>" &
+                  "<div style=\"border:none;border-top:solid #E1E1E1 1.0pt\"><p>From: X</p></div>") ==
+      "<p class=MsoNormal><a name=\"_MailAutoSig\"></a>Sultan<br>Muscat</p>", "Outlook for Windows' bookmark"
+check signatureIn("<p>Hi</p><div id=\"ms-outlook-mobile-signature\">Get Outlook for Android</div>") == "",
+      "Outlook mobile's advertisement is not a signature"
+check signatureIn("<div id=\"Signature\"><img src=\"cid:logo@x\"><p>S</p></div>") ==
+      "<div id=\"Signature\"><p>S</p></div>", "pictures kept inside the sent message dropped"
+check isReply("RE: x", "") and isReply("رد: مرحبا", "") and not isReply("Hello", "<p>x</p>"), "replies told apart"
+
+echo "changes made here stay until they reach the server"
+let g1m = store0.message(g1.id)
+let aid = store0.queueAction(gg.id, "tags", %*{"id": g1.id, "tags": ["Family"]}, due = epochTime() + 3600)
+store0.setTags(g1.id, @["Family"])
+var server = g1m
+server.tags = @[]
+discard store0.upsertMessage(server)
+check store0.message(g1.id).tags == @["Family"], "a tag waiting to go out is not undone by the server's older view"
+store0.doneAction(aid)
+discard store0.upsertMessage(server)
+check store0.message(g1.id).tags.len == 0, "the server's view counts again once nothing waits"
 
 echo "new mail, expired tokens"
 discard httpRequest("POST", base & "/test/expire")

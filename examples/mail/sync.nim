@@ -6,9 +6,9 @@
 ##
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
-import std/[json, strutils, times, tables, os, hashes, sets]
-import retro/[db, http, oauth, secrets, mime]
-import api, store, graph, gmail, appids
+import std/[json, strutils, times, tables, os, hashes, sets, sequtils]
+import retro/[db, oauth, secrets, mime]
+import api, store, graph, gmail, appids, sigfind, invites, autoreply, assist, rules, forward
 
 const secretApp* = "RetroMail"
 
@@ -21,6 +21,13 @@ type
     scSearch      ## search the servers for `text`
     scAccounts    ## accounts were added or removed
     scSettings    ## `count`: minutes between checks
+    scSignatures  ## read account `id`'s signatures from its service
+    scInvite      ## message `id`: is it a meeting invitation (and what)?
+    scRespond     ## answer the invitation in message `id`: `text` {"answer", "comment", "send"}
+    scGetAutoReply  ## account `id`'s automatic replies
+    scSetAutoReply  ## account `id`'s automatic replies set to `text` (JSON)
+    scAssist      ## the assistant: `text` {"kind": "summary" | "translate", "id": message, "to": language}
+    scRaw         ## message `id`'s whole source: `count` 0 to forward it attached, 1 saved at `text`
     scQuit
   SyncCmd* = object
     kind*: SyncCmdKind
@@ -36,6 +43,11 @@ type
     seNewMail     ## `count` new messages; `text` the newest's sender and subject
     seSearch      ## the server search is done: `ids`
     seSent        ## a message went (`text` its subject)
+    seSignature   ## account `id`'s signatures: `text` {"new": html, "reply": html}
+    seInvite      ## message `id`'s invitation: `text` its JSON ({"error"} when it failed)
+    seAutoReply   ## account `id`'s automatic replies: `text` JSON (`count` 1: saved)
+    seAssist      ## the assistant's answer: `text` {"kind", "id", "text"} or {"error"}
+    seRaw         ## message `id`'s source: `text` the file, `count` as asked ({"error"})
   SyncEvent* = object
     kind*: SyncEventKind
     id*, count*: int
@@ -126,9 +138,11 @@ type
     interval: float
     newest: Table[int, float]       ## per account: the newest inbox mail seen
     later: seq[SyncCmd]             ## commands put off while syncing
+    fresh: seq[string]              ## the remote ids of mail that just came (for the rules)
 
 proc send(w: var Worker; ev: SyncEvent) = w.link.events.send(ev)
 proc status(w: var Worker; s: string) = w.send(SyncEvent(kind: seStatus, text: s))
+proc applyRules(w: var Worker; acc: Account; ids: seq[int])
 
 proc token(w: var Worker; acc: Account): string =
   ## A fresh access token, or "" (then the account has to sign in again).
@@ -382,6 +396,10 @@ proc runActions(w: var Worker; acc: Account): bool =
   ## Sends the account's queued changes; true when something was done.
   let due = w.db.dueActions(acc.id)
   if due.len == 0: return
+  if acc.clientId == "local":
+    # (Local Folders: the change was all there was to do)
+    for a in due: w.db.doneAction(a.id)
+    return
   let tok = w.token(acc)
   if tok.len == 0: return
   for a in due:
@@ -417,6 +435,7 @@ proc noteNew(w: var Worker; acc: Account; m: Msg; folderRole: string; count: var
   if m.date > seen:
     inc count
     latest = (if m.fromName.len > 0: m.fromName else: m.fromEmail) & ": " & m.subject
+    w.fresh.add m.remoteId               # (the rules look at it once it is stored)
 
 proc markNewest(w: var Worker; acc: Account) =
   let v = w.db.value("SELECT max(date) FROM messages m JOIN folders f ON f.id = m.folder " &
@@ -579,9 +598,17 @@ proc syncAccount(w: var Worker; acc: Account) =
     try:
       if acc.state.len > 0: w.db.setAccountState(acc.id, "")
       if not w.newest.hasKey(acc.id): w.markNewest(acc)
+      w.fresh.setLen(0)
       case acc.kind
       of akGraph: w.syncGraph(acc, tok, count, latest)
       of akGmail: w.syncGmail(w.db.account(acc.id), tok, count, latest)
+      if w.fresh.len > 0:
+        var ids: seq[int]
+        for r in w.fresh:
+          let m = w.db.messageByRemote(acc.id, r)
+          if m.id > 0: ids.add m.id
+        w.applyRules(acc, ids)
+        w.fresh.setLen(0)
       w.markNewest(acc)
       if epochTime() - w.lastCal.getOrDefault(acc.id, 0) > 900:
         try: w.syncCalendar(acc, tok)
@@ -631,6 +658,174 @@ proc search(w: var Worker; q: string) =
       w.send(SyncEvent(kind: seError, id: acc.id, text: e.msg))
   w.send(SyncEvent(kind: seSearch, ids: ids, text: q))
 
+proc fetchSignatures(w: var Worker; id: int) =
+  ## The signatures the account has on the web, for the window to keep.
+  let acc = w.db.account(id)
+  if acc.id == 0 or acc.clientId == "local": return
+  let tok = w.token(acc)
+  if tok.len == 0: return
+  try:
+    var newHtml, replyHtml: string
+    case acc.kind
+    of akGmail:
+      newHtml = gmailSignature(tok, acc.email)
+      replyHtml = newHtml
+    of akGraph:
+      (newHtml, replyHtml) = graphSignatures(tok, acc.email)
+    w.send(SyncEvent(kind: seSignature, id: id, text: $(%*{"new": newHtml, "reply": replyHtml})))
+  except CatchableError as e:
+    w.send(SyncEvent(kind: seSignature, id: id, text: $(%*{"error": e.msg})))
+
+proc inviteJson(inv: Invite): JsonNode =
+  %*{"kind": $inv.kind, "title": inv.title, "location": inv.location, "start": inv.start,
+     "finish": inv.finish, "allDay": inv.allDay, "recurring": inv.recurring,
+     "organizer": (if inv.organizerName.len > 0: inv.organizerName else: inv.organizerEmail),
+     "answer": $inv.answer, "rsvp": inv.rsvp,
+     "replyName": (if inv.replyName.len > 0: inv.replyName else: inv.replyEmail),
+     "replyAnswer": $inv.replyAnswer}
+
+proc invite(w: var Worker; c: SyncCmd) =
+  ## A meeting invitation in a message: what it is, or the answer sent.
+  let m = w.db.message(c.id)
+  let acc = w.db.account(m.account)
+  if m.id == 0 or acc.id == 0: return
+  let tok = w.token(acc)
+  if tok.len == 0: return
+  try:
+    var inv = inviteOf(acc, tok, m)
+    if c.kind == scRespond and inv.kind == ikRequest:
+      let j = try: parseJson(c.text) except CatchableError: newJObject()
+      let answer = case j{"answer"}.getStr
+                   of "accepted": iaAccept
+                   of "tentative": iaTentative
+                   else: iaDecline
+      respondInvite(acc, tok, inv, answer, j{"comment"}.getStr, j{"send"}.getBool(true))
+      inv.answer = answer
+      if acc.kind == akGraph or answer != iaDecline:
+        w.lastCal[acc.id] = 0                 # (the calendar shows it next time)
+    w.send(SyncEvent(kind: seInvite, id: c.id, text: $inviteJson(inv)))
+  except CatchableError as e:
+    w.send(SyncEvent(kind: seInvite, id: c.id, text: $(%*{"error": e.msg})))
+
+proc autoReply(w: var Worker; c: SyncCmd) =
+  ## Out of office: read or set the account's automatic replies.
+  let acc = w.db.account(c.id)
+  if acc.id == 0: return
+  let tok = w.token(acc)
+  if tok.len == 0: return
+  try:
+    if c.kind == scSetAutoReply:
+      let j = parseJson(c.text)
+      let r = AutoReply(enabled: j{"enabled"}.getBool, scheduled: j{"scheduled"}.getBool,
+                        start: j{"start"}.getFloat, finish: j{"finish"}.getFloat,
+                        subject: j{"subject"}.getStr, internalHtml: j{"internalHtml"}.getStr,
+                        externalHtml: j{"externalHtml"}.getStr,
+                        externalAudience: j{"externalAudience"}.getStr("all"))
+      setAutoReply(acc, tok, r)
+    let r = getAutoReply(acc, tok)
+    w.send(SyncEvent(kind: seAutoReply, id: c.id, count: ord(c.kind == scSetAutoReply),
+                     text: $(%*{"enabled": r.enabled, "scheduled": r.scheduled, "start": r.start,
+                                "finish": r.finish, "subject": r.subject,
+                                "internalHtml": r.internalHtml, "externalHtml": r.externalHtml,
+                                "externalAudience": r.externalAudience})))
+  except CatchableError as e:
+    var msg = e.msg
+    if e of ref ApiError and (ref ApiError)(e).status in [401, 403]:
+      msg = "Retro Mail may not do this yet: Tools, Accounts, Sign In Again, and allow it"
+    w.send(SyncEvent(kind: seAutoReply, id: c.id, text: $(%*{"error": msg})))
+
+proc assistant(w: var Worker; c: SyncCmd) =
+  ## Summarize or translate, with the user's own key (Options, Assistant).
+  let j = try: parseJson(c.text) except CatchableError: newJObject()
+  let kind = j{"kind"}.getStr
+  let id = j{"id"}.getInt
+  let key = loadSecret(secretApp, "ai-key")
+  let model = j{"model"}.getStr("claude-haiku-5-5")
+  try:
+    if key.len == 0: raise newException(ValueError, "no key: Tools, Options, Assistant takes it")
+    let m = w.db.message(id)
+    var text = ""
+    case kind
+    of "summary":
+      var thread: seq[tuple[sender, date, text: string]]
+      let ms = w.db.threadMessages(m.account, m.thread)
+      for k in countdown(ms.high, 0):
+        let x = ms[k]
+        let body = if x.text.len > 0: x.text else: plainOf(x.html)
+        thread.add ((if x.fromName.len > 0: x.fromName else: x.fromEmail),
+                    fromUnixFloat(x.date).local.format("yyyy-MM-dd HH:mm"),
+                    (if body.len > 0: body else: x.snippet))
+      text = summarize(key, model, thread, j{"to"}.getStr, w.db.account(m.account).name)
+    else:
+      let body = if m.text.len > 0: m.text else: plainOf(m.html)
+      text = translate(key, model, if body.len > 0: body else: m.snippet, j{"to"}.getStr("English"))
+    w.send(SyncEvent(kind: seAssist, id: id, text: $(%*{"kind": kind, "id": id, "text": text})))
+  except CatchableError as e:
+    w.send(SyncEvent(kind: seAssist, id: id, text: $(%*{"kind": kind, "id": id, "error": e.msg})))
+
+proc rawOf(w: var Worker; c: SyncCmd) =
+  ## A message's whole source: to forward it attached, or saved where asked.
+  let m = w.db.message(c.id)
+  let acc = w.db.account(m.account)
+  if m.id == 0 or acc.id == 0: return
+  let tok = w.token(acc)
+  if tok.len == 0: return
+  try:
+    var path = ""
+    if c.count == 1:
+      path = c.text
+      writeFile(path, rawMessage(acc, tok, m.remoteId))
+    else:
+      let j = forwardAttachment(acc, tok, m, mailDir() / "outbox" / "fwd")
+      path = j{"path"}.getStr
+    w.send(SyncEvent(kind: seRaw, id: c.id, count: c.count, text: path))
+  except CatchableError as e:
+    w.send(SyncEvent(kind: seRaw, id: c.id, count: c.count, text: $(%*{"error": e.msg})))
+
+proc applyRules(w: var Worker; acc: Account; ids: seq[int]) =
+  ## The message rules on mail that just came: tags, read, flag, pin, a
+  ## folder, the trash -- here at once, on the server through the queue.
+  let js = w.db.rulesJson()
+  if js.len == 0 or ids.len == 0: return
+  let rs = try: rulesFromJson(parseJson(js)) except CatchableError: @[]
+  if rs.len == 0: return
+  w.db.transaction:
+    for id in ids:
+      let m = w.db.message(id)
+      if m.id == 0: continue
+      let r = ruleActions(rs, m)
+      if r.matched.len == 0: continue
+      template q(kind: string; data: JsonNode) =
+        var d = data
+        d["id"] = %m.id
+        d["remote"] = %m.remoteId
+        discard w.db.queueAction(m.account, kind, d)
+      if r.markRead and m.unread:
+        w.db.setFlags(m.id, unread = 0)
+        q("read", %*{"unread": false})
+      if r.flag and not m.flagged:
+        w.db.setFlags(m.id, flagged = 1)
+        q("flag", %*{"flagged": true})
+      if r.pin: w.db.setPinned(m.id, true)
+      if r.tags.len > 0:
+        var ts = m.tags
+        for t in r.tags:
+          if not ts.anyIt(it.toLowerAscii == t.toLowerAscii): ts.add t
+        if ts.len != m.tags.len:
+          for t in r.tags:
+            if w.db.tagOf(m.account, t).id == 0: w.db.upsertTag(m.account, t, "", "")
+          w.db.setTags(m.id, ts)
+          q("tags", %*{"tags": ts, "removed": newJArray()})
+      var dest = Folder()
+      if r.delete: dest = w.db.folderByRole(m.account, "trash")
+      elif r.moveTo.len > 0:
+        dest = w.db.folderByRole(m.account, r.moveTo)
+        if dest.id == 0: dest = w.db.folderByRemote(m.account, r.moveTo)
+      if dest.id > 0 and dest.id != m.folder:
+        q("move", %*{"folder": dest.id})
+        w.db.moveLocal(m.id, dest.id)
+  w.db.recount(acc.id)
+
 proc syncMain*(link: ptr SyncLink) {.thread.} =
   ## The sync thread's body.
   {.gcsafe.}:
@@ -659,6 +854,11 @@ proc syncMain*(link: ptr SyncLink) {.thread.} =
         of scAttachment: w.fetchAttachment(c.id)
         of scSearch: w.search(c.text)
         of scSettings: w.interval = float(max(1, c.count) * 60)
+        of scSignatures: w.fetchSignatures(c.id)
+        of scInvite, scRespond: w.invite(c)
+        of scGetAutoReply, scSetAutoReply: w.autoReply(c)
+        of scAssist: w.assistant(c)
+        of scRaw: w.rawOf(c)
       if not running: break
       let accs = w.db.accounts()
       # changes made here go out first (every few seconds while there are some)
@@ -669,6 +869,7 @@ proc syncMain*(link: ptr SyncLink) {.thread.} =
         if did: w.send(SyncEvent(kind: seChanged))
         lastActions = epochTime()
       for a in accs:
+        if a.clientId == "local": continue        # (Local Folders: nothing to fetch)
         if wantSync or epochTime() - w.lastFull.getOrDefault(a.id, 0) > w.interval:
           w.syncAccount(a)
           w.status("")

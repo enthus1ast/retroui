@@ -18,19 +18,22 @@
 ##
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
-import std/[os, strutils, json, times, tables, sets, algorithm, sequtils, unicode, hashes]
-import retro, retro/[db, http, oauth, secrets, mime, richedit]
-import mail/[store, api, sync, graph, gmail, appids]
+import std/[os, strutils, json, times, tables, sets, algorithm, sequtils, unicode, hashes, math]
+import retro, retro/[db, http, oauth, secrets, mime, richedit, spell, pdfview, mailimport, notify]
+import mail/[store, api, sync, graph, gmail, appids, rules, forward, importer]
 
 include mail/ui_state
 include mail/ui_data
 include mail/ui_compose
 include mail/ui_mail
+include mail/ui_more
+include mail/ui_extra
 include mail/ui_wizard
 include mail/ui_start
 include mail/ui_options
 include mail/ui_others
 include mail/ui_phone
+include mail/ui_tools
 
 # ---- pictures from the web: a thread of their own ------------------------------------------
 
@@ -58,6 +61,7 @@ proc handleEvents() =
     let (ok, ev) = link.events.tryRecv()
     if not ok: break
     case ev.kind
+    of seInvite, seAutoReply, seAssist, seRaw: extraEvent(ev)
     of seChanged: changed()
     of seStatus: syncText = ev.text
     of seError:
@@ -79,8 +83,10 @@ proc handleEvents() =
       else: status = "Downloaded the attachment"
     of seNewMail:
       if prefBool("notify", true):
-        toast(ev.text, title = (if ev.count == 1: "New mail" else: $ev.count & " new messages"),
-              glyph = pxMail)
+        let title = if ev.count == 1: "New mail" else: $ev.count & " new messages"
+        # the system's notification (outside the window); a balloon where there is none
+        if not notify(title, ev.text, appName, tag = "inbox"):
+          toast(ev.text, title = title, glyph = pxMail)
       status = $ev.count & " new: " & ev.text
     of seSearch:
       if ev.text == searching:
@@ -89,6 +95,7 @@ proc handleEvents() =
     of seSent:
       status = "Sent \"" & ev.text & "\""
       toast("Sent: " & ev.text, glyph = pxMail)
+    of seSignature: keepWebSignature(ev.id, ev.text)
   var got = false
   while true:
     let (ok, s) = fetchDone[].tryRecv()
@@ -227,6 +234,8 @@ proc mainWindow() =
 var started = false
 var fetchIn, fetchOut: Channel[string]
 
+var panesMoved = false
+
 proc startup() =
   ## (on the first frame: on Android the app's folder is known only then)
   started = true
@@ -235,6 +244,15 @@ proc startup() =
     else: discard
   prefs = loadSettings("retro-mail")
   restoreAppearance(prefs)
+  restoreWriting()
+  readZoom = clamp(prefInt("zoom", 100) / 100, 0.5, 3.0)
+  # the panes as they were left
+  barW = prefInt("barW", barW)
+  treeW = prefInt("treeW", treeW)
+  leftH = prefInt("leftH", leftH)
+  listH = prefInt("listH", listH)
+  mainW = prefInt("mainW", mainW)
+  paneW = prefInt("paneW", paneW)
   store0 = openStore()
   link.cmds.open()
   link.events.open()
@@ -249,6 +267,10 @@ proc startup() =
   if store0.signatures().len == 0:
     discard store0.saveSignature(0, "Simple", "<p>--<br>Sent with Retro Mail</p>")
   reload()
+  # the signatures the accounts have on the web, once
+  for a in accountsC:
+    if not prefBool("sigWeb" & $a.id, false) and not isLocal(a):
+      link.cmds.send(SyncCmd(kind: scSignatures, id: a.id))
   if accountsC.len == 0:
     view = vStart
     openWizard()
@@ -262,6 +284,7 @@ app appName, 1280, 800:
   if not started: startup()
   handleEvents()
   reload()
+  if prefBool("badge", true): setBadge(unreadAll())   # (the unread count on the app's icon)
   if isCompact():
     phoneUi()
   elif composing:
@@ -270,7 +293,42 @@ app appName, 1280, 800:
     mainWindow()
   tagMenu()
   smallDialogs()
+  customizeDialog()
+  readerWindow()
+  goFolderDialog()
+  commandBox()
+  quickStepsDialog()
+  sweepDialog()
+  previewDialog()
+  shortcutsDialog()
+  autoReplyDialog()
+  rulesDialog()
+  emlDialogs()
+  importDialog()
+  exportDialog()
+  followReminders()
   optionsDialog()
+  # the panes' sizes are kept (once the mouse lets go of a splitter)
+  if not ui.mouseDown and not isCompact():
+    for (k, v) in [("barW", barW), ("treeW", treeW), ("leftH", leftH), ("listH", listH),
+                   ("mainW", mainW), ("paneW", paneW)]:
+      if prefInt(k, -1) != v:
+        prefs.put(k, v)
+        panesMoved = true
+    if panesMoved:
+      panesMoved = false
+      savePrefs()
+  # Undo (the last move, a message being sent)
+  if snackbar():
+    case undoWhat
+    of "send": undoSend()
+    of "move": undoLastMove()
+    else: discard
+    undoWhat = ""
+  elif undoWhat.len > 0 and not snackbarShown():
+    undoWhat = ""
+    undoMoves.setLen(0)
+    sentAction = 0
   aboutDialog()
   wizardDialog()
 

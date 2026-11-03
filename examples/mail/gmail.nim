@@ -10,6 +10,7 @@ import api, store
 
 const
   gmailScopes* = ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.modify",
+                  "https://www.googleapis.com/auth/gmail.settings.basic",
                   "https://www.googleapis.com/auth/calendar.readonly"]
   metaHeaders = ["From", "To", "Cc", "Subject", "Date", "Message-ID", "In-Reply-To", "References"]
   systemFolders* = [("INBOX", "Inbox", "inbox"), ("DRAFT", "Drafts", "drafts"),

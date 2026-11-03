@@ -155,6 +155,8 @@ proc finishSignIn() =
       prefs.put("msTenant", wizTenant.strip)
     savePrefs()
   link.cmds.send(SyncCmd(kind: scAccounts))
+  if not prefBool("sigWeb" & $id, false):
+    link.cmds.send(SyncCmd(kind: scSignatures, id: id))   # (its signature from the web)
   wizDoneText = email
   wizStep = 3
   changed()

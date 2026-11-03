@@ -77,6 +77,56 @@ proc sigIndexFor(account: int; reply: bool): int =
     if s.id == id: return i
   if sigsC.len > 0 and id == -2: 0 else: -1
 
+var sigAsked = false   ## (Options asked for the signatures from the web: say how it went)
+
+type ComposeSnap = object
+  ## A message as it was written, kept while Undo Send can bring it back.
+  mode, to, cc, bcc, subject, quote, quoteText: string
+  base: Msg
+  doc: RichDoc
+  atts: seq[tuple[path, name: string; size: int]]
+  fwdAtts: seq[Att]
+  important: bool
+  account, sig, sigParas: int
+
+var
+  sentSnap: ComposeSnap
+  sentAction = 0          ## the queued "send" Undo Send can still take back
+
+proc keepWebSignature(account: int; data: string) =
+  ## The signatures read from the account's service: kept, and used for the
+  ## account unless the user chose others (or asked for these).
+  let j = try: parseJson(data) except CatchableError: newJObject()
+  let acc = account(account)
+  if j.hasKey("error"):        # (asked again when Retro Mail starts next)
+    if sigAsked: status = acc.email & ": the signature could not be read (" & j{"error"}.getStr & ")"
+    return
+  prefs.put("sigWeb" & $account, true)
+  savePrefs()
+  let n = j{"new"}.getStr.strip
+  let r = j{"reply"}.getStr.strip
+  if n.len == 0:
+    if sigAsked: status = acc.email & ": no signature on the web (write one under Signatures)"
+    return
+  proc keep(html, name: string): int =
+    for s in store0.signatures():
+      if s.html.strip == html: return s.id
+    store0.saveSignature(0, name, html)
+  let svc = if acc.kind == akGmail: "Gmail" else: "Outlook"
+  let nid = keep(n, svc & " - " & acc.email)
+  let rid = if r.len == 0 or r == n: nid else: keep(r, svc & " replies - " & acc.email)
+  if sigAsked or prefInt("sigNew" & $account, -2) == -2: prefs.put("sigNew" & $account, nid)
+  if sigAsked or prefInt("sigReply" & $account, -2) == -2: prefs.put("sigReply" & $account, rid)
+  savePrefs()
+  sigsC = store0.signatures()
+  status = "The signature of " & acc.email & " from " & svc & " is used here now"
+
+proc writingAids() =
+  ## Spelling and AutoCorrect on the message being written (Options,
+  ## Spelling turns them off).
+  composeDoc.spell = prefBool("spellAsType", true)
+  composeDoc.autoCorrect = prefBool("autoCorrect", true)
+
 proc putSignature(i: int) =
   ## The signature at the end of the text (in place of the one there).
   if cSigParas > 0 and composeDoc.paras.len >= cSigParas:
@@ -162,6 +212,7 @@ proc openCompose(mode: string; base: Msg = Msg(); to = "") =
   if mode != "new" and prefBool("replyBlue", true):
     composeDoc.base = RichStyle(color: replyBlue)  # (what you write in a reply: blue, as Outlook did)
   putSignature(sigIndexFor(accountsC[cAccount].id, mode != "new"))
+  writingAids()
   cFocus = if mode == "new" and to.len == 0 or mode == "forward": 1 else: 2
 
 proc draftJson(): JsonNode =
@@ -186,6 +237,7 @@ proc openDraft(id: int; j: JsonNode) =
   cImportant = j{"important"}.getBool
   cAccount = clamp(j{"account"}.getInt, 0, accountsC.high)
   composeDoc = richFromHtml(j{"html"}.getStr)
+  writingAids()
   cSigParas = 0
   for a in j{"atts"}.getElems:
     cAtts.add (a{"path"}.getStr, a{"name"}.getStr, a{"size"}.getInt)
@@ -261,8 +313,20 @@ proc send(later = 0.0) =
     data["mode"] = %"new"                 # (a reply from another account: a new message)
     data["replyTo"] = %""
     data["threadId"] = %""
-  discard store0.queueAction(acc.id, "send", data, later)
+  # Undo Send: it waits here a few seconds first (Options say how many)
+  let hold = float(prefInt("undoSend", 10))
+  let due = if later > 0: later elif hold > 0: epochTime() + hold else: 0.0
+  let aid = store0.queueAction(acc.id, "send", data, due)
   for r in to.getElems & cc.getElems: store0.noteContact(r{"email"}.getStr, r{"name"}.getStr, epochTime())
+  if later == 0 and hold > 0:
+    sentSnap = ComposeSnap(mode: cMode, to: cTo, cc: cCc, bcc: cBcc, subject: cSubject,
+                           quote: cQuote, quoteText: cQuoteText, base: cBase, doc: composeDoc,
+                           atts: cAtts, fwdAtts: cFwdAtts, important: cImportant,
+                           account: cAccount, sig: cSig, sigParas: cSigParas)
+    sentAction = aid
+    undoWhat = "send"
+    showSnackbar("Sending \"" & (if cSubject.len > 0: cSubject else: "(no subject)") & "\"",
+                 "Undo", int(hold * 1000) - 300)
   if cDraftId > 0: store0.deleteDraft(cDraftId)
   prefs.put("lastAccount", acc.id)
   savePrefs()
@@ -271,6 +335,40 @@ proc send(later = 0.0) =
   status = if later > 0: "It will be sent " & longDate(later) & " (while Retro Mail runs)"
            else: "Sending \"" & cSubject & "\"..."
   wake()
+  changed()
+
+proc undoSend() =
+  ## Undo Send: the message comes back to the window, as it was written.
+  let waiting = sentAction > 0 and store0.value("SELECT count(*) FROM actions WHERE id = ? AND " &
+                                                "error = ''", sentAction).num > 0
+  if not waiting:
+    status = "Too late: it has gone"
+    return
+  store0.doneAction(sentAction)
+  sentAction = 0
+  let s = sentSnap
+  composing = true
+  if isCompact(): phone = phCompose
+  cMode = s.mode
+  cBase = s.base
+  cTo = s.to
+  cCc = s.cc
+  cBcc = s.bcc
+  cShowCc = s.cc.len + s.bcc.len > 0
+  cSubject = s.subject
+  cQuote = s.quote
+  cQuoteText = s.quoteText
+  composeDoc = s.doc
+  cAtts = s.atts
+  cFwdAtts = s.fwdAtts
+  cImportant = s.important
+  cAccount = s.account
+  cSig = s.sig
+  cSigParas = s.sigParas
+  cDraftId = 0
+  cDirty = true
+  cError = ""
+  status = "Not sent: it is back for you to change"
   changed()
 
 proc suggestions(field: var string) =
@@ -377,6 +475,11 @@ proc composeWindow() =
     ui.textFocusWanted = true
     cFocus = 0
   let quoteH = if cQuote.len == 0: 0 elif cShowQuote: dp(200) else: CtrlH + dp(4)
+  # Ctrl+Enter sends (as Outlook), before the text takes the Enter
+  if canInput() and not ui.keyUsed and ui.key == KeyEnter and CtrlPressed in ui.mods:
+    ui.keyUsed = true
+    send()
+    return
   if richEdit(composeDoc, height = remainingH() - quoteH, key = "compose",
               placeholder = "Write your message here"):
     cDirty = true
@@ -391,6 +494,14 @@ proc composeWindow() =
     if ui.key == KeyS and AltPressed in ui.mods: send(); ui.keyUsed = true
     elif ui.key == KeyS and CtrlPressed in ui.mods: saveDraftNow(); ui.keyUsed = true
     elif ui.key == KeyEsc and ui.popup == 0: cAskClose = true; ui.keyUsed = true
+  # files dropped on the window (from Explorer, Nautilus...): attached
+  for p in fileDropTarget(rect(0, 0, ui.w, ui.h)):
+    if fileExists(p):
+      try:
+        cAtts.add (p, extractFilename(p), int getFileSize(p))
+        cDirty = true
+        status = "Attached " & extractFilename(p)
+      except OSError as e: cError = e.msg
   if fileDialog(cAttachOpen, cAttachPath, fmOpen, ["All Files (*.*)"], "Attach a File"):
     try:
       cAtts.add (cAttachPath, extractFilename(cAttachPath), int getFileSize(cAttachPath))

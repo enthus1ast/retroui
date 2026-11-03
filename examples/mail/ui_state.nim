@@ -27,6 +27,8 @@ type
     conv: int
     msg: int                ## -1: the conversation's row, else its message
   Phone = enum phFolders, phList, phRead, phCompose
+  UndoMove = object
+    msg, account, fromFolder, toFolder, action: int
 
 var
   store0: Db
@@ -38,6 +40,20 @@ var
   convs: seq[Conv]
   mates: HashSet[int]       ## messages shown only as part of a thread (from other folders)
   rows: seq[LRow]
+  multiSel: OrderedSet[string]   ## the rows selected together (`rowKey`), when more than one
+  selAnchor = -1                 ## where a Shift+click range starts
+  undoMoves: seq[UndoMove]       ## the last move, while Undo can take it back
+  undoWhat = ""                  ## what the snack bar's Undo is for: "move", "send"
+  readerOpen = false             ## the message in a window of its own (a double click)
+  phoneChoosing = false          ## a phone choosing several messages (after a long press)
+  pullFrom = -1                  ## where a pull down from the top of the list began
+  pullBy = 0
+  pullReady = false
+  listIdC: Id                    ## the message list's id (the keys go to it when it has the focus)
+  readZoom = 1.0                 ## the size mail is read at (Ctrl+wheel, Ctrl +/-, a pinch)
+  readSwipeX = -1                ## (a phone: where a swipe over the message began)
+  readSwipeY = 0
+  readSwipeT = 0.0
   expanded: HashSet[string]
   dataVer = 1
   listVer = 0
@@ -48,6 +64,11 @@ var
   openVer = -1
   openShown = 0.0           ## when it was shown (to mark it read)
   openExpanded: HashSet[int]
+  openJump = -1             ## the message picked inside a thread (the pane goes to it); -1 the top
+  openJumpUntil = 0.0       ## until when the pane keeps it in view (bodies above it still load)
+  openJumpFrom = 0.0
+  openFocus = 0             ## the message of the thread picked last (marked in the pane)
+  readMarked = ""           ## the conversation already marked read by opening it
   syncText = ""
   lastError = ""
   query = ""
@@ -95,7 +116,7 @@ var
 
 const
   appName = "Retro Mail"
-  appVersion = "1.0.0"
+  appVersion = "1.0.2"
   credit = "Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net"
   tagPalette = [("Blue", "#0063b1"), ("Green", "#00a300"), ("Red", "#e81123"),
                 ("Orange", "#ff8c00"), ("Purple", "#7a3ba0"), ("Teal", "#008080"),
@@ -106,6 +127,10 @@ const
 
 proc rgb(r, g, b: int): Color =
   color(uint8 clamp(r, 0, 255), uint8 clamp(g, 0, 255), uint8 clamp(b, 0, 255))
+
+proc isPixelIcon(s: string): bool =
+  ## A pixel icon (`pxMail`: plane 16) rather than a glyph of the icon font.
+  s.len == 4 and s[0] == '\xF4'
 
 proc hexColor(s: string): Color =
   if s.len >= 7 and s[0] == '#':

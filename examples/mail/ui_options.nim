@@ -29,12 +29,113 @@ proc sigPrefIndex(key: string): int =
     if s.id == id: return i + 1
   if id == -2 and sigsC.len > 0: 1 else: 0
 
+var
+  acSel = 0
+  acTyped = ""
+  acWith = ""
+  acFilter = ""
+
+proc restoreWriting() =
+  ## (at start: what Options, Spelling says AutoCorrect does)
+  for k in AutoCorrectKind:
+    autoCorrectEnable(k, prefBool("ac." & $k, autoCorrectEnabled(k)))
+
+proc spellingTab() =
+  ## Tools, Options, Spelling: as Outlook Express 5 had it, with AutoCorrect.
+  group "Spelling":
+    var b = prefBool("spellAsType", true)
+    if checkbox("Check &spelling as I type (a red line under a misspelled word; " &
+                "the right button shows what it should be)", b):
+      prefs.put("spellAsType", b)
+      composeDoc.spell = b
+    let langs = spellLanguages()
+    if langs.len > 0:
+      label "Dictionaries here: " & langs.join(", "), color = ui.theme.gray
+    else:
+      paragraph "There is no spelling dictionary on this computer. Windows has its own; on " &
+                "Linux install Hunspell's (hunspell-en-us, hunspell-ar...). Android's keyboard " &
+                "corrects as you type."
+  group "AutoCorrect":
+    var on = prefBool("autoCorrect", true)
+    if checkbox("&Replace text as I type (teh: the, الى: إلى)", on):
+      prefs.put("autoCorrect", on)
+      composeDoc.autoCorrect = on
+    for k in [acCapitalize, acSuggest, acSuggestArabic]:
+      var e = autoCorrectEnabled(k)
+      if checkbox($k, e, enabled = on):
+        autoCorrectEnable(k, e)
+        prefs.put("ac." & $k, e)
+    let all = autoCorrectEntries()
+    var shown: seq[tuple[typed, replacement: string; own: bool]]
+    let f = acFilter.strip.toLowerAscii
+    for e in all:
+      if f.len == 0 or f in e.typed.toLowerAscii or f in e.replacement.toLowerAscii: shown.add e
+    form dp(90):
+      field "&Find:": edit acFilter
+    var lines: seq[string]
+    for e in shown: lines.add e.typed & "	" & e.replacement & (if e.own: "   (yours)" else: "")
+    acSel = clamp(acSel, 0, max(0, shown.high))
+    let before = acSel
+    listbox(lines, acSel, rows = 6, tabs = [dp(170)])
+    if acSel != before and acSel in 0 ..< shown.len:
+      acTyped = shown[acSel].typed
+      acWith = shown[acSel].replacement
+    row([dp(60), dp(150), dp(50), -1]):
+      label "Replace:"
+      edit acTyped
+      label "With:"
+      edit acWith
+    row:
+      if button("&Add", w = dp(90), enabled = acTyped.strip.len > 0 and acWith.strip.len > 0):
+        autoCorrectAdd(acTyped, acWith)
+        acFilter = acTyped
+      if button("&Delete", w = dp(90), enabled = acSel in 0 ..< shown.len):
+        autoCorrectRemove(shown[acSel].typed)
+
+var
+  aiKey = ""
+  aiKeyLoaded = false
+
+proc assistantTab() =
+  ## Tools, Options, Assistant: Summarize and Translate with the user's own
+  ## key (Claude, by Anthropic). Nothing is sent anywhere before it is on,
+  ## and then only the conversation asked about.
+  if not aiKeyLoaded:
+    aiKeyLoaded = true
+    aiKey = loadSecret(secretApp, "ai-key")
+  group "Assistant":
+    var on = prefBool("aiOn", false)
+    if checkbox("Show &Summarize and Translate over a conversation", on): prefs.put("aiOn", on)
+    paragraph "They send the text of the conversation you ask about (nothing else, and only " &
+              "when you ask) to Claude, with your own key from console.anthropic.com. The key " &
+              "is kept encrypted on this device."
+    form dp(160):
+      field "&Key:":
+        block:
+          if edit(aiKey, password = true):
+            discard saveSecret(secretApp, "ai-key", aiKey.strip)
+      field "&Model:":
+        block:
+          var m = pref("aiModel", "claude-haiku-5-5")
+          if edit(m): prefs.put("aiModel", m.strip)
+      field "Summaries &in:":
+        block:
+          var l = pref("aiSummaryLang", "")
+          if edit(l): prefs.put("aiSummaryLang", l)
+      field "&Translate into:":
+        block:
+          var l = pref("aiTranslateTo", "English")
+          if edit(l): prefs.put("aiTranslateTo", l)
+    label "Summaries in: empty for the conversation's own language. Translate into: English, " &
+          "Arabic (العربية), French...", color = ui.theme.gray
+
 proc optionsDialog() =
   if not optOpen: return
   if sigsC.len == 0 or optSigLoaded == -1: sigsC = store0.signatures()
   let width = if isCompact(): ui.w - dp(16) else: dp(640)
   dialog optOpen, "Options", width:
-    tabs(optTab, ["General", "Accounts", "Signatures", "Swipe", "Tags", "Look"]):
+    tabs(optTab, ["General", "Accounts", "Signatures", "Spelling", "Swipe", "Tags", "Assistant",
+                  "Look"]):
       case optTab
       of 0:
         group "Send and receive":
@@ -68,7 +169,7 @@ proc optionsDialog() =
             field "Mark a message read after:":
               block:
                 let opts = [0, 1, 2, 5, 9999]
-                var i = max(0, opts.find(prefInt("readDelay", 2)))
+                var i = max(0, opts.find(prefInt("readDelay", 0)))
                 if combo(["At once", "1 second", "2 seconds", "5 seconds", "Never by itself"], i,
                          w = dp(140)):
                   prefs.put("readDelay", opts[i])
@@ -93,11 +194,20 @@ proc optionsDialog() =
           var rb = prefBool("replyBlue", true)
           if checkbox("Write replies and forwards in &blue, as Outlook did", rb):
             prefs.put("replyBlue", rb)
+          form dp(220):
+            field "&Undo Send: hold mail back for:":
+              block:
+                let opts = [0, 5, 10, 20, 30]
+                var i = max(0, opts.find(prefInt("undoSend", 10)))
+                if combo(["Not at all", "5 seconds", "10 seconds", "20 seconds", "30 seconds"], i,
+                         w = dp(140)):
+                  prefs.put("undoSend", opts[i])
       of 1:
         group "Accounts":
           var names: seq[string]
           for a in accountsC:
-            names.add a.email & "   (" & (if a.kind == akGmail: "Gmail" else: "Microsoft") &
+            names.add a.email & "   (" & (if isLocal(a): "on this computer" elif a.kind == akGmail: "Gmail"
+                                         else: "Microsoft") &
                       (if a.state == "signin": ", sign in again" elif a.state.len > 0: ", " & a.state
                        else: "") & ")"
           row([-1, dp(140)]):
@@ -106,7 +216,8 @@ proc optionsDialog() =
               if button("&Add...", w = dp(140)):
                 optOpen = false
                 openWizard()
-              if button("&Sign In Again", w = dp(140), enabled = optAcct in 0 ..< accountsC.len):
+              if button("&Sign In Again", w = dp(140), enabled = optAcct in 0 ..< accountsC.len and
+                        not isLocal(accountsC[optAcct])):
                 optOpen = false
                 signInAgain(accountsC[optAcct])
               if button("&Remove", w = dp(140), enabled = optAcct in 0 ..< accountsC.len):
@@ -141,6 +252,10 @@ proc optionsDialog() =
                 sigsC = store0.signatures()
                 optSig = max(0, optSig - 1)
                 optSigLoaded = -2
+              if button("From the &Web", w = dp(140), enabled = accountsC.len > 0):
+                sigAsked = true
+                for a in accountsC: link.cmds.send(SyncCmd(kind: scSignatures, id: a.id))
+                status = "Reading the signatures of Gmail and Outlook..."
         if optSig in 0 ..< sigsC.len:
           if optSigLoaded != sigsC[optSig].id:
             optSigLoaded = sigsC[optSig].id
@@ -154,6 +269,8 @@ proc optionsDialog() =
             if button("&Save Signature"):
               discard store0.saveSignature(sigsC[optSig].id, optSigName, toHtml(optSigDoc))
               sigsC = store0.signatures()
+        paragraph "From the Web takes the signature Gmail keeps in its settings, and the one " &
+                  "Outlook added to the mail you sent last (new messages and replies)."
         group "Use for each account":
           let choices = sigChoices()
           for a in accountsC:
@@ -170,6 +287,8 @@ proc optionsDialog() =
                   if combo(choices, i, w = dp(200)):
                     prefs.put("sigReply" & $a.id, if i == 0: -1 else: sigsC[i - 1].id)
       of 3:
+        spellingTab()
+      of 4:
         group "Swipe a message (touch screens)":
           form dp(120):
             field "Swipe &right:":
@@ -200,7 +319,7 @@ proc optionsDialog() =
                  ui.theme.text)
             popClip()
         label "With a keyboard: Backspace archives, Del deletes.", color = ui.theme.gray
-      of 4:
+      of 5:
         group "Tags":
           var data: seq[seq[string]]
           for t in tagsC:
@@ -235,6 +354,8 @@ proc optionsDialog() =
               changed()
           paragraph "Microsoft 365 keeps tags as Outlook categories and Gmail as labels: " &
                     "they show in Outlook and Gmail too."
+      of 6:
+        assistantTab()
       else:
         if appearanceSettings():
           storeAppearance(prefs)

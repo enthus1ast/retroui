@@ -10,7 +10,7 @@ import api, store
 
 const
   graphScopes* = ["offline_access", "openid", "profile", "email", "User.Read",
-                  "Mail.ReadWrite", "Mail.Send", "MailboxSettings.Read", "Calendars.Read"]
+                  "Mail.ReadWrite", "Mail.Send", "MailboxSettings.ReadWrite", "Calendars.ReadWrite"]
   msgSelect = "id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime," &
     "isRead,flag,importance,hasAttachments,categories,bodyPreview,inferenceClassification," &
     "parentFolderId,internetMessageId,isDraft"
@@ -73,6 +73,7 @@ proc parseMessage*(j: JsonNode; account: int; me: string): GraphItem =
   m.focused = j{"inferenceClassification"}.getStr != "other"
   m.draft = j{"isDraft"}.getBool
   m.msgId = j{"internetMessageId"}.getStr
+  if "eventMessage" in j{"@odata.type"}.getStr: m.labels = "meeting"   # (an invitation, an answer)
   for c in j{"categories"}.getElems: m.tags.add c.getStr
   m.mine = me.len > 0 and m.fromEmail.toLowerAscii == me.toLowerAscii
   GraphItem(msg: m, folderRemote: j{"parentFolderId"}.getStr)

@@ -20,6 +20,11 @@ Microsoft 365 (work or school), Outlook.com and Gmail, side by side.
   mail and for replies, send later, attachments of any size.
 - **Replies in blue,** as Outlook wrote them (Tools > Options > General
   turns it off).
+- **Your own signature.** The one Gmail keeps in its settings, and the one
+  Outlook (on the web, the new Outlook, Outlook for Windows) put under the
+  mail you sent last, for new messages and for replies, come by themselves
+  when an account is added (Tools > Options > Signatures > *From the Web*
+  reads them again).
 - **What Outlook Express did:** the start page, the Outlook bar, the folder
   tree with unread counts, the contacts pane, threads with + and - boxes,
   the preview pane with its gray header, "----- Original Message -----",
@@ -57,7 +62,8 @@ desktop client's "secret" is not kept secret either.
 2. Authentication > Add a platform > *Mobile and desktop applications*:
    `http://localhost`. *Allow public client flows*: Yes.
 3. API permissions > Microsoft Graph > Delegated: `Mail.ReadWrite`,
-   `Mail.Send`, `Calendars.Read`, `MailboxSettings.Read`, `User.Read`,
+   `Mail.Send`, `Calendars.ReadWrite` (answering invitations),
+   `MailboxSettings.ReadWrite` (automatic replies), `User.Read`,
    `offline_access`.
 4. Branding: verify the publisher (an organisation's users can then allow
    it themselves where their admins let them; some companies still have an
@@ -66,7 +72,8 @@ desktop client's "secret" is not kept secret either.
 **Google** (<https://console.cloud.google.com>):
 
 1. A project; enable the *Gmail API* and the *Google Calendar API*.
-2. OAuth consent screen: External; scopes `gmail.modify` and
+2. OAuth consent screen: External; scopes (Data Access) `gmail.modify`,
+   `gmail.settings.basic` (the vacation reply and the signature) and
    `calendar.readonly`. Until Google verifies the app, only the test users
    you list (up to 100) can sign in, and they see an "unverified app"
    page; Gmail's scopes need Google's verification (and its yearly security
@@ -90,13 +97,40 @@ A build without them asks each user for an app registration of their own.
 | Ctrl+N | new message |
 | Ctrl+R / Ctrl+Shift+R | reply / reply to all |
 | Ctrl+F | forward |
+| Ctrl+Enter, Alt+S | send (while writing) |
 | Del / Backspace | delete / archive |
+| Ctrl+Z | undo (a move, a message being sent) |
 | Insert | flag |
 | Ctrl+Q / Ctrl+U | mark read / unread |
 | Ctrl+T | tags |
+| Ctrl+Shift+V / Ctrl+Y | move to a folder / go to a folder |
+| Ctrl+. / Ctrl+, | next / previous message |
+| Enter | the message in a window of its own |
+| Shift+arrows, Ctrl+click, Ctrl+A | select several |
+| letters | jump to a sender |
+| F6 | the next pane |
 | Ctrl+E | search |
+| Alt+Q | tell me what you want to do |
+| F7 | spelling (while writing) |
 | F5 | send and receive |
 | Ctrl+1 ... Ctrl+5 | Mail, Calendar, People, To Do, Notes |
+
+With the reading pane beside the list (View > Reading Pane), each message
+takes three lines -- who and when, the subject and its marks, the tags and
+the start of the text -- as Outlook shows it there. A message picked inside
+an open thread opens in the conversation and comes to the top of the pane.
+A message is read once it is opened (Tools > Options > General can wait a
+few seconds, as Outlook Express did).
+
+A click on an attachment opens it in the program the system has for it;
+the right button (or a long press) also offers Save As and Save All, which
+start in your Downloads folder.
+
+Tags (Ctrl+T) open Outlook's Categorize menu: type to find a tag, or to make
+a new one (an Outlook category, or a Gmail label).
+
+The tool bar is yours: right-click it, or View > Customize Toolbar, to add,
+remove and order its buttons and to choose how its labels show.
 
 Search understands `from:`, `to:`, `subject:`, `has:attachment`, `tag:`,
 `is:unread`, `is:flagged`, `is:pinned`, `in:sent`, `before:2026-01-01`,
@@ -104,7 +138,36 @@ Search understands `from:`, `to:`, `subject:`, `has:attachment`, `tag:`,
 
 On a phone each screen comes alone (folders, list, conversation, writing)
 and the Outlook bar sits at the bottom; swipe a message right to archive
-it, left to delete it (Tools > Options > Swipe changes what they do).
+it, left to delete it (Tools > Options > Swipe changes what they do), hold
+one to choose several, pull the list down to check for mail, swipe a
+message you read sideways for the next one, pinch to make its text larger.
+
+What 1.0.2 adds to the way you work:
+
+- **Undo** for a delete, an archive or a move, and **Undo Send** (a message
+  waits 10 seconds before it goes: Tools > Options > General).
+- **Quick Steps** (Message > Quick Steps): several actions in one -- "Done"
+  marks read and archives, make your own.
+- **Sweep** (Message > Sweep): all the mail from one sender, now and from
+  now on.
+- **Follow Up** (Message > Follow Up): a flag with a day; Retro Mail reminds
+  you when it comes.
+- **Message Rules** (Tools): as Outlook Express had them, applied to mail as
+  it comes -- tag it, move it, mark it read, flag it, delete it.
+- **Meeting invitations** show what, when and where, with Accept,
+  Tentative and Decline.
+- **Automatic Replies** (Tools): out of office, for Microsoft 365, Outlook.com
+  and Gmail.
+- **Forward as Attachment**, **Save As** (.eml) and **Open a Saved Message**.
+- **Local Folders**: File > Import brings your old mail in -- Outlook
+  Express 4, 5 and 6 (found on the computer by itself), Thunderbird, Apple
+  Mail, a Gmail Takeout (mbox) or .eml files. File > Export writes the list
+  out as an mbox file.
+- **Assistant** (Tools > Options > Assistant): Summarize a conversation and
+  Translate a message with your own key (Claude, by Anthropic). Nothing is
+  sent before you turn it on, and then only what you ask about.
+- **Spelling** as you type and **AutoCorrect** in English and Arabic (Tools >
+  Options > Spelling).
 
 ## Building
 
@@ -115,7 +178,8 @@ nimble mailapk              # Android
 nim c -r tests/test_mail.nim   # the engine against tests/mailmock.py
 ```
 
-Pin, snooze, notes, to-dos and drafts are kept on the device. Calendars
-are read-only for now (new events: in Outlook or Google Calendar).
+Pin, snooze, follow-up days, rules, Quick Steps, notes, to-dos and drafts
+are kept on the device. Calendars are read here (and invitations answered);
+new events are made in Outlook or Google Calendar.
 
 Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
