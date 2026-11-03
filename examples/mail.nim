@@ -19,8 +19,9 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, strutils, json, times, tables, sets, algorithm, sequtils, unicode, hashes, math]
-import retro, retro/[db, http, oauth, secrets, mime, richedit, spell, pdfview, mailimport, notify]
-import mail/[store, api, sync, graph, gmail, appids, rules, forward, importer]
+import retro, retro/[db, http, oauth, secrets, mime, richedit, spell, pdfview, mailimport, notify,
+                     bgcheck]
+import mail/[store, api, sync, graph, gmail, appids, rules, forward, importer, calendar]
 
 include mail/ui_state
 include mail/ui_data
@@ -28,6 +29,7 @@ include mail/ui_compose
 include mail/ui_mail
 include mail/ui_more
 include mail/ui_extra
+include mail/ui_classic
 include mail/ui_wizard
 include mail/ui_start
 include mail/ui_options
@@ -61,7 +63,8 @@ proc handleEvents() =
     let (ok, ev) = link.events.tryRecv()
     if not ok: break
     case ev.kind
-    of seInvite, seAutoReply, seAssist, seRaw: extraEvent(ev)
+    of seInvite, seAutoReply, seAssist, seRaw, seUnsub: extraEvent(ev)
+    of seEvent: eventAnswer(ev)
     of seChanged: changed()
     of seStatus: syncText = ev.text
     of seError:
@@ -82,11 +85,17 @@ proc handleEvents() =
         status = ""
       else: status = "Downloaded the attachment"
     of seNewMail:
-      if prefBool("notify", true):
-        let title = if ev.count == 1: "New mail" else: $ev.count & " new messages"
+      # told once: what came since it was last told (a background check may
+      # have told it already, while the window slept)
+      let (n, latest) = takeUnannounced()
+      if n > 0 and prefBool("notify", true):
+        let title = if n == 1: "New mail" else: $n & " new messages"
         # the system's notification (outside the window); a balloon where there is none
-        if not notify(title, ev.text, appName, tag = "inbox"):
-          toast(ev.text, title = title, glyph = pxMail)
+        let told = notify(title, latest, appName, tag = "inbox")
+        if not told: toast(latest, title = title, glyph = pxMail)
+        # the sound, as Outlook Express played it (a phone's notification has its own)
+        if prefBool("newMailSound", true) and (not defined(android) or not told): newMailSound()
+      elif n > 0 and prefBool("newMailSound", true): newMailSound()
       status = $ev.count & " new: " & ev.text
     of seSearch:
       if ev.text == searching:
@@ -118,8 +127,9 @@ proc mailArea() =
     let n = convs.len
     let a = banner($n & (if n == 1: " thread" else: " threads") & " found in the mail kept here." &
                    (if searching == query: " The server was asked too." else: ""),
-                   bkInfo, ["Search the server"], closable = false)
-    if a == 1:
+                   bkInfo, ["Save as Search Folder", "Search the server"], closable = false)
+    if a == 1: saveSearch(query)
+    elif a == 2:
       searching = query
       link.cmds.send(SyncCmd(kind: scSearch, text: query))
       status = "Asking the server..."
@@ -162,6 +172,8 @@ proc mainWindow() =
   of vCalendar:
     setToolbarLook(blTextBelow)
     toolbar:
+      if barButton(pxNew, "New Event", "A new event or meeting", enabled = calAccounts().len > 0): newEventNow()
+      toolSeparator()
       if barButton(pxBack, "Back"): calDay = calDay.addDays(if calMode == amMonth: -30 elif calMode == amWeek: -7 else: -1)
       if barButton(pxHome, "Today"): calDay = today()
       if barButton(pxForward, "Next"): calDay = calDay.addDays(if calMode == amMonth: 30 elif calMode == amWeek: 7 else: 1)
@@ -243,6 +255,8 @@ proc startup() =
     when defined(android): putEnv("RETRO_MAIL_HOME", dataDir("RetroMail"))
     else: discard
   prefs = loadSettings("retro-mail")
+  # new mail checked while the app is closed (Android: the system's job)
+  scheduleBackgroundCheck(if prefBool("bgCheck", true): 15 else: 0)
   restoreAppearance(prefs)
   restoreWriting()
   readZoom = clamp(prefInt("zoom", 100) / 100, 0.5, 3.0)
@@ -280,6 +294,32 @@ proc startup() =
     lastTreeSel = treeSel
     place = Place(kind: plAllInbox)
 
+# ---- new mail while Retro Mail is closed (retro/bgcheck) ---------------------------------
+
+proc checkMail() {.nimcall, gcsafe.} =
+  ## The background check, with no window (on Android also in a process
+  ## started only for it): the changes waiting sent, new mail fetched and
+  ## told, the unread count on the icon -- as the window does.
+  {.cast(gcsafe).}:
+    when defined(android):
+      if getEnv("RETRO_MAIL_HOME").len == 0: putEnv("RETRO_MAIL_HOME", dataDir("RetroMail"))
+    let settings = loadSettings("retro-mail")
+    if not settings.getBool("bgCheck", true): return
+    let dbPath = mailDir() / "mail.db"
+    let (count, latest) = syncOnce(dbPath)
+    if count > 0 and settings.getBool("notify", true):
+      notify((if count == 1: "New mail" else: $count & " new messages"), latest, appName,
+             tag = "inbox")
+    if settings.getBool("badge", true):
+      try:
+        let db = openStore(dbPath)
+        let unread = db.value("SELECT coalesce(sum(unread), 0) FROM folders WHERE role = 'inbox'")
+        db.close()
+        setBadge(int(unread.num))
+      except CatchableError: discard
+
+onBackgroundCheck(checkMail)     # (before the window: a check's process stops here)
+
 app appName, 1280, 800:
   if not started: startup()
   handleEvents()
@@ -303,7 +343,9 @@ app appName, 1280, 800:
   shortcutsDialog()
   autoReplyDialog()
   rulesDialog()
+  eventDialog()
   emlDialogs()
+  classicDialogs()
   importDialog()
   exportDialog()
   followReminders()
@@ -323,7 +365,9 @@ app appName, 1280, 800:
     case undoWhat
     of "send": undoSend()
     of "move": undoLastMove()
-    else: discard
+    else:
+      if undoWhat.startsWith("sweep:"):
+        sweepFromMessage(try: parseInt(undoWhat[6 .. ^1]) except ValueError: 0)
     undoWhat = ""
   elif undoWhat.len > 0 and not snackbarShown():
     undoWhat = ""

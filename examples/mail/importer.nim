@@ -68,10 +68,16 @@ proc storeRaw*(db: Db; account, folder: int; raw: string; read, flagged: bool; d
   let plain = if text.len > 0: text else: html
   var snip = ""
   var inTag = false
-  for c in plain:
-    if c == '<': inTag = true
+  var hidden = false              # (inside <style>, <script> or <head>: not text)
+  for i, c in plain:
+    if c == '<':
+      inTag = true
+      let tag = plain.substr(i + 1, i + 8).toLowerAscii
+      if tag.startsWith("style") or tag.startsWith("script") or tag.startsWith("head>") or
+         tag.startsWith("head "): hidden = true
+      elif tag.startsWith("/style") or tag.startsWith("/script") or tag.startsWith("/head"): hidden = false
     elif c == '>': inTag = false
-    elif not inTag:
+    elif not inTag and not hidden:
       snip.add(if c in {'\r', '\n', '\t'}: ' ' else: c)
       if snip.len > 400: break
   m.snippet = snip.splitWhitespace().join(" ")

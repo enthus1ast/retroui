@@ -1,6 +1,6 @@
 ## Gmail through the Gmail API: labels (folders and tags), messages (a
-## full sync, then history), bodies, attachments, changes, sending, the
-## calendar (Google Calendar), server search.
+## full sync, then history), bodies, attachments, changes, sending, server
+## search. (Google Calendar: calendar.nim.)
 ##
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
@@ -11,7 +11,7 @@ import api, store
 const
   gmailScopes* = ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.modify",
                   "https://www.googleapis.com/auth/gmail.settings.basic",
-                  "https://www.googleapis.com/auth/calendar.readonly"]
+                  "https://www.googleapis.com/auth/calendar.events"]
   metaHeaders = ["From", "To", "Cc", "Subject", "Date", "Message-ID", "In-Reply-To", "References"]
   systemFolders* = [("INBOX", "Inbox", "inbox"), ("DRAFT", "Drafts", "drafts"),
                     ("SENT", "Sent Mail", "sent"), ("ARCHIVE", "All Mail", "archive"),
@@ -21,6 +21,7 @@ const
 type
   GmailBody* = object
     html*, text*, toList*, ccList*: string
+    unsub*, unsubPost*: string   ## List-Unsubscribe and List-Unsubscribe-Post (a newsletter's)
     atts*: seq[tuple[remoteId, name, mime, cid: string; size: int; inline: bool; data: string; hasData: bool]]
   GmailLabel* = object
     id*, name*, kind*, color*: string
@@ -201,6 +202,8 @@ proc gmailBody*(token, remoteId: string): GmailBody =
                    what = "the message")
   result.toList = decodeWords(headerOf(j{"payload"}, "to"))
   result.ccList = decodeWords(headerOf(j{"payload"}, "cc"))
+  result.unsub = headerOf(j{"payload"}, "list-unsubscribe").strip
+  result.unsubPost = headerOf(j{"payload"}, "list-unsubscribe-post").strip
   var htmls, texts: seq[string]
   proc walk(p: JsonNode; res: var GmailBody; htmls, texts: var seq[string]) =
     if p == nil: return
@@ -283,32 +286,6 @@ proc gmailSend*(token, raw, threadId: string) =
   let r = call("POST", gmailBase() & "/upload/gmail/v1/users/me/messages/send?uploadType=multipart",
                token, body, contentType = "multipart/related; boundary=" & b, timeout = 600)
   if not r.ok: fail(r, "sending")
-
-proc gmailCalendar*(token: string; fromT, toT: float; account: int): seq[Event] =
-  var page = ""
-  for n in 0 ..< 10:
-    var u = gcalBase() & "/calendars/primary/events?singleEvents=true&orderBy=startTime&" &
-            "maxResults=250&timeMin=" & urlEncode(isoTime(fromT)) & "&timeMax=" & urlEncode(isoTime(toT))
-    if page.len > 0: u.add "&pageToken=" & page
-    let j = callJson("GET", u, token, what = "the calendar")
-    for e in j{"items"}.getElems:
-      if e{"status"}.getStr == "cancelled": continue
-      var ev = Event(account: account, remoteId: e{"id"}.getStr, title: e{"summary"}.getStr,
-                     location: e{"location"}.getStr)
-      if e{"start"}{"date"} != nil:
-        ev.allDay = true
-        let d = e{"start"}{"date"}.getStr
-        let d2 = e{"end"}{"date"}.getStr
-        try:
-          ev.start = parse(d, "yyyy-MM-dd", local()).toTime.toUnixFloat
-          ev.finish = parse(d2, "yyyy-MM-dd", local()).toTime.toUnixFloat
-        except CatchableError: discard
-      else:
-        ev.start = parseIso(e{"start"}{"dateTime"}.getStr)
-        ev.finish = parseIso(e{"end"}{"dateTime"}.getStr)
-      result.add ev
-    page = j{"nextPageToken"}.getStr
-    if page.len == 0: break
 
 proc buildRaw*(d: JsonNode; me: MailAddress): string =
   ## The RFC 5322 message for what the compose window made.

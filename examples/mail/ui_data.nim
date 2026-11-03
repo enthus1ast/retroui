@@ -10,7 +10,7 @@ proc placeTitle(): string =
     let f = folderOf(place.folder)
     if f.name.len > 0: f.name else: "Folder"
   of plTag: "Tag"
-  of plSearch: "Search"
+  of plSearch: (if place.tag.len > 0: place.tag else: "Search")
   of plFlagged: "Flagged"
   of plPinned: "Pinned"
   of plSnoozed: "Snoozed"
@@ -101,10 +101,18 @@ proc loadMessages(): seq[Msg] =
     args.add toDbValue(now)
     result = store0.whereMessages("folder IN (SELECT id FROM folders WHERE role = 'inbox') " &
                                   "AND snooze <= ?", args)
-  of plSearch: discard
+  of plSearch:
+    # a Search Folder: its search run again
+    let w = searchWhere(place.tag, args)
+    result = store0.whereMessages(w, args, 1000)
   if isInboxPlace() and prefBool("focused", true) and query.len == 0:
     let want = focusTab == 0
     result.keepItIf(it.focused == want or it.pinned)
+  if prefBool("hideRead", false) and query.len == 0 and place.kind != plSearch:
+    # View > Current View > Hide Read Messages (the conversation open stays)
+    var open: HashSet[int]
+    for x in openMsgs: open.incl x.id
+    result.keepItIf(it.unread or it.flagged or it.pinned or it.id in open)
 
 proc addThreadMates(ms: var seq[Msg]) =
   ## The other messages of the threads shown (your replies in Sent Items),
@@ -322,9 +330,22 @@ proc pictureFromBytes(key, data: string): Bitmap =
     result = loadPicture(p, 1600, 6000)
   except CatchableError: result = nil
 
+proc readHtml(m: Msg): string =
+  ## What the reading pane shows: the message's HTML, or its text alone
+  ## (Options: "Read all messages in plain text").
+  if not prefBool("plainRead", false): return m.html
+  textToHtml(if m.text.len > 0: m.text else: htmlToText(m.html))
+
+proc picturesTrusted(m: Msg): bool =
+  ## Pictures from the web are shown: for this message, for everyone, or
+  ## for its sender ("Always from ...").
+  if m.id in allowPictures or prefInt("pictures", 0) == 1: return true
+  let s = m.fromEmail.toLowerAscii
+  s.len > 0 and s in pref("picSenders").splitLines
+
 proc imagesFor(m: Msg): HtmlImageSource =
   let mid = m.id
-  let allowed = mid in allowPictures or prefInt("pictures", 0) == 1
+  let allowed = picturesTrusted(m)
   result = proc (src: string): Bitmap =
     if src.startsWith("cid:"):
       let key = "cid:" & $mid & ":" & src[4 .. ^1]

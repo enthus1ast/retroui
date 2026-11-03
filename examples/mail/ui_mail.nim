@@ -19,6 +19,17 @@ proc aiReady(): bool
 proc askAssistant(kind: string; m: Msg)
 proc assistBox(ids: seq[int])
 proc forwardAsAttachment()
+proc unsubscribeBar(m: Msg)
+proc blockSender(ms: seq[Msg])
+proc printMessage()
+proc showProperties(source = false)
+proc saveSearch(q: string)
+proc searchFolders()
+proc searchFolderMenu()
+proc openSearchFolder(i: int)
+proc ignoreConversation(ms: seq[Msg])
+proc openFind()
+proc messagesDragFiles(ids: seq[int]): seq[string]
 
 var treeOpen = initTable[string, bool]()
 var treeSel = "start"
@@ -104,6 +115,11 @@ proc folderBar(title, sub: string; tag = "") =
   if r.w > dp(700):
     text(x, r.y + (r.h - lineHeight()) div 2, fit(sub, r.x + r.w - sw - x - dp(24)),
          rgb(220, 220, 220))
+  if sw > dp(160) and query.strip.len > 0:
+    # the search kept as a Search Folder (one click)
+    pushFrame(rect(r.x + r.w - sw - dp(16) - CtrlH, r.y + (r.h - CtrlH) div 2, CtrlH + 1, 0))
+    if toolButton(pixelIcon(pxFolderStar), "Save this search as a Search Folder"): saveSearch(query)
+    discard popFrame()
   if sw > dp(120):
     pushFrame(rect(r.x + r.w - sw - dp(10), r.y + (r.h - EditH) div 2, sw, 0))
     if searchBox(query, "Search: from: to: has: tag: is: before:"):
@@ -235,7 +251,9 @@ proc folderTree() =
             leaf(t.name, pic = glyphIcon(nfSquare, tagColor(t.name)), id = "tag:" & t.name)
             dropOnTag(nodeRect(), t.name)
         treeOpen["tags"] = tOpen
+      searchFolders()
     treeOpen["root"] = rootOpen
+  searchFolderMenu()
   if treeSel != lastTreeSel:
     lastTreeSel = treeSel
     if treeSel == "start": view = vStart
@@ -247,6 +265,8 @@ proc folderTree() =
     elif treeSel == "fav:flagged": goPlace(Place(kind: plFlagged))
     elif treeSel == "fav:pinned": goPlace(Place(kind: plPinned))
     elif treeSel == "fav:snoozed": goPlace(Place(kind: plSnoozed))
+    elif treeSel.startsWith("search:"):
+      openSearchFolder(try: parseInt(treeSel[7 .. ^1]) except ValueError: -1)
 
 proc contactsPane() =
   let r = place(available(), lineHeight() + dp(8), fill = true)
@@ -414,6 +434,9 @@ proc menus() =
       if menuItem("&Import Messages..."): runCommand("Import messages")
       if menuItem("E&xport Messages...", enabled = convs.len > 0): runCommand("Export messages")
       menuSeparator()
+      if menuItem("&Print...", "Ctrl+P", enabled = has): printMessage()
+      if menuItem("P&roperties", "Alt+Enter", enabled = has): showProperties()
+      menuSeparator()
       if menuItem("&Send and Receive", "F5"): link.cmds.send(SyncCmd(kind: scSyncNow))
       menuSeparator()
       if menuItem("E&xit", "Alt+F4"): quitApp()
@@ -428,12 +451,23 @@ proc menus() =
         for c in convs: all.add c.msgs
         markRead(all)
       menuSeparator()
-      if menuItem("&Find Message...", "Ctrl+E"): ui.textFocusWanted = true
+      if menuItem("&Search", "Ctrl+E"): ui.textFocusWanted = true
+      if menuItem("&Find Message...", "Ctrl+Shift+F"): openFind()
+      if menuItem("Save Search as a Search F&older", enabled = query.strip.len > 0): saveSearch(query)
       if menuItem("Select A&ll", "Ctrl+A", enabled = rows.len > 0): runCommand("Select all")
       menuSeparator()
       if menuItem("&Undo", "Ctrl+Z", enabled = undoWhat.len > 0 and snackbarShown()):
         runCommand("Undo")
     menu "&View":
+      submenu "&Current View":
+        if menuItem("Show &All Messages", checked = not prefBool("hideRead", false)):
+          prefs.put("hideRead", false)
+          savePrefs()
+          changed()
+        if menuItem("Hide &Read Messages", checked = prefBool("hideRead", false)):
+          prefs.put("hideRead", true)
+          savePrefs()
+          changed()
       if menuItem("&Threads", checked = prefBool("threads", true)):
         prefs.put("threads", not prefBool("threads", true))
         savePrefs()
@@ -457,6 +491,8 @@ proc menus() =
         savePrefs()
       menuSeparator()
       if menuItem("C&ustomize Toolbar..."): customizing = true
+      menuSeparator()
+      if menuItem("Message &Source", "Ctrl+F3", enabled = has): showProperties(source = true)
     menu "&Go":
       if menuItem("&Inbox", "Ctrl+1"): goPlace(Place(kind: plAllInbox))
       if menuItem("&Calendar", "Ctrl+2"): view = vCalendar
@@ -475,6 +511,7 @@ proc menus() =
       if menuItem("Reply to &All", "Ctrl+Shift+R", enabled = has): doReply("replyAll")
       if menuItem("&Forward", "Ctrl+F", enabled = has): doReply("forward")
       if menuItem("Forward as Attach&ment", enabled = has): forwardAsAttachment()
+      if menuItem("New M&eeting...", enabled = has): runCommand("New meeting")
       menuSeparator()
       if menuItem("F&lag", "Insert", enabled = has): toggleFlag(ms)
       submenu "Follow &Up": followMenu(ms)
@@ -486,6 +523,8 @@ proc menus() =
       if menuItem("S&weep...", enabled = has): openSweep()
       if menuItem("&Move to Folder...", "Ctrl+Shift+V", enabled = has): moveOpen = true
       if menuItem("Mark as &Junk", enabled = has): moveMsgs(ms, "junk")
+      if menuItem("&Block Sender", enabled = has): blockSender(ms)
+      if menuItem("&Ignore Conversation", enabled = has): ignoreConversation(ms)
     menu "&Tools":
       if menuItem("&Send and Receive", "F5"): link.cmds.send(SyncCmd(kind: scSyncNow))
       if menuItem("&Address Book...", "Ctrl+Shift+B"): view = vPeople
@@ -1070,9 +1109,12 @@ proc mailList() =
       if not selected: rowSelect(i, listId)
       let ms = selectedMsgs()
       if ms.len > 0:
+        let ids = ms.mapIt(it.id)
+        # (out of the window -- to a folder, the desktop -- each a saved message)
         startDrag("mail", ms.mapIt($it.id),
                   if ms.len == 1: (if ms[0].subject.len > 0: ms[0].subject else: "1 message")
-                  else: $ms.len & " messages", pxMail)
+                  else: $ms.len & " messages", pxMail,
+                  files = proc (): seq[string] = messagesDragFiles(ids))
       dragRow = -1
     if not ui.mouseDown and dragRow == i: dragRow = -1
     if rhit.clicked and not usedHover:
@@ -1121,9 +1163,14 @@ proc mailList() =
     if menuItem("&Archive"): archiveMsgs(ms)
     if menuItem("&Delete"): deleteMsgs(ms)
     if menuItem("Mark as &Junk"): moveMsgs(ms, "junk")
+    if menuItem("&Block Sender"): blockSender(ms)
+    if menuItem("&Ignore Conversation"): ignoreConversation(ms)
     menuSeparator()
     submenu "&Quick Steps": quickStepsMenu()
     if menuItem("S&weep..."): openSweep()
+    menuSeparator()
+    if menuItem("&Print...", "Ctrl+P"): printMessage()
+    if menuItem("P&roperties", "Alt+Enter"): showProperties()
 
 # ---- the reading pane ------------------------------------------------------------------
 
@@ -1172,9 +1219,53 @@ proc saveAttachmentAs(id: int) =
   if store0.attachmentData(id).len == 0:
     link.cmds.send(SyncCmd(kind: scAttachment, id: id))
 
+proc dragName(name: string): string =
+  result = name.multiReplace(("/", "_"), ("\\", "_"), (":", "_"), ("*", "_"), ("?", "_"),
+                             ("\"", "_"), ("<", "_"), (">", "_"), ("|", "_")).strip
+  if result.len == 0: result = "attachment"
+
+proc attachmentDragFile(a: Att): seq[string] =
+  ## Attachment `a` as a file, for a drag out of the window (to a folder, the
+  ## desktop, another program): written in a temporary folder. Not here yet:
+  ## nothing to drag, and it is asked for.
+  let data = store0.attachmentData(a.id)
+  if data.len == 0:
+    if a.id notin attAsked:
+      attAsked.incl a.id
+      link.cmds.send(SyncCmd(kind: scAttachment, id: a.id))
+    status = "Downloading the attachment first: drag it again in a moment"
+    return
+  let dir = getTempDir() / "retro-mail" / "drag" / $a.id
+  let p = dir / dragName(a.name)
+  try:
+    createDir(dir)
+    writeFile(p, data)
+    result = @[p]
+  except CatchableError as e: status = e.msg
+
+proc messagesDragFiles(ids: seq[int]): seq[string] =
+  ## Messages dragged out of the window: each a saved message (.eml).
+  let dir = getTempDir() / "retro-mail" / "drag" / ("m" & $int(epochTime() * 1000))
+  try: createDir(dir) except CatchableError: return
+  var used: HashSet[string]
+  for id in ids:
+    let m = store0.message(id)
+    if m.id == 0: continue
+    let acc = accountsC.filterIt(it.id == m.account)
+    let me = MailAddress(name: (if acc.len > 0: acc[0].name else: ""),
+                         email: (if acc.len > 0: acc[0].email else: ""))
+    var name = dragName(attachmentName(m.subject))
+    if name in used: name = name.changeFileExt("") & " (" & $id & ").eml"
+    used.incl name
+    try:
+      writeFile(dir / name, rawOf(store0, m, me))
+      result.add dir / name
+    except CatchableError: discard
+
 proc attachmentsRow(m: Msg) =
   ## The files sent with it: a click opens one in its program, the right
-  ## button (or a long press) offers Open and Save As.
+  ## button (or a long press) offers Open and Save As; dragged out of the
+  ## window, a file goes where it is let go (a folder, another program).
   let atts = store0.attachments(m.id)
   var files: seq[Att]
   for a in atts:
@@ -1191,6 +1282,8 @@ proc attachmentsRow(m: Msg) =
                else: pxFile
       if button(fit(a.name, dp(220)) & (if a.size > 0: "  (" & sizeText(a.size) & ")" else: ""), px):
         openAttachmentSoon(a.id)
+      let att = a
+      fileDragSource(ui.lastRect, proc (): seq[string] = attachmentDragFile(att))
       if canInput() and mouseIn(ui.lastRect) and (ui.rpressed or longPressed()):
         attMenuId = a.id
         openPopupMenu("attmenu", ui.mx, ui.my)
@@ -1206,6 +1299,8 @@ proc attachmentsRow(m: Msg) =
         let w = if b != nil and b.h > 0: clamp(b.w * th div b.h, dp(40), dp(200)) else: th
         let r = place(w, th)
         let hit = interact(idOf("attpic" & $a.id), r, focusable = false)
+        let att = a
+        fileDragSource(r, proc (): seq[string] = attachmentDragFile(att))
         fill(r, ui.theme.face)
         if b != nil: drawBitmap(r, b) else:
           if store0.attachmentData(a.id).len == 0 and a.id notin attAsked:
@@ -1263,21 +1358,30 @@ proc messageBody(m: Msg; fill: bool) =
   case m.bodyState
   of 2:
     inviteBanner(m)
-    let pics = remoteImages(m.html)
-    if pics > 0 and m.id notin allowPictures and prefInt("pictures", 0) != 1:
+    unsubscribeBar(m)
+    let html = readHtml(m)
+    let pics = remoteImages(html)
+    if pics > 0 and not picturesTrusted(m):
+      let sender = m.fromEmail.toLowerAscii
       case banner("Pictures from the web are hidden in this message (" & $pics &
                   "), so the sender cannot see when you read it.", bkInfo,
-                  ["Show pictures", "Always for everyone"], closable = false)
+                  ["Show pictures", "Trust this sender", "Show always"],
+                  closable = false)
       of 1: allowPictures.incl m.id
       of 2:
+        if sender.len > 0:
+          prefs.put("picSenders", (pref("picSenders").splitLines & @[sender]).filterIt(it.len > 0).join("\n"))
+          savePrefs()
+        allowPictures.incl m.id
+      of 3:
         prefs.put("pictures", 1)
         savePrefs()
       else: discard
     attachmentsRow(m)
     let z0 = readZoom
-    let ev = if fill: htmlView(m.html, readZoom, height = remainingH() - CtrlH - dp(12),
+    let ev = if fill: htmlView(html, readZoom, height = remainingH() - CtrlH - dp(12),
                                key = "msg" & $m.id, images = imagesFor(m))
-             else: htmlBlock(m.html, images = imagesFor(m), zoom = readZoom)
+             else: htmlBlock(html, images = imagesFor(m), zoom = readZoom)
     if readZoom != z0:
       prefs.put("zoom", int(round(readZoom * 100)))
       savePrefs()
@@ -1636,6 +1740,7 @@ proc mailKeys() =
   if ctrl and ui.key == KeyN: openCompose("new"); ui.keyUsed = true
   elif ctrl and shift and ui.key == KeyR: doReply("replyAll"); ui.keyUsed = true
   elif ctrl and ui.key == KeyR: doReply("reply"); ui.keyUsed = true
+  elif ctrl and shift and ui.key == KeyF: openFind(); ui.keyUsed = true
   elif ctrl and ui.key == KeyF: doReply("forward"); ui.keyUsed = true
   elif ctrl and ui.key == KeyQ: markRead(ms); ui.keyUsed = true
   elif ctrl and ui.key == KeyU: markRead(ms, true); ui.keyUsed = true
@@ -1650,6 +1755,9 @@ proc mailKeys() =
   elif ctrl and ui.key == KeyPeriod: clearMulti(); moveRow(1); ui.keyUsed = true
   elif ctrl and ui.key == KeyComma: clearMulti(); moveRow(-1); ui.keyUsed = true
   elif AltPressed in ui.mods and ui.key == KeyQ: runCommand("Tell me"); ui.keyUsed = true
+  elif ctrl and ui.key == KeyP and ms.len > 0: printMessage(); ui.keyUsed = true
+  elif ctrl and ui.key == KeyF3 and ms.len > 0: showProperties(source = true); ui.keyUsed = true
+  elif AltPressed in ui.mods and ui.key == KeyEnter and ms.len > 0: showProperties(); ui.keyUsed = true
   elif ui.key == KeyF6:
     # F6: the next pane (folders, list, search box), as Outlook goes round
     runCommand("Next pane")

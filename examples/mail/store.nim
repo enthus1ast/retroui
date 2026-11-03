@@ -48,11 +48,20 @@ type
   Tag* = object
     id*, account*: int
     name*, color*, remoteId*: string
+  Attendee* = tuple[name, email, response: string]   ## response: "accepted", "declined"... ("" not known)
   Event* = object
     id*, account*: int
     remoteId*, title*, location*: string
     start*, finish*: float
     allDay*: bool
+    organizer*: string         ## who invited the account ("Name <address>"); "" its own
+    mine*: bool                ## the account organizes it (a change goes to everyone)
+    attendees*: seq[Attendee]  ## who else is invited
+    joinUrl*: string           ## its online meeting (Teams, Google Meet)
+    notes*: string             ## its description, as text
+    reminder*: int             ## minutes before it starts; -1 none
+    series*: string            ## one event of a series: the series' id
+    repeat*: string            ## the series': "daily", "weekly", "monthly", "yearly", "custom"
   Action* = object
     id*, account*: int
     kind*: string
@@ -129,6 +138,14 @@ proc openStore*(path = ""): Db =
   for r in result.rows("PRAGMA table_info(messages)"): cols.add r[1].str
   if "follow" notin cols:
     result.exec("ALTER TABLE messages ADD COLUMN follow REAL DEFAULT 0")
+  cols.setLen(0)
+  for r in result.rows("PRAGMA table_info(events)"): cols.add r[1].str
+  for (col, decl) in [("organizer", "TEXT DEFAULT ''"), ("mine", "INTEGER DEFAULT 1"),
+                      ("attendees", "TEXT DEFAULT ''"), ("join_url", "TEXT DEFAULT ''"),
+                      ("notes", "TEXT DEFAULT ''"), ("reminder", "INTEGER DEFAULT 15"),
+                      ("series", "TEXT DEFAULT ''"), ("pattern", "TEXT DEFAULT ''")]:
+    if col notin cols:
+      result.exec("ALTER TABLE events ADD COLUMN " & col & " " & decl)
 
 # ---- tags as stored: "\nA\nB\n" so a tag is found with instr ----------------------------
 
@@ -570,21 +587,62 @@ proc saveSignature*(db: Db; id: int; name, html: string): int =
 
 proc deleteSignature*(db: Db; id: int) = db.exec("DELETE FROM signatures WHERE id = ?", id)
 
+proc packAttendees(list: seq[Attendee]): string =
+  if list.len == 0: return ""
+  var j = newJArray()
+  for a in list: j.add %*[a.name, a.email, a.response]
+  $j
+
+proc unpackAttendees(s: string): seq[Attendee] =
+  if s.len == 0: return
+  try:
+    for a in parseJson(s):
+      result.add (a[0].getStr, a[1].getStr, a[2].getStr)
+  except CatchableError: discard
+
+const eventCols = "id, account, remote_id, title, location, start, finish, all_day, organizer, " &
+  "mine, attendees, join_url, notes, reminder, series, pattern"
+
+proc toEvent(r: DbRow): Event =
+  Event(id: int r[0].num, account: int r[1].num, remoteId: r[2].str, title: r[3].str,
+        location: r[4].str, start: r[5].flt, finish: r[6].flt, allDay: r[7].num != 0,
+        organizer: r[8].str, mine: r[9].num != 0, attendees: unpackAttendees(r[10].str),
+        joinUrl: r[11].str, notes: r[12].str, reminder: int r[13].num, series: r[14].str,
+        repeat: r[15].str)
+
 proc upsertEvent*(db: Db; e: Event) =
-  db.exec("INSERT INTO events(account, remote_id, title, start, finish, all_day, location) " &
-          "VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account, remote_id) DO UPDATE SET " &
-          "title = excluded.title, start = excluded.start, finish = excluded.finish, " &
-          "all_day = excluded.all_day, location = excluded.location",
-          e.account, e.remoteId, e.title, e.start, e.finish, e.allDay, e.location)
+  db.exec("INSERT INTO events(account, remote_id, title, start, finish, all_day, location, " &
+          "organizer, mine, attendees, join_url, notes, reminder, series, pattern) " &
+          "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account, remote_id) " &
+          "DO UPDATE SET title = excluded.title, start = excluded.start, finish = excluded.finish, " &
+          "all_day = excluded.all_day, location = excluded.location, organizer = excluded.organizer, " &
+          "mine = excluded.mine, attendees = excluded.attendees, join_url = excluded.join_url, " &
+          "notes = excluded.notes, reminder = excluded.reminder, series = excluded.series, " &
+          "pattern = excluded.pattern",
+          e.account, e.remoteId, e.title, e.start, e.finish, e.allDay, e.location, e.organizer,
+          e.mine, packAttendees(e.attendees), e.joinUrl, e.notes, e.reminder, e.series, e.repeat)
 
 proc clearEvents*(db: Db; account: int; fromT, toT: float) =
   db.exec("DELETE FROM events WHERE account = ? AND start >= ? AND start < ?", account, fromT, toT)
 
 proc events*(db: Db; fromT, toT: float): seq[Event] =
-  for r in db.rows("SELECT id, account, title, location, start, finish, all_day FROM events " &
-                   "WHERE finish >= ? AND start < ? ORDER BY start", fromT, toT):
-    result.add Event(id: int r[0].num, account: int r[1].num, title: r[2].str,
-                     location: r[3].str, start: r[4].flt, finish: r[5].flt, allDay: r[6].num != 0)
+  for r in db.rows("SELECT " & eventCols & " FROM events WHERE finish >= ? AND start < ? " &
+                   "ORDER BY start", fromT, toT):
+    result.add toEvent(r)
+
+proc event*(db: Db; id: int): Event =
+  let r = db.one("SELECT " & eventCols & " FROM events WHERE id = ?", id)
+  if r.len > 0: result = toEvent(r)
+
+proc eventByRemote*(db: Db; account: int; remoteId: string): Event =
+  let r = db.one("SELECT " & eventCols & " FROM events WHERE account = ? AND remote_id = ?",
+                 account, remoteId)
+  if r.len > 0: result = toEvent(r)
+
+proc removeEvent*(db: Db; account: int; remoteId: string) =
+  ## An event (or a whole series: its id) taken out here.
+  db.exec("DELETE FROM events WHERE account = ? AND (remote_id = ? OR series = ?)", account,
+          remoteId, remoteId)
 
 proc tasks*(db: Db): seq[tuple[id: int; title: string; done: bool; due: float; message: int]] =
   for r in db.rows("SELECT id, title, done, due, message FROM tasks ORDER BY done, " &
@@ -661,3 +719,17 @@ proc saveRulesJson*(db: Db; json: string) =
   db.exec("CREATE TABLE IF NOT EXISTS rules(id INTEGER PRIMARY KEY CHECK (id = 1), json TEXT)")
   db.exec("INSERT INTO rules(id, json) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET json = excluded.json",
           json)
+
+# ---- newsletters: how to leave them (List-Unsubscribe) --------------------------------------
+
+proc setUnsub*(db: Db; id: int; header, post: string) =
+  ## A message's List-Unsubscribe (and -Post) headers, kept with it.
+  db.exec("CREATE TABLE IF NOT EXISTS unsub(message INTEGER PRIMARY KEY, header TEXT, post TEXT)")
+  db.exec("INSERT INTO unsub(message, header, post) VALUES(?, ?, ?) ON CONFLICT(message) DO " &
+          "UPDATE SET header = excluded.header, post = excluded.post", id, header, post)
+
+proc unsubOf*(db: Db; id: int): tuple[header, post: string] =
+  ## What a message says about leaving its list ("" when it is not a list's).
+  db.exec("CREATE TABLE IF NOT EXISTS unsub(message INTEGER PRIMARY KEY, header TEXT, post TEXT)")
+  let r = db.one("SELECT header, post FROM unsub WHERE message = ?", id)
+  if r.len > 0: (r[0].str, r[1].str) else: ("", "")

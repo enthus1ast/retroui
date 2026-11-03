@@ -158,6 +158,12 @@ proc optionsDialog() =
                 if combo(names, i, w = dp(140)):
                   prefs.put("syncDays", keepDays[i][0])
                   store0.exec("UPDATE accounts SET sync_days = ?", keepDays[i][0])
+          when defined(android):
+            if javaAvailable():          # (a phone's app: the system runs the check)
+              var bc = prefBool("bgCheck", true)
+              if checkbox("Check for new mail while Retro Mail is &closed", bc):
+                prefs.put("bgCheck", bc)
+                scheduleBackgroundCheck(if bc: 15 else: 0)
         group "Read":
           var b = prefBool("threads", true)
           if checkbox("Show messages as &threads (conversations)", b): prefs.put("threads", b); changed()
@@ -184,12 +190,28 @@ proc optionsDialog() =
                 var i = max(0, ks.find(pref("pane", "bottom")))
                 if combo(["Below the list", "Beside the list", "Off"], i, w = dp(140)):
                   prefs.put("pane", ks[i])
+          b = prefBool("plainRead", false)
+          if checkbox("Read all messages in &plain text", b): prefs.put("plainRead", b)
           b = prefBool("startInbox", false)
           if checkbox("When Retro Mail starts, go directly to my &Inbox", b): prefs.put("startInbox", b)
           b = prefBool("myday", true)
           if checkbox("Show &My Day beside the mail", b): prefs.put("myday", b)
           b = prefBool("notify", true)
           if checkbox("Tell me when &new mail comes", b): prefs.put("notify", b)
+          b = prefBool("newMailSound", true)
+          if checkbox("Play &sound when new messages arrive", b): prefs.put("newMailSound", b)
+          if b:
+            form dp(220):
+              field "New mail sound:":
+                block:
+                  let ks = ["chime", "ding", "beep", "file"]
+                  var i = max(0, ks.find(pref("soundKind", "chime")))
+                  if combo(["Chime", "Ding", "Classic beep", "A sound file..."], i, w = dp(140)):
+                    prefs.put("soundKind", ks[i])
+                    if ks[i] == "file":
+                      soundPickPath = pref("soundFile", downloadsDir())
+                      soundPickOpen = true
+                    else: newMailSound()
         group "Write":
           var rb = prefBool("replyBlue", true)
           if checkbox("Write replies and forwards in &blue, as Outlook did", rb):

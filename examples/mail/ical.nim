@@ -449,6 +449,13 @@ proc stampToUtc*(st: Stamp; tzid: string; cal: IcalComp = nil): float =
     if obs.len > 0: return float(wallToUtc(wall(st), obs))
   localWall(st)
 
+proc zoneOffset*(tzid: string; t: float): tuple[secs: int; known: bool] =
+  ## How far east of UTC zone `tzid` (a well-known name, IANA's or
+  ## Windows') is at instant `t`, in seconds; not `known` for another zone.
+  let obs = knownZone(tzid)
+  if obs.len == 0: return (0, false)
+  (offsetAt(obs, int64(floor(t))), true)
+
 proc zoneToUtc*(dateTime, timeZone: string): float =
   ## Graph's {dateTime, timeZone} ("2026-11-20T08:00:00.0000000", "UTC" or
   ## a zone name, Windows' or IANA's) as epoch seconds.

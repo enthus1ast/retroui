@@ -6,9 +6,10 @@
 ##
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
-import std/[json, strutils, times, tables, os, hashes, sets, sequtils]
-import retro/[db, oauth, secrets, mime]
-import api, store, graph, gmail, appids, sigfind, invites, autoreply, assist, rules, forward
+import std/[json, strutils, times, tables, os, hashes, sets, sequtils, uri, locks]
+import retro/[db, http, oauth, secrets, mime]
+import api, store, graph, gmail, appids, sigfind, invites, autoreply, assist, rules, forward, importer,
+       calendar
 
 const secretApp* = "RetroMail"
 
@@ -27,7 +28,12 @@ type
     scGetAutoReply  ## account `id`'s automatic replies
     scSetAutoReply  ## account `id`'s automatic replies set to `text` (JSON)
     scAssist      ## the assistant: `text` {"kind": "summary" | "translate", "id": message, "to": language}
-    scRaw         ## message `id`'s whole source: `count` 0 to forward it attached, 1 saved at `text`
+    scRaw         ## message `id`'s whole source: `count` 0 to forward it attached, 1 saved at `text`,
+                  ## 2 to read (its Properties, its source)
+    scUnsubscribe ## leave the list message `id` came from (List-Unsubscribe)
+    scEventNew    ## a new event in account `id`'s calendar: `text` {"draft"}
+    scEventChange ## event `text`.event changed: {"event", "draft", "parts", "occurrence"}
+    scEventDelete ## event `text`.event deleted: {"event", "cancel", "comment"}
     scQuit
   SyncCmd* = object
     kind*: SyncCmdKind
@@ -48,6 +54,9 @@ type
     seAutoReply   ## account `id`'s automatic replies: `text` JSON (`count` 1: saved)
     seAssist      ## the assistant's answer: `text` {"kind", "id", "text"} or {"error"}
     seRaw         ## message `id`'s source: `text` the file, `count` as asked ({"error"})
+    seUnsub       ## message `id`'s list left: `text` {"how": "post"|"mail"|"open", "url"} or {"error"}
+    seEvent       ## account `id`'s event made (`count` 0), changed (1), deleted (2): `text`
+                  ## {"event", "joinUrl"} or {"error"}
   SyncEvent* = object
     kind*: SyncEventKind
     id*, count*: int
@@ -144,6 +153,34 @@ proc send(w: var Worker; ev: SyncEvent) = w.link.events.send(ev)
 proc status(w: var Worker; s: string) = w.send(SyncEvent(kind: seStatus, text: s))
 proc applyRules(w: var Worker; acc: Account; ids: seq[int])
 
+# ---- new mail nobody was told about yet --------------------------------------------------
+# The sync notes what it fetched; whoever tells (the window, or a background
+# check while the window sleeps) takes it, so it is told once.
+
+var unannouncedLock: Lock
+initLock(unannouncedLock)
+
+proc unannouncedPath(): string = mailDir() / "unannounced.json"
+
+proc addUnannounced(count: int; latest: string) =
+  withLock unannouncedLock:
+    var n = 0
+    try: n = parseJson(readFile(unannouncedPath())){"count"}.getInt
+    except CatchableError: discard
+    try: writeFile(unannouncedPath(), $(%*{"count": n + count, "latest": latest}))
+    except CatchableError: discard
+
+proc takeUnannounced*(): tuple[count: int; latest: string] =
+  ## The new mail fetched since it was last taken (how many, the newest's
+  ## sender and subject), and forgotten: the one who takes it tells it.
+  withLock unannouncedLock:
+    try:
+      let j = parseJson(readFile(unannouncedPath()))
+      result = (j{"count"}.getInt, j{"latest"}.getStr)
+    except CatchableError: discard
+    try: removeFile(unannouncedPath())
+    except CatchableError: discard
+
 proc token(w: var Worker; acc: Account): string =
   ## A fresh access token, or "" (then the account has to sign in again).
   if not w.tokens.hasKey(acc.id):
@@ -204,6 +241,7 @@ proc fetchBody(w: var Worker; id: int) =
       w.db.transaction:
         w.db.setBody(id, b.html, plainOf(b.html))
         w.db.setDetails(id, b.toList, b.ccList, b.msgId, m.inReplyTo, m.refs)
+        if b.unsub.len > 0: w.db.setUnsub(id, b.unsub, b.unsubPost)
         for a in b.atts:
           discard w.db.addAttachment(id, a.remoteId, a.name, a.mime, a.size, a.cid, a.inline,
                                      a.data, a.hasData)
@@ -214,6 +252,7 @@ proc fetchBody(w: var Worker; id: int) =
       w.db.transaction:
         w.db.setBody(id, html, text)
         w.db.setDetails(id, b.toList, b.ccList, "", m.inReplyTo, m.refs)
+        if b.unsub.len > 0: w.db.setUnsub(id, b.unsub, b.unsubPost)
         for a in b.atts:
           discard w.db.addAttachment(id, a.remoteId, a.name, a.mime, a.size, a.cid, a.inline,
                                      a.data, a.hasData)
@@ -574,9 +613,7 @@ proc syncGmail(w: var Worker; acc: Account; tok: string; count: var int; latest:
 proc syncCalendar(w: var Worker; acc: Account; tok: string) =
   let fromT = epochTime() - 31 * 86400
   let toT = epochTime() + 92 * 86400
-  let evs = case acc.kind
-            of akGraph: graphCalendar(tok, fromT, toT, acc.id)
-            of akGmail: gmailCalendar(tok, fromT, toT, acc.id)
+  let evs = calendarEvents(acc, tok, fromT, toT)
   w.db.transaction:
     w.db.clearEvents(acc.id, fromT, toT)
     for e in evs: w.db.upsertEvent(e)
@@ -615,7 +652,9 @@ proc syncAccount(w: var Worker; acc: Account) =
         except ApiError: discard         # (no calendar permission: mail still works)
       w.prefetch(acc)
       w.lastFull[acc.id] = epochTime()
-      if count > 0: w.send(SyncEvent(kind: seNewMail, id: acc.id, count: count, text: latest))
+      if count > 0:
+        addUnannounced(count, latest)
+        w.send(SyncEvent(kind: seNewMail, id: acc.id, count: count, text: latest))
       w.send(SyncEvent(kind: seChanged))
       return
     except ApiError as e:
@@ -764,23 +803,108 @@ proc assistant(w: var Worker; c: SyncCmd) =
     w.send(SyncEvent(kind: seAssist, id: id, text: $(%*{"kind": kind, "id": id, "error": e.msg})))
 
 proc rawOf(w: var Worker; c: SyncCmd) =
-  ## A message's whole source: to forward it attached, or saved where asked.
+  ## A message's whole source: to forward it attached (`count` 0), saved
+  ## where asked (1), or to be read in its Properties (2).
   let m = w.db.message(c.id)
   let acc = w.db.account(m.account)
   if m.id == 0 or acc.id == 0: return
-  let tok = w.token(acc)
-  if tok.len == 0: return
   try:
-    var path = ""
-    if c.count == 1:
-      path = c.text
-      writeFile(path, rawMessage(acc, tok, m.remoteId))
+    var data = ""
+    if acc.clientId == localClient:          # (Local Folders: written out from what is kept)
+      data = rawOf(w.db, m, MailAddress(name: acc.name, email: acc.email))
     else:
-      let j = forwardAttachment(acc, tok, m, mailDir() / "outbox" / "fwd")
-      path = j{"path"}.getStr
+      let tok = w.token(acc)
+      if tok.len == 0: raise newException(IOError, "sign in to " & acc.email & " again")
+      data = rawMessage(acc, tok, m.remoteId)
+    let path = case c.count
+      of 1: c.text
+      of 2: mailDir() / "outbox" / ("source-" & $m.id & ".eml")
+      else: mailDir() / "outbox" / "fwd" / ("fwd-" & $m.id & "-" & $int(epochTime() * 1000) & ".eml")
+    createDir(path.parentDir)
+    writeFile(path, data)
     w.send(SyncEvent(kind: seRaw, id: c.id, count: c.count, text: path))
   except CatchableError as e:
     w.send(SyncEvent(kind: seRaw, id: c.id, count: c.count, text: $(%*{"error": e.msg})))
+
+proc unsubscribe(w: var Worker; id: int) =
+  ## Leaves a mailing list the way its List-Unsubscribe header says: one
+  ## click (RFC 8058: a POST, nothing for the user to do), else a message to
+  ## its address, else its page (the window opens it in the browser).
+  let (header, post) = w.db.unsubOf(id)
+  let m = w.db.message(id)
+  var https, mailto = ""
+  for part in header.split(','):
+    let u = part.strip.strip(chars = {'<', '>', ' '})
+    let low = u.toLowerAscii
+    if (low.startsWith("https://") or low.startsWith("http://127.0.0.1")) and https.len == 0: https = u
+    elif u.toLowerAscii.startsWith("mailto:") and mailto.len == 0: mailto = u
+  try:
+    if https.len > 0 and "one-click" in post.toLowerAscii:
+      let r = httpRequest("POST", https, [("Content-Type", "application/x-www-form-urlencoded")],
+                          "List-Unsubscribe=One-Click", timeoutSec = 20)
+      if not r.ok: raise newException(IOError, "the list answered " & $r.status)
+      w.send(SyncEvent(kind: seUnsub, id: id, text: $(%*{"how": "post", "url": https})))
+    elif mailto.len > 0:
+      let q = mailto[7 .. ^1]
+      let k = q.find('?')
+      let address = decodeUrl(if k >= 0: q[0 ..< k] else: q)
+      var subject = "unsubscribe"
+      var body = "unsubscribe"
+      if k >= 0:
+        for kv in q[k + 1 .. ^1].split('&'):
+          let e = kv.find('=')
+          if e > 0:
+            case kv[0 ..< e].toLowerAscii
+            of "subject": subject = decodeUrl(kv[e + 1 .. ^1])
+            of "body": body = decodeUrl(kv[e + 1 .. ^1])
+            else: discard
+      discard w.db.queueAction(m.account, "send", %*{"mode": "new", "to": [{"name": "", "email": address}],
+        "cc": [], "bcc": [], "subject": subject, "html": "<p>" & body & "</p>", "text": body,
+        "attachments": []})
+      w.send(SyncEvent(kind: seUnsub, id: id, text: $(%*{"how": "mail", "url": address})))
+    elif https.len > 0:
+      w.send(SyncEvent(kind: seUnsub, id: id, text: $(%*{"how": "open", "url": https})))
+    else:
+      w.send(SyncEvent(kind: seUnsub, id: id, text: $(%*{"error": "this message says no way to leave its list"})))
+  except CatchableError as e:
+    if https.len > 0:
+      w.send(SyncEvent(kind: seUnsub, id: id, text: $(%*{"how": "open", "url": https, "error": e.msg})))
+    else:
+      w.send(SyncEvent(kind: seUnsub, id: id, text: $(%*{"error": e.msg})))
+
+proc eventChange(w: var Worker; c: SyncCmd) =
+  ## The window's new event, change or delete in account `c.id`'s calendar
+  ## (the attendees told by the service); then the calendar read again.
+  let acc = w.db.account(c.id)
+  if acc.id == 0: return
+  let j = try: parseJson(c.text) except CatchableError: newJObject()
+  let what = case c.kind
+             of scEventNew: 0
+             of scEventChange: 1
+             else: 2
+  var rid = j{"event"}.getStr
+  try:
+    let tok = w.token(acc)
+    if tok.len == 0: raise newException(ValueError, acc.email & " must sign in again first")
+    case c.kind
+    of scEventNew: rid = createEvent(acc, tok, draftFromJson(j{"draft"}))
+    of scEventChange:
+      updateEvent(acc, tok, rid, draftFromJson(j{"draft"}), partsFromJson(j{"parts"}),
+                  j{"occurrence"}.getFloat)
+    else:
+      deleteEvent(acc, tok, rid, j{"cancel"}.getBool, j{"comment"}.getStr)
+      w.db.removeEvent(acc.id, rid)
+    try: w.syncCalendar(acc, tok)
+    except CatchableError: w.lastCal[acc.id] = 0      # (read with the next check)
+    w.send(SyncEvent(kind: seEvent, id: acc.id, count: what,
+                     text: $(%*{"event": rid, "joinUrl": w.db.eventByRemote(acc.id, rid).joinUrl})))
+  except CatchableError as e:
+    var msg = e.msg
+    if e of ref ApiError:
+      let st = (ref ApiError)(e).status
+      if st == 401: w.forget(acc.id)
+      if st == 403: msg = "Retro Mail may not change this calendar yet: Tools, Accounts, Sign In Again, and allow it"
+    w.send(SyncEvent(kind: seEvent, id: acc.id, count: what, text: $(%*{"event": rid, "error": msg})))
 
 proc applyRules(w: var Worker; acc: Account; ids: seq[int]) =
   ## The message rules on mail that just came: tags, read, flag, pin, a
@@ -826,6 +950,33 @@ proc applyRules(w: var Worker; acc: Account; ids: seq[int]) =
         w.db.moveLocal(m.id, dest.id)
   w.db.recount(acc.id)
 
+proc syncOnce*(dbPath: string): tuple[count: int; latest: string] =
+  ## One pass without the window -- the changes waiting here sent, new mail
+  ## fetched -- for a check made while the app is closed (Android's
+  ## background check): how many messages came that nobody was told about
+  ## (also those the app's own sync fetched while its window slept), and the
+  ## newest's sender and subject.
+  var link: SyncLink
+  link.cmds.open()
+  link.events.open()
+  link.dbPath = dbPath
+  var w = Worker(link: addr link, interval: 60)
+  try:
+    w.db = openStore(dbPath)
+    for a in w.db.accounts():
+      if a.clientId == "local": continue
+      discard w.runActions(a)
+      w.markNewest(a)
+      w.syncAccount(a)
+    w.db.close()
+  except CatchableError: discard
+  while true:
+    let (ok, _) = link.events.tryRecv()
+    if not ok: break
+  result = takeUnannounced()
+  link.cmds.close()
+  link.events.close()
+
 proc syncMain*(link: ptr SyncLink) {.thread.} =
   ## The sync thread's body.
   {.gcsafe.}:
@@ -859,6 +1010,8 @@ proc syncMain*(link: ptr SyncLink) {.thread.} =
         of scGetAutoReply, scSetAutoReply: w.autoReply(c)
         of scAssist: w.assistant(c)
         of scRaw: w.rawOf(c)
+        of scUnsubscribe: w.unsubscribe(c.id)
+        of scEventNew, scEventChange, scEventDelete: w.eventChange(c)
       if not running: break
       let accs = w.db.accounts()
       # changes made here go out first (every few seconds while there are some)

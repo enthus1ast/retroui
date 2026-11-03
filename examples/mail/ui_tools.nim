@@ -23,6 +23,9 @@ proc runCommand(name: string) =
   of "Reply": doReply("reply")
   of "Reply all": doReply("replyAll")
   of "Forward": doReply("forward")
+  of "New event": newEventNow()
+  of "New meeting":
+    if ms.len > 0: newMeetingFrom(ms[0]) else: newEventNow()
   of "Delete": deleteMsgs(ms)
   of "Archive": archiveMsgs(ms)
   of "Undo":
@@ -79,6 +82,16 @@ proc runCommand(name: string) =
   of "Export messages":
     exportPath = downloadsDir() / (placeTitle().multiReplace(("/", "_"), (":", "_")) & ".mbox")
     exportOpen = true
+  of "Print": printMessage()
+  of "Properties": showProperties()
+  of "Message source": showProperties(source = true)
+  of "Save search": saveSearch(query)
+  of "Ignore conversation": ignoreConversation(ms)
+  of "Find message": openFind()
+  of "Hide read messages":
+    prefs.put("hideRead", not prefBool("hideRead", false))
+    savePrefs()
+    changed()
   of "Open a saved message":
     openEmlPath = downloadsDir()
     openEmlOpen = true
@@ -93,7 +106,8 @@ const shortcutList = [
   ("Ctrl+. / Ctrl+,", "Next / previous message"), ("Enter", "Open in a window of its own"),
   ("Shift+arrows, Ctrl+click", "Select several"), ("Ctrl+A", "Select all"),
   ("Letters", "Jump to a sender in the list"), ("F6", "The next pane"),
-  ("Ctrl+E", "Search"), ("Alt+Q", "Tell me what you want to do"), ("F5", "Send and receive"),
+  ("Ctrl+E / Ctrl+Shift+F", "Search / Find Message"), ("Alt+Q", "Tell me what you want to do"), ("F5", "Send and receive"),
+  ("Ctrl+P", "Print"), ("Alt+Enter / Ctrl+F3", "Properties / Message source"),
   ("Ctrl+1 ... Ctrl+5", "Mail, Calendar, People, To Do, Notes"), ("F7", "Spelling (while writing)")]
 
 proc shortcutsDialog() =

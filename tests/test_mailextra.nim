@@ -374,6 +374,12 @@ check rule(1, @[cond(rfSubject, "receipt; 1047")]).matches(mm) and not rule(1, @
 check rule(1, @[cond(rfToCc, "hr@contoso")]).matches(mm) and rule(1, @[cond(rfFrom, "AL BALUSHI")]).matches(mm) and
       rule(1, @[cond(rfAttachment), cond(rfAccount, account = 1)]).matches(mm) and
       not rule(1, @[cond(rfAccount, account = 2)]).matches(mm), "To/Cc, the sender's name, an attachment, the account"
+var inThread = mm
+inThread.thread = "AAQkAD-conv-7"
+check rule(1, @[cond(rfThread, "AAQkAD-conv-7"), cond(rfAccount, account = 1)]).matches(inThread) and
+      not rule(1, @[cond(rfThread, "AAQkAD-conv")]).matches(inThread) and
+      not rule(1, @[cond(rfThread, "")]).matches(mm), "Ignore Conversation: that conversation, exactly"
+check fromJson(rule(1, @[cond(rfThread, "t1")]).toJson).conditions[0].field == rfThread, "kept as JSON"
 var withText = mm
 withText.text = "The total is wrong."
 check rule(1, @[cond(rfBody, "vat line")]).matches(mm) and not rule(1, @[cond(rfBody, "vat line")]).matches(withText) and

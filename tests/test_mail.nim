@@ -230,6 +230,28 @@ check signatureIn("<div id=\"Signature\"><img src=\"cid:logo@x\"><p>S</p></div>"
       "<div id=\"Signature\"><p>S</p></div>", "pictures kept inside the sent message dropped"
 check isReply("RE: x", "") and isReply("رد: مرحبا", "") and not isReply("Hello", "<p>x</p>"), "replies told apart"
 
+echo "newsletters: unsubscribe"
+let (uh, up) = store0.unsubOf(m3.id)
+check "/unsub/m3" in uh and "One-Click" in up, "Graph: List-Unsubscribe kept with the body"
+link.cmds.send(SyncCmd(kind: scUnsubscribe, id: m3.id))
+let ue = parseJson(waitFor(seUnsub, id = m3.id).text)
+check ue{"how"}.getStr == "post", "one click: the list told by a POST"
+check mockState(){"unsubs"}.getElems.anyIt(it{"body"}.getStr == "List-Unsubscribe=One-Click"),
+      "the POST says List-Unsubscribe=One-Click (RFC 8058)"
+link.cmds.send(SyncCmd(kind: scBody, id: g3.id))
+discard waitFor(seBody, id = g3.id)
+link.cmds.send(SyncCmd(kind: scUnsubscribe, id: g3.id))
+let ge = parseJson(waitFor(seUnsub, id = g3.id).text)
+check ge{"how"}.getStr == "mail" and ge{"url"}.getStr == "unsubscribe@shop.example",
+      "Gmail: a list with only an address left by a message to it"
+check count("SELECT count(*) FROM actions WHERE kind = 'send' AND data LIKE '%unsubscribe@shop.example%'") > 0 or
+      "unsubscribe@shop.example" in $mockState()["gmail"]["sent"], "the message to the list's address goes out"
+
+echo "a message's source (File, Properties)"
+link.cmds.send(SyncCmd(kind: scRaw, id: m3.id, count: 2))
+let src = waitFor(seRaw, id = m3.id).text
+check fileExists(src) and "Subject:" in readFile(src), "the whole source, from the server, to read"
+
 echo "changes made here stay until they reach the server"
 let g1m = store0.message(g1.id)
 let aid = store0.queueAction(gg.id, "tags", %*{"id": g1.id, "tags": ["Family"]}, due = epochTime() + 3600)
@@ -252,6 +274,14 @@ var refreshed = false
 for l in mockState()["log"]:
   if l.getStr.endsWith("/token"): refreshed = true
 check refreshed, "the refresh token was used"
+let told = takeUnannounced()
+check told.count >= 1 and told.latest.len > 0 and takeUnannounced().count == 0,
+      "new mail is told once (the window, or a background check while it sleeps)"
+
+echo "a check without the window (Android's background job)"
+discard httpRequest("POST", base & "/test/newmail")
+let once = syncOnce(home / "mail.db")
+check once.count >= 1, "syncOnce: the new message fetched and counted"
 
 link.cmds.send(SyncCmd(kind: scQuit))
 joinThread(th)

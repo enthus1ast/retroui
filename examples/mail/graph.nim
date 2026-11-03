@@ -1,6 +1,7 @@
 ## Microsoft 365 and Outlook.com mail through Microsoft Graph: folders,
 ## messages (delta sync), bodies, attachments, changes, sending (as replies
-## the server threads), categories (tags), the calendar, server search.
+## the server threads), categories (tags), server search. (The calendar:
+## calendar.nim.)
 ##
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
@@ -25,6 +26,7 @@ type
     removed*: bool
   GraphBody* = object
     html*, toList*, ccList*, msgId*: string
+    unsub*, unsubPost*: string   ## List-Unsubscribe and List-Unsubscribe-Post (a newsletter's)
     atts*: seq[tuple[remoteId, name, mime, cid: string; size: int; inline: bool; data: string; hasData: bool]]
 
 proc url(path: string): string = graphBase() & path
@@ -134,7 +136,8 @@ proc graphBody*(token, remoteId: string): GraphBody =
   ## A message's HTML, its recipients and its attachments (inline pictures
   ## with their bytes).
   let j = callJson("GET", url("/me/messages/" & remoteId &
-                   "?$select=body,toRecipients,ccRecipients,internetMessageId,hasAttachments"),
+                   "?$select=body,toRecipients,ccRecipients,internetMessageId,hasAttachments," &
+                   "internetMessageHeaders"),
                    token, extra = [("Prefer", "outlook.body-content-type=\"html\"")],
                    what = "the message")
   result.html = j{"body"}{"content"}.getStr
@@ -143,6 +146,11 @@ proc graphBody*(token, remoteId: string): GraphBody =
   result.toList = addrList(j{"toRecipients"})
   result.ccList = addrList(j{"ccRecipients"})
   result.msgId = j{"internetMessageId"}.getStr
+  for h in j{"internetMessageHeaders"}.getElems:
+    case h{"name"}.getStr.toLowerAscii
+    of "list-unsubscribe": result.unsub = h{"value"}.getStr.strip
+    of "list-unsubscribe-post": result.unsubPost = h{"value"}.getStr.strip
+    else: discard
   if j{"hasAttachments"}.getBool or "cid:" in result.html:
     let a = callJson("GET", url("/me/messages/" & remoteId &
                      "/attachments?$select=id,name,contentType,size,isInline"), token,
@@ -202,22 +210,6 @@ proc graphSearch*(token, query: string; account: int; me: string): seq[GraphItem
                    msgSelect), token, what = "the search")
   for it in j{"value"}.getElems:
     result.add parseMessage(it, account, me)
-
-proc graphCalendar*(token: string; fromT, toT: float; account: int): seq[Event] =
-  var next = url("/me/calendarView?startDateTime=" & isoTime(fromT) & "&endDateTime=" &
-                 isoTime(toT) & "&$select=id,subject,start,end,isAllDay,location&$top=200")
-  var pages = 0
-  while next.len > 0 and pages < 10:
-    inc pages
-    let j = callJson("GET", next, token, extra = [("Prefer", "outlook.timezone=\"UTC\"")],
-                     what = "the calendar")
-    for e in j{"value"}.getElems:
-      result.add Event(account: account, remoteId: e{"id"}.getStr, title: e{"subject"}.getStr,
-                       location: e{"location"}{"displayName"}.getStr,
-                       start: parseIso(e{"start"}{"dateTime"}.getStr & "Z"),
-                       finish: parseIso(e{"end"}{"dateTime"}.getStr & "Z"),
-                       allDay: e{"isAllDay"}.getBool)
-    next = j{"@odata.nextLink"}.getStr
 
 proc uploadLarge(token, draft, path, name, mime: string) =
   ## An attachment over 3 MB, in pieces through an upload session.

@@ -81,7 +81,7 @@ proc readerWindow() =
     case m.bodyState
     of 2:
       attachmentsRow(m)
-      let ev = htmlView(m.html, readZoom, height = h, key = "reader" & $m.id, images = imagesFor(m))
+      let ev = htmlView(readHtml(m), readZoom, height = h, key = "reader" & $m.id, images = imagesFor(m))
       if ev.link.len > 0:
         if ev.link.startsWith("mailto:"):
           readerOpen = false
@@ -148,7 +148,8 @@ var
 
 proc commands(): seq[tuple[name, keys: string]] =
   @[("New message", "Ctrl+N"), ("Reply", "Ctrl+R"), ("Reply all", "Ctrl+Shift+R"),
-    ("Forward", "Ctrl+F"), ("Forward as attachment", ""), ("Delete", "Del"),
+    ("Forward", "Ctrl+F"), ("Forward as attachment", ""), ("New event", ""), ("New meeting", ""),
+    ("Delete", "Del"),
     ("Archive", "Backspace"), ("Undo", "Ctrl+Z"), ("Mark as read", "Ctrl+Q"),
     ("Mark as unread", "Ctrl+U"), ("Flag", "Insert"), ("Follow up tomorrow", ""),
     ("Pin", ""), ("Snooze", ""), ("Tags", "Ctrl+T"), ("Move to folder", "Ctrl+Shift+V"),
@@ -159,7 +160,8 @@ proc commands(): seq[tuple[name, keys: string]] =
     ("Reading pane off", ""), ("Threads on or off", ""), ("Customize toolbar", ""),
     ("Options", ""), ("Add an account", ""), ("Message rules", ""), ("Automatic replies", ""),
     ("Import messages", ""), ("Save message as", ""), ("Open a saved message", ""),
-    ("Keyboard shortcuts", "")]
+    ("Print", "Ctrl+P"), ("Properties", "Alt+Enter"), ("Message source", "Ctrl+F3"),
+    ("Save search", ""), ("Hide read messages", ""), ("Ignore conversation", ""), ("Find message", "Ctrl+Shift+F"), ("Keyboard shortcuts", "")]
 
 proc commandBox() =
   ## Alt+Q: "Tell me what you want to do" -- every command, found by typing.
@@ -386,6 +388,15 @@ proc openSweep() =
   if ms.len == 0: return
   sweepFrom = ms[0].fromEmail
   sweepName = who(ms[0])
+  sweepWhat = 0
+  sweepOpen = true
+
+proc sweepFromMessage(id: int) =
+  ## Sweep, for the sender of message `id`.
+  let m = store0.message(id)
+  if m.id == 0: return
+  sweepFrom = m.fromEmail
+  sweepName = who(m)
   sweepWhat = 0
   sweepOpen = true
 

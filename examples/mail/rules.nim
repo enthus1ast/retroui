@@ -19,6 +19,7 @@ type
     rfBody = "body"               ## the body (as far as it is here) contains `text`
     rfAttachment = "attachment"   ## it has an attachment
     rfAccount = "account"         ## it came to account `account`
+    rfThread = "thread"           ## it is in conversation `text` (Ignore Conversation)
   Condition* = object
     field*: RuleField
     text*: string                 ## what to look for, any case; several: separated by ";"
@@ -79,6 +80,7 @@ proc test(c: Condition; m: Msg): bool =
   of rfBody: fold(bodyOf(m)).holdsAny(c.text)
   of rfAttachment: m.hasAtt
   of rfAccount: m.account == c.account
+  of rfThread: c.text.len > 0 and m.thread == c.text
 
 proc matches*(r: Rule; m: Msg): bool =
   ## The rule applies to `m` (never when it is off).

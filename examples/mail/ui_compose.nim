@@ -4,6 +4,8 @@
 #
 # Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
+proc templatesMenu()
+
 var
   composing = false
   composeDoc: RichDoc
@@ -401,6 +403,7 @@ proc composeWindow() =
           if menuItem("(&none)", checked = cSig < 0): putSignature(-1)
           for i, s in sigsC:
             if menuItem(s.name, checked = cSig == i): putSignature(i)
+        submenu "My &Templates": templatesMenu()
       menu "&Message":
         if menuItem("&High Priority", checked = cImportant): cImportant = not cImportant
         if menuItem("&Cc and Bcc", checked = cShowCc): cShowCc = not cShowCc
@@ -414,9 +417,12 @@ proc composeWindow() =
     if barButton(nfExclamation, "Priority", "High priority", down = cImportant):
       cImportant = not cImportant
     if barButton(pxUser, "Cc/Bcc", "Show Cc and Bcc", down = cShowCc): cShowCc = not cShowCc
+    if barButton(pxDocument, "Templates", "Start from a template, or keep this one as a template"):
+      openPopupMenu("tplmenu", ui.lastRect.x, ui.lastRect.y + ui.lastRect.h)
     toolSeparator()
     if barButton(pxSave, "Save", "Save the draft (Ctrl+S)"): saveDraftNow()
     if barButton(pxDelete, "Discard", "Close without sending"): cAskClose = true
+  popupMenu("tplmenu"): templatesMenu()
   popupMenu("sigmenu"):
     if menuItem("(&none)", checked = cSig < 0): putSignature(-1)
     for i, s in sigsC:

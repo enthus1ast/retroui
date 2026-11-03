@@ -3,7 +3,8 @@
 Microsoft's and Google's sign-in (OAuth 2.0 with PKCE), Microsoft Graph's
 mail, categories and calendar, the Gmail API (with its batch and upload
 endpoints) and Google Calendar; meeting invitations, automatic replies, raw
-messages and Anthropic's Messages API (under /ai) for tests/test_mailextra.nim.
+messages and Anthropic's Messages API (under /ai) for tests/test_mailextra.nim;
+events made, changed and deleted in both calendars for tests/test_calendar.nim.
 State lives in memory; GET /test/state shows it, POST /test/newmail adds a
 message to both inboxes.
 
@@ -66,7 +67,7 @@ def seed():
             "toRecipients": [{"emailAddress": {"name": "", "address": to}}], "ccRecipients": [],
             "receivedDateTime": iso(t), "isRead": read, "flag": {"flagStatus": "notFlagged"},
             "importance": "normal", "hasAttachments": att, "categories": list(cats),
-            "bodyPreview": re.sub("<[^>]+>", " ", html)[:120].strip(),
+            "bodyPreview": re.sub("<[^>]+>", " ", re.sub(r"(?is)<(style|head)\b.*?</\1>", " ", html))[:120].strip(),
             "inferenceClassification": "focused" if focused else "other",
             "internetMessageId": "<%s@contoso.com>" % mid, "isDraft": False,
             "body": {"contentType": "html", "content": html}, "attachments": []}
@@ -78,6 +79,9 @@ def seed():
         NOW - 3000, "c1", read=True, to="ahmed@contoso.com")
     add("m3", "f-inbox", ("Retro Weekly", "news@retroweekly.example"), "Retro Weekly: three new toolkits",
         NEWSLETTER, NOW - 7200, "c3", cats=["Retro"], att=True, focused=False)
+    g["messages"]["m3"]["internetMessageHeaders"] = [
+        {"name": "List-Unsubscribe", "value": "<http://HOST/unsub/m3>, <mailto:leave@retroweekly.example?subject=leave%20me>"},
+        {"name": "List-Unsubscribe-Post", "value": "List-Unsubscribe=One-Click"}]
     g["messages"]["m3"]["attachments"] = [
         {"@odata.type": "#microsoft.graph.fileAttachment", "id": "a1", "name": "logo.png",
          "contentType": "image/png", "size": len(PIXEL), "isInline": True, "contentId": "logo1",
@@ -126,6 +130,8 @@ def seed():
          "<p>Send them!</p>", NOW - 1700)
     gadd("g3", "t3", ["INBOX", "CATEGORY_PROMOTIONS", "Label_1"], ("Shop", "deals@shop.example"),
          "=?UTF-8?B?2LnYsdi2INiu2KfYtQ==?=", "<p>Big sale</p>", NOW - 5000)
+    gm["messages"]["g3"]["payload"]["headers"].append(
+        {"name": "List-Unsubscribe", "value": "<mailto:unsubscribe@shop.example?subject=stop>"})
     gm["events"] = [{"id": "ge1", "summary": "Family dinner", "status": "confirmed",
                      "start": {"dateTime": iso(NOW + 86400)}, "end": {"dateTime": iso(NOW + 90000)}}]
     return {"graph": g, "gmail": gm, "codes": {}, "tokens": {}, "log": []}
@@ -188,8 +194,11 @@ class H(BaseHTTPRequestHandler):
                 if path.startswith("/batch/gmail/v1"): return self.gbatch()
                 if path.startswith("/upload/gmail/v1/users/me/messages/send"): return self.gsend_upload()
                 if path.startswith("/gmail/v1/users/me"): return self.gmail(meth, path[18:], q)
-                if path.startswith("/calendar/v3/"): return self.gcal(q)
+                if path.startswith("/calendar/v3/"): return gcal(self, meth, path[12:], q)
                 if path.startswith("/ai/"): return ai(self, meth, path)
+                if path.startswith("/unsub/") and meth == "POST":
+                    S.setdefault("unsubs", []).append({"id": path[7:], "body": self.body().decode()})
+                    return self.send(200, {})
             self.send(404, {"error": {"message": "no such endpoint " + path}})
         except Exception as e:
             import traceback; traceback.print_exc()
@@ -201,7 +210,7 @@ class H(BaseHTTPRequestHandler):
             g, gm = S["graph"], S["gmail"]
             return self.send(200, {"graph": {"messages": g["messages"], "sent": g["sent"], "categories": g["categories"]},
                                    "gmail": {"messages": gm["messages"], "sent": gm["sent"], "labels": gm["labels"]},
-                                   "log": S["log"][-400:]})
+                                   "log": S["log"][-400:], "unsubs": S.get("unsubs", [])})
         if path == "/test/newmail":
             g = S["graph"]
             g["seq"] += 1
@@ -220,6 +229,7 @@ class H(BaseHTTPRequestHandler):
             for t in S["tokens"].values(): t["exp"] = 0
             return self.send(200, {})
         if path in ("/test/invites", "/test/extra"): return test_extra(self, path)
+        if path == "/test/calendar": return test_calendar(self, meth)
         self.send(404, {})
 
     # ---- OAuth ----
@@ -282,7 +292,9 @@ class H(BaseHTTPRequestHandler):
                      "archive": "f-archive", "junkemail": "f-junk", "outbox": "f-outbox"}
             for r in req["requests"]:
                 n = r["url"].split("/")[-1].split("?")[0]
-                if n in names: out.append({"id": r["id"], "status": 200, "body": {"id": names[n]}})
+                ev = graph_find(n) if r["url"].startswith("/me/events/") else None
+                if ev: out.append({"id": r["id"], "status": 200, "body": graph_view(ev)})
+                elif n in names: out.append({"id": r["id"], "status": 200, "body": {"id": names[n]}})
                 else: out.append({"id": r["id"], "status": 404, "body": {}})
             return self.send(200, {"responses": out})
         m = re.match(r"^/me/mailFolders(?:/([^/]+)/childFolders)?$", path)
@@ -339,7 +351,11 @@ class H(BaseHTTPRequestHandler):
             if x is None: return self.send(404, {"error": {"code": "ErrorItemNotFound", "message": "The specified object was not found in the store."}})
             if rest == "" and meth == "GET" and "_event" in x and "eventMessage/event" in q.get("$expand", [""])[0]:
                 return self.send(200, dict({k: v for k, v in x.items() if not k.startswith("_")}, event=x["_event"]))
-            if rest == "" and meth == "GET": return self.send(200, x)
+            if rest == "" and meth == "GET":
+                if "internetMessageHeaders" in x:      # (the list's address on this server)
+                    y = json.loads(json.dumps(x).replace("HOST", self.headers.get("Host")))
+                    return self.send(200, y)
+                return self.send(200, x)
             if rest == "/$value" and meth == "GET": return self.send(200, raw=graph_mime(x), ctype="text/plain")
             if rest == "" and meth == "PATCH":
                 ch = json.loads(self.body())
@@ -418,7 +434,8 @@ class H(BaseHTTPRequestHandler):
             g["categories"].append(c)
             return self.send(201, c)
         if path == "/me/calendarView":
-            return self.send(200, {"value": g["events"]})
+            return self.send(200, {"value": graph_calendar_view()})
+        if graph_cal(self, meth, path): return
         if graph_extra(self, meth, path): return
         self.send(404, {"error": {"code": "BadRequest", "message": "no such Graph path " + path}})
 
@@ -560,10 +577,6 @@ class H(BaseHTTPRequestHandler):
                            "in_reply_to": str(msg.get("In-Reply-To", "")), "parts": [p.get_content_type() for p in msg.walk()],
                            "attachments": [p.get_filename() for p in msg.walk() if p.get_filename()]})
         return self.send(200, {"id": gid, "threadId": meta.get("threadId") or gid, "labelIds": ["SENT"]})
-
-    def gcal(self, q):
-        if not self.authed(): return
-        return self.send(200, {"items": S["gmail"]["events"]})
 
 # ---- meeting invitations, automatic replies, raw messages, the assistant ----
 # POST /test/invites adds two invitations to each service (not there before,
@@ -802,6 +815,383 @@ def ai(h, meth, path):
     h.send(200, {"id": "msg_mock_%d" % len(extra()["ai"]), "type": "message", "role": "assistant", "model": b["model"],
                  "content": [{"type": "text", "text": text}], "stop_reason": "end_turn", "stop_sequence": None,
                  "usage": {"input_tokens": 10, "output_tokens": 20}})
+
+# ---- the calendars: events made, changed and deleted -------------------------------------------
+# Graph: POST /me/events, GET / PATCH / DELETE /me/events/{id}, POST .../cancel,
+# GET /me/calendar (which online meetings the account has); a series' first
+# three events in calendarView. Google: events list / get / insert / patch /
+# delete under /calendar/v3/calendars/primary, a series' first three
+# instances with singleEvents=true. Both check what they get as the services
+# do. GET /test/calendar shows the events and every request; POST
+# /test/calendar {"teams": false} makes the Graph account one without Teams.
+
+import datetime
+from zoneinfo import ZoneInfo
+
+WINZONES = {"Arabian Standard Time": "Asia/Dubai", "Pacific Standard Time": "America/Los_Angeles",
+            "W. Europe Standard Time": "Europe/Berlin", "Eastern Standard Time": "America/New_York",
+            "UTC": "UTC"}
+GRAPH_FIELDS = {"subject", "body", "start", "end", "isAllDay", "location", "attendees", "isReminderOn",
+                "reminderMinutesBeforeStart", "isOnlineMeeting", "onlineMeetingProvider", "recurrence",
+                "showAs", "sensitivity", "importance", "categories"}
+DAYS = {"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
+STAMP = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?$")
+
+def cal():
+    c = S.setdefault("cal", {"teams": True, "seq": 0, "gexc": {}, "gseq": 0})
+    S["graph"].setdefault("exc", {})
+    return c
+
+def cal_log(service, op, eid, body=None, query=None):
+    extra().setdefault("calendar", []).append({"service": service, "op": op, "id": eid, "body": body,
+                                                "query": query or {}})
+
+def zone_of(name):
+    try: return ZoneInfo(WINZONES.get(name, name))
+    except Exception: return None
+
+def wall(s):
+    return datetime.datetime.strptime(s[:19], "%Y-%m-%dT%H:%M:%S")
+
+def add_months(d, n):
+    y, m = divmod(d.month - 1 + n, 12)
+    for day in (d.day, 30, 29, 28):
+        try: return d.replace(year=d.year + y, month=m + 1, day=day)
+        except ValueError: pass
+
+def step(d, kind, k):
+    if kind == "daily": return d + datetime.timedelta(days=k)
+    if kind == "weekly": return d + datetime.timedelta(days=7 * k)
+    if kind in ("absoluteMonthly", "relativeMonthly", "MONTHLY"): return add_months(d, k)
+    if kind in ("absoluteYearly", "relativeYearly", "YEARLY"): return add_months(d, 12 * k)
+    return d + datetime.timedelta(days=(1 if kind == "DAILY" else 7) * k)
+
+# -- Graph --
+
+def graph_check(ev):
+    """What Graph would refuse in an event; "" when it takes it."""
+    for k in ev:
+        if k not in GRAPH_FIELDS and not k.startswith("_") and k not in ("id", "type", "isOrganizer", "organizer",
+                                                                         "onlineMeeting", "seriesMasterId"):
+            return "Could not find a property named '%s' on type 'microsoft.graph.event'." % k
+    for k in ("start", "end"):
+        t = ev.get(k)
+        if not isinstance(t, dict) or not STAMP.match(t.get("dateTime") or "") or not t.get("timeZone"):
+            return k + ": a dateTime and a timeZone are required"
+        if zone_of(t["timeZone"]) is None: return "TimeZoneNotSupportedException: " + t["timeZone"]
+    if ev.get("isAllDay"):
+        if any(not ev[k]["dateTime"][11:19] == "00:00:00" for k in ("start", "end")) or \
+           ev["start"]["timeZone"] != ev["end"]["timeZone"]:
+            return "An all-day event must start and end at midnight, in one time zone"
+    if graph_utc(ev["end"]) < graph_utc(ev["start"]): return "The end must not be before the start"
+    for a in ev.get("attendees") or []:
+        if "@" not in (a.get("emailAddress") or {}).get("address", "") or a.get("type") not in ("required", "optional", "resource"):
+            return "attendees: an emailAddress and a type"
+    if ev.get("isOnlineMeeting") and ev.get("onlineMeetingProvider") not in cal_allowed():
+        return "The online meeting provider is not allowed for this account"
+    if "body" in ev and (ev["body"] or {}).get("contentType", "").lower() not in ("text", "html"):
+        return "body: contentType text or html"
+    if "isReminderOn" in ev and not isinstance(ev["isReminderOn"], bool): return "isReminderOn: a boolean"
+    r = ev.get("recurrence")
+    if r is not None:
+        p, rg = r.get("pattern") or {}, r.get("range") or {}
+        t = p.get("type")
+        if t not in ("daily", "weekly", "absoluteMonthly", "relativeMonthly", "absoluteYearly", "relativeYearly"):
+            return "recurrence: a pattern type"
+        if p.get("interval", 0) < 1: return "recurrence: the interval"
+        if t == "weekly" and (not p.get("daysOfWeek") or any(d not in DAYS for d in p["daysOfWeek"])):
+            return "recurrence: daysOfWeek is required for a weekly pattern"
+        if t == "absoluteMonthly" and not 1 <= p.get("dayOfMonth", 0) <= 31: return "recurrence: dayOfMonth"
+        if t == "absoluteYearly" and not (1 <= p.get("dayOfMonth", 0) <= 31 and 1 <= p.get("month", 0) <= 12):
+            return "recurrence: dayOfMonth and month"
+        if rg.get("type") not in ("noEnd", "endDate", "numbered") or not re.match(r"^\d{4}-\d\d-\d\d$", rg.get("startDate", "")):
+            return "recurrence: a range with a startDate"
+    return ""
+
+def cal_allowed():
+    return ["teamsForBusiness"] if cal()["teams"] else []
+
+def graph_utc(t):
+    z = zone_of(t.get("timeZone") or "UTC")
+    return wall(t["dateTime"]).replace(tzinfo=z).astimezone(datetime.timezone.utc)
+
+def graph_view(ev):
+    """An event as Graph shows it with Prefer: outlook.timezone="UTC"."""
+    out = {k: v for k, v in ev.items() if not k.startswith("_")}
+    for k in ("start", "end"):
+        if k not in ev: continue
+        if ev.get("isAllDay"): out[k] = {"dateTime": ev[k]["dateTime"][:19] + ".0000000", "timeZone": "UTC"}
+        else: out[k] = {"dateTime": graph_utc(ev[k]).strftime("%Y-%m-%dT%H:%M:%S.0000000"), "timeZone": "UTC"}
+    return out
+
+def graph_occurrences(ev):
+    """A series' first three events, each of its own."""
+    g, kind = S["graph"], ev["recurrence"]["pattern"]["type"]
+    cal()
+    out = []
+    for k in range(3):
+        oid = "%s-occ%d" % (ev["id"], k)
+        x = g["exc"].get(oid, {})
+        if x is None: continue                      # (deleted)
+        occ = {kk: v for kk, v in ev.items() if kk != "recurrence"}
+        for t in ("start", "end"):
+            occ[t] = dict(ev[t], dateTime=step(wall(ev[t]["dateTime"]), kind, k).strftime("%Y-%m-%dT%H:%M:%S"))
+        occ.update(x)
+        occ.update(id=oid, type="occurrence" if not x else "exception", seriesMasterId=ev["id"])
+        out.append(occ)
+    return out
+
+def graph_calendar_view():
+    out = []
+    for ev in S["graph"]["events"]:
+        if ev.get("recurrence"): out += [graph_view(o) for o in graph_occurrences(ev)]
+        else: out.append(graph_view(ev))
+    return out
+
+def graph_find(eid):
+    for ev in S["graph"]["events"]:
+        if ev["id"] == eid: return ev
+        if ev.get("recurrence") and eid.startswith(ev["id"] + "-occ"):
+            for o in graph_occurrences(ev):
+                if o["id"] == eid: return o
+
+def graph_cal(h, meth, path):
+    g = S["graph"]
+    c = cal()
+    if path == "/me/calendar" and meth == "GET":
+        h.send(200, {"id": "cal-1", "name": "Calendar", "allowedOnlineMeetingProviders": cal_allowed(),
+                     "defaultOnlineMeetingProvider": cal_allowed()[0] if cal_allowed() else "none"})
+        return True
+    if path == "/me/events" and meth == "POST":
+        b = json.loads(h.body() or b"{}")
+        cal_log("graph", "create", "", b)
+        err = graph_check(b)
+        if err: return bad(h, err)
+        c["seq"] += 1
+        ev = dict(b, id="ev-new-%d" % c["seq"], type="seriesMaster" if b.get("recurrence") else "singleInstance",
+                  isOrganizer=True, organizer={"emailAddress": {"name": g["me"]["displayName"], "address": g["me"]["mail"]}})
+        ev["attendees"] = [dict(a, status={"response": "none"}) for a in b.get("attendees", [])]
+        if b.get("isOnlineMeeting"):
+            ev["onlineMeeting"] = {"joinUrl": "https://teams.microsoft.example/l/meetup-join/" + ev["id"]}
+        g["events"].append(ev)
+        h.send(201, graph_view(ev))
+        return True
+    m = re.match(r"^/me/events/([^/]+)(/cancel)?$", path)
+    if not m: return False
+    eid, cancel = m.group(1), m.group(2)
+    ev = graph_find(eid)
+    if ev is None:
+        h.send(404, {"error": {"code": "ErrorItemNotFound", "message": "The specified object was not found in the store."}})
+        return True
+    occurrence = "seriesMasterId" in ev
+    if meth == "GET" and not cancel:
+        h.send(200, graph_view(ev))
+        return True
+    if meth == "PATCH" and not cancel:
+        b = json.loads(h.body() or b"{}")
+        cal_log("graph", "update", eid, b)
+        if occurrence and "recurrence" in b: return bad(h, "An occurrence cannot have a recurrence")
+        new = dict(ev, **b)
+        if new.get("recurrence") is None: new.pop("recurrence", None)
+        err = graph_check(new)
+        if err: return bad(h, err)
+        if b.get("isOnlineMeeting") and "onlineMeeting" not in new:
+            new["onlineMeeting"] = {"joinUrl": "https://teams.microsoft.example/l/meetup-join/" + eid}
+        if occurrence:
+            g["exc"][eid] = dict(g["exc"].get(eid) or {}, **b)
+        else:
+            new["type"] = "seriesMaster" if new.get("recurrence") else "singleInstance"
+            ev.clear()
+            ev.update(new)
+        h.send(200, graph_view(new))
+        return True
+    if (meth == "DELETE" and not cancel) or (meth == "POST" and cancel):
+        b = json.loads(h.body() or b"{}") if cancel else None
+        cal_log("graph", "cancel" if cancel else "delete", eid, b)
+        if cancel and not ev.get("isOrganizer"):
+            return bad(h, "Your request can't be completed. You need to be an organizer to cancel a meeting.")
+        if occurrence: g["exc"][eid] = None
+        else: g["events"].remove(ev)
+        h.send(202 if cancel else 204, raw=b"")
+        return True
+    return False
+
+# -- Google --
+
+GCAL_FIELDS = {"summary", "description", "location", "start", "end", "attendees", "reminders", "recurrence",
+               "conferenceData", "colorId", "transparency", "visibility"}
+
+def gtime(t):
+    """A Google start or end as an aware datetime (None for a whole day)."""
+    if t.get("date"): return None
+    s = t["dateTime"]
+    if s.endswith("Z") or re.search(r"[+-]\d\d:\d\d$", s):
+        return datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+    return datetime.datetime.fromisoformat(s).replace(tzinfo=ZoneInfo(t["timeZone"]))
+
+def gcal_check(ev):
+    for k in ev:
+        if k not in GCAL_FIELDS and not k.startswith("_") and k not in ("id", "status", "organizer", "creator",
+                                                                        "hangoutLink", "recurringEventId", "kind"):
+            return "Unknown field: " + k
+    for k in ("start", "end"):
+        t = ev.get(k)
+        if not isinstance(t, dict) or bool(t.get("date")) == bool(t.get("dateTime")):
+            return k + ": a date or a dateTime"
+        if t.get("timeZone") is not None:
+            try: ZoneInfo(t["timeZone"])
+            except Exception: return "Invalid time zone definition for %s time." % k
+        if t.get("date") and not re.match(r"^\d{4}-\d\d-\d\d$", t["date"]): return k + ": a bad date"
+        if t.get("dateTime"):
+            s = t["dateTime"]
+            if not (s.endswith("Z") or re.search(r"[+-]\d\d:\d\d$", s)) and not t.get("timeZone"):
+                return "Missing time zone definition for %s time." % k
+            if ev.get("recurrence") and not t.get("timeZone"):
+                return "Missing time zone definition for %s time (a recurring event)." % k
+    if bool(ev["start"].get("date")) != bool(ev["end"].get("date")): return "start and end: both dates or both times"
+    if ev["start"].get("date"):
+        if ev["end"]["date"] <= ev["start"]["date"]: return "The specified time range is empty."
+    elif gtime(ev["end"]) < gtime(ev["start"]): return "The specified time range is empty."
+    for r in ev.get("recurrence") or []:
+        if not re.match(r"^(RRULE|EXRULE|RDATE|EXDATE)[:;]", r): return "Invalid recurrence rule."
+    for a in ev.get("attendees") or []:
+        if "@" not in a.get("email", ""): return "Invalid attendee email."
+    rem = ev.get("reminders")
+    if rem is not None:
+        if rem.get("useDefault") and rem.get("overrides"): return "Cannot specify both default reminders and overrides at the same time."
+        for o in rem.get("overrides") or []:
+            if o.get("method") not in ("popup", "email") or not 0 <= o.get("minutes", -1) <= 40320:
+                return "Invalid reminder."
+    return ""
+
+def gcal_conference(ev, q, b):
+    """conferenceData.createRequest, as Google takes it: only with conferenceDataVersion=1."""
+    if q.get("conferenceDataVersion", ["0"])[0] != "1" or "conferenceData" not in b: return ""
+    cd = b["conferenceData"]
+    if cd is None:
+        ev.pop("conferenceData", None)
+        ev.pop("hangoutLink", None)
+        return ""
+    cr = cd.get("createRequest") or {}
+    if not cr.get("requestId") or (cr.get("conferenceSolutionKey") or {}).get("type") not in ("hangoutsMeet", "eventHangout", "eventNamedHangout"):
+        return "Invalid conference type value."
+    link = "https://meet.google.example/" + ev["id"]
+    ev["hangoutLink"] = link
+    ev["conferenceData"] = {"conferenceId": ev["id"], "conferenceSolution": {"key": {"type": "hangoutsMeet"}, "name": "Google Meet"},
+                            "createRequest": dict(cr, status={"statusCode": "success"}),
+                            "entryPoints": [{"entryPointType": "video", "uri": link, "label": link[8:]}]}
+    return ""
+
+def gcal_view(ev):
+    out = {k: v for k, v in ev.items() if not k.startswith("_")}
+    for k in ("start", "end"):
+        if k in ev and ev[k].get("dateTime"):
+            out[k] = {"dateTime": gtime(ev[k]).isoformat(), "timeZone": ev[k].get("timeZone") or "UTC"}
+    return out
+
+def gcal_instances(ev):
+    freq = re.search(r"FREQ=(\w+)", ev["recurrence"][0]).group(1)
+    out = []
+    for k in range(3):
+        inst = {kk: v for kk, v in ev.items() if kk != "recurrence"}
+        if ev["start"].get("date"):
+            for t in ("start", "end"):
+                d = datetime.datetime.strptime(ev[t]["date"], "%Y-%m-%d")
+                inst[t] = {"date": step(d, freq, k).strftime("%Y-%m-%d")}
+            iid = ev["id"] + "_" + inst["start"]["date"].replace("-", "")
+        else:
+            for t in ("start", "end"):
+                a = gtime(ev[t])
+                inst[t] = {"dateTime": step(a.replace(tzinfo=None), freq, k).replace(tzinfo=a.tzinfo).isoformat(),
+                           "timeZone": ev[t]["timeZone"]}
+            iid = ev["id"] + "_" + gtime(inst["start"]).astimezone(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        x = cal()["gexc"].get(iid, {})
+        if x is None: continue
+        inst.update(x)
+        inst.update(id=iid, recurringEventId=ev["id"])
+        out.append(inst)
+    return out
+
+def gcal_find(eid):
+    for ev in S["gmail"]["events"]:
+        if ev["id"] == eid: return ev
+        if ev.get("recurrence") and eid.startswith(ev["id"] + "_"):
+            for i in gcal_instances(ev):
+                if i["id"] == eid: return i
+
+def gcal(h, meth, path, q):
+    if not h.authed(): return
+    gm, c = S["gmail"], cal()
+    for k in ("sendUpdates",):
+        if k in q and q[k][0] not in ("all", "externalOnly", "none"): return bad(h, "Invalid value for sendUpdates")
+    query = {k: v[0] for k, v in q.items() if k in ("sendUpdates", "conferenceDataVersion")}
+    if path == "/calendars/primary/events" and meth == "GET":
+        items = []
+        for ev in gm["events"]:
+            if ev.get("recurrence") and q.get("singleEvents", ["false"])[0] == "true": items += gcal_instances(ev)
+            else: items.append(ev)
+        return h.send(200, {"kind": "calendar#events", "defaultReminders": [{"method": "popup", "minutes": 10}],
+                            "items": [gcal_view(x) for x in items]})
+    if path == "/calendars/primary/events" and meth == "POST":
+        b = json.loads(h.body() or b"{}")
+        cal_log("google", "create", "", b, query)
+        c["gseq"] += 1
+        ev = {k: v for k, v in b.items() if k != "conferenceData"}
+        ev.update(id="gev%d" % c["gseq"], status="confirmed", kind="calendar#event",
+                  organizer={"email": gm["email"], "self": True}, creator={"email": gm["email"], "self": True})
+        ev["attendees"] = [dict(a, responseStatus="needsAction") for a in b.get("attendees", [])]
+        err = gcal_check(ev) or gcal_conference(ev, q, b)
+        if err:
+            c["gseq"] -= 1
+            return bad(h, err)
+        gm["events"].append(ev)
+        return h.send(200, gcal_view(ev))
+    m = re.match(r"^/calendars/primary/events/([^/]+)$", path)
+    if not m: return h.send(404, {"error": {"code": 404, "message": "Not Found"}})
+    eid = m.group(1)
+    ev = gcal_find(eid)
+    if ev is None:
+        return h.send(404, {"error": {"code": 404, "message": "Not Found"}})
+    instance = "recurringEventId" in ev
+    if meth == "GET": return h.send(200, gcal_view(ev))
+    if meth == "PATCH":
+        b = json.loads(h.body() or b"{}")
+        cal_log("google", "update", eid, b, query)
+        new = json.loads(json.dumps(ev))
+        for k, v in b.items():
+            if k == "conferenceData": continue
+            if v is None: new.pop(k, None)
+            elif k in ("start", "end") and isinstance(v, dict):
+                t = dict(new.get(k) or {})
+                for kk, vv in v.items():
+                    if vv is None: t.pop(kk, None)
+                    else: t[kk] = vv
+                new[k] = t
+            else: new[k] = v
+        if instance and new.get("recurrence"): return bad(h, "An instance cannot have a recurrence")
+        if new.get("recurrence") == []: new.pop("recurrence")
+        err = gcal_check(new) or gcal_conference(new, q, b)
+        if err: return bad(h, err)
+        if instance:
+            c["gexc"][eid] = {k: v for k, v in new.items() if k not in ("id", "recurringEventId")}
+        else:
+            ev.clear()
+            ev.update(new)
+        return h.send(200, gcal_view(new))
+    if meth == "DELETE":
+        cal_log("google", "delete", eid, None, query)
+        if instance: c["gexc"][eid] = None
+        else: gm["events"].remove(ev)
+        return h.send(204, raw=b"")
+    h.send(405, {"error": {"code": 405, "message": "Method not allowed"}})
+
+def test_calendar(h, meth):
+    c = cal()
+    if meth == "POST":
+        b = json.loads(h.body() or b"{}")
+        if "teams" in b: c["teams"] = bool(b["teams"])
+    h.send(200, {"graph": S["graph"]["events"], "google": S["gmail"]["events"],
+                 "log": extra().get("calendar", []), "teams": c["teams"]})
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765

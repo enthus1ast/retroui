@@ -62,7 +62,7 @@ desktop client's "secret" is not kept secret either.
 2. Authentication > Add a platform > *Mobile and desktop applications*:
    `http://localhost`. *Allow public client flows*: Yes.
 3. API permissions > Microsoft Graph > Delegated: `Mail.ReadWrite`,
-   `Mail.Send`, `Calendars.ReadWrite` (answering invitations),
+   `Mail.Send`, `Calendars.ReadWrite` (events, answering invitations),
    `MailboxSettings.ReadWrite` (automatic replies), `User.Read`,
    `offline_access`.
 4. Branding: verify the publisher (an organisation's users can then allow
@@ -74,7 +74,8 @@ desktop client's "secret" is not kept secret either.
 1. A project; enable the *Gmail API* and the *Google Calendar API*.
 2. OAuth consent screen: External; scopes (Data Access) `gmail.modify`,
    `gmail.settings.basic` (the vacation reply and the signature) and
-   `calendar.readonly`. Until Google verifies the app, only the test users
+   `calendar.events` (the calendar's events, made and changed here). Until
+   Google verifies the app, only the test users
    you list (up to 100) can sign in, and they see an "unverified app"
    page; Gmail's scopes need Google's verification (and its yearly security
    review) before anyone at all can.
@@ -169,6 +170,43 @@ What 1.0.2 adds to the way you work:
 - **Spelling** as you type and **AutoCorrect** in English and Arabic (Tools >
   Options > Spelling).
 
+What 1.0.3 adds:
+
+- **Print** (File > Print, Ctrl+P): the message laid out on paper as Outlook
+  Express printed it -- From, Sent, To, Subject, a line, the text -- seen
+  first, then printed or saved as a PDF.
+- **Properties** (File > Properties, Alt+Enter) with the message's Internet
+  headers, and **Message Source** (View, Ctrl+F3): the message as it
+  travelled, to read or copy.
+- **Unsubscribe** from a newsletter in one click (a bar over the message,
+  when the list says how to leave it), and **Block Sender** (Message): their
+  mail goes to Junk from now on.
+- **Ignore Conversation** (Message): the conversation goes to Deleted Items,
+  and so do its replies as they come.
+- **Search Folders**: a search kept in the folder list (*Save as Search
+  Folder* over the results), found again each time it is opened.
+- **My Templates** (Insert, or the Templates button while writing): start a
+  message from one, or keep the one being written as a template.
+- **Find Message** (Edit, Ctrl+Shift+F): Outlook Express's dialog -- from,
+  to, subject, words, received before or after, an attachment, flagged,
+  unread, where to look.
+- **Hide Read Messages** (View > Current View), as in Outlook Express;
+  **Read all messages in plain text** (Tools > Options); pictures from the
+  web: **Trust this sender**.
+- **The sound of new mail** (Tools > Options > General): a chime, a ding,
+  the old beep or a sound file of your own.
+- **Drag out** an attachment, or messages (saved as .eml files), to a
+  folder, the desktop or another program.
+- **New mail on a phone while Retro Mail is closed:** Android checks every
+  15 minutes or so (when there is a network; also after a restart) and
+  tells it in a notification (Tools > Options > General turns it off).
+- **Events and meetings** in the calendar, as the new Outlook makes them:
+  New Event (or a double click on a time; on an event to change it; drag it
+  to move it), with attendees -- invited by Microsoft 365 or Google
+  themselves --, a Teams meeting or a Google Meet (*Join* in the event),
+  repeat, reminder and notes; Delete sends the cancellation of a meeting
+  you organize. Message > New Meeting invites the people of a message.
+
 ## Building
 
 ```sh
@@ -176,10 +214,12 @@ nimble mail                 # build and run
 nimble mailexe              # Windows, from Linux (MinGW)
 nimble mailapk              # Android
 nim c -r tests/test_mail.nim   # the engine against tests/mailmock.py
+nim c -r tests/test_calendar.nim   # events made, changed, deleted (the same stand-in)
 ```
 
 Pin, snooze, follow-up days, rules, Quick Steps, notes, to-dos and drafts
-are kept on the device. Calendars are read here (and invitations answered);
-new events are made in Outlook or Google Calendar.
+are kept on the device. Events live in the accounts' own calendars (Gmail
+accounts added before the calendar could be changed here sign in again
+once: Tools > Accounts > Sign In Again).
 
 Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net

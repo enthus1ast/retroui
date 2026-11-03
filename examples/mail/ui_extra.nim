@@ -6,6 +6,9 @@
 #
 # Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
+proc gotSource(id: int; data: string)
+proc gotUnsub(id: int; data: string)
+
 # ---- meeting invitations ---------------------------------------------------------------------
 
 var
@@ -281,14 +284,17 @@ proc rulesDialog() =
       while ruleEdit.conditions.len < 3: ruleEdit.conditions.add Condition(field: rfFrom)
       for k in 0 ..< 3:
         withId("rulecond" & $k):
-          row:
-            var i = 0
-            for q, (f, _) in ruleFields:
-              if f == ruleEdit.conditions[k].field: i = q
-            if combo(ruleFields.mapIt(it[1]), i, w = dp(200)):
-              ruleEdit.conditions[k].field = ruleFields[i][0]
-            if ruleEdit.conditions[k].field != rfAttachment:
-              edit(ruleEdit.conditions[k].text)
+          if ruleEdit.conditions[k].field == rfThread:
+            label "It is in a conversation you ignore"
+          else:
+            row:
+              var i = 0
+              for q, (f, _) in ruleFields:
+                if f == ruleEdit.conditions[k].field: i = q
+              if combo(ruleFields.mapIt(it[1]), i, w = dp(200)):
+                ruleEdit.conditions[k].field = ruleFields[i][0]
+              if ruleEdit.conditions[k].field != rfAttachment:
+                edit(ruleEdit.conditions[k].text)
       paragraph "(Several words in one box: separate them with ; -- any of them matches.)"
       label "2. Do this:", bold = true
       checkbox("Mark it as &read", ruleEdit.markRead)
@@ -383,6 +389,9 @@ proc saveMessageAs() =
   saveEmlOpen = true
 
 proc gotRaw(id, count: int; data: string) =
+  if count == 2:
+    gotSource(id, data)
+    return
   if data.startsWith("{"):
     let j = try: parseJson(data) except CatchableError: newJObject()
     status = "The message could not be read: " & j{"error"}.getStr
@@ -459,6 +468,7 @@ proc extraEvent(ev: SyncEvent) =
     elif ev.id == oofLoaded: gotAutoReply(ev.id, ev.text)
   of seAssist: gotAssist(ev.text)
   of seRaw: gotRaw(ev.id, ev.count, ev.text)
+  of seUnsub: gotUnsub(ev.id, ev.text)
   else: discard
 
 # ---- Local Folders: import, export ----------------------------------------------------------
@@ -588,3 +598,58 @@ proc exportDialog() =
       writeMbox(exportPath, raws)
       status = "Exported " & $raws.len & " messages to " & exportPath
     except CatchableError as e: status = e.msg
+
+# ---- newsletters: Unsubscribe; Block Sender -------------------------------------------------
+
+var unsubAsked: HashSet[int]
+
+proc unsubscribeBar(m: Msg) =
+  ## Over a newsletter (it says how to leave its list): Unsubscribe, as
+  ## Gmail and Outlook offer it.
+  if m.mine or m.id in unsubAsked: return
+  let (header, _) = store0.unsubOf(m.id)
+  if header.len == 0: return
+  row:
+    label "From a mailing list: " & who(m), color = ui.theme.gray
+    if link("Unsubscribe"):
+      unsubAsked.incl m.id
+      link.cmds.send(SyncCmd(kind: scUnsubscribe, id: m.id))
+      status = "Leaving the list of " & who(m) & "..."
+    if link("Block the sender"): blockSender(@[m])
+
+proc blockSender(ms: seq[Msg]) =
+  ## Message, Block Sender: their mail goes to Junk, now and from now on (a
+  ## rule, kept with the others in Tools, Message Rules).
+  if ms.len == 0: return
+  loadRules()
+  var senders: seq[string]
+  for m in ms:
+    let s = m.fromEmail.toLowerAscii
+    if s.len > 0 and s notin senders and not m.mine: senders.add s
+  for s in senders:
+    var r = Rule(id: rulesC.len + 1, name: "Block " & s, enabled: true, matchAll: true,
+                 conditions: @[Condition(field: rfFrom, text: s)], moveTo: "junk", markRead: true)
+    rulesC.add r
+  saveRules()
+  var all: seq[Msg]
+  for s in senders:
+    all.add store0.whereMessages("lower(from_email) = ? AND folder IN (SELECT id FROM folders " &
+                                 "WHERE role = 'inbox')", @[toDbValue(s)], 5000)
+  for m in ms:
+    if not all.anyIt(it.id == m.id): all.add m
+  moveMsgs(all, "junk")
+  status = "Blocked " & senders.join(", ") & ": their mail goes to Junk"
+
+proc gotUnsub(id: int; data: string) =
+  let j = try: parseJson(data) except CatchableError: newJObject()
+  let m = store0.message(id)
+  case j{"how"}.getStr
+  of "post": status = "You have left the list of " & who(m)
+  of "mail": status = "A message asking to leave the list went to " & j{"url"}.getStr
+  of "open":
+    discard openUrl(j{"url"}.getStr)
+    status = "The list's page is open in your browser: leave it there"
+  else: status = "Unsubscribe: " & j{"error"}.getStr
+  if j{"how"}.getStr in ["post", "mail"]:
+    showSnackbar("Left the list. Sweep away what " & who(m) & " sent?", "Sweep", 10000)
+    undoWhat = "sweep:" & $id
