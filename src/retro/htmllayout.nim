@@ -19,7 +19,9 @@
 ## smaller to fit.
 ##
 ## Sizes: CSS pixels are `dp` pixels, the text the UI's font (12 CSS
-## pixels: the UI's own text size).
+## pixels: the UI's own text size) -- times the page's `zoom`, as a
+## browser zooms: text, lengths and pictures together, laid out again (what
+## is then wider than the view is made to fit).
 
 import std/[strutils, unicode, tables, math, hashes, sets, algorithm]
 import gfx, htmldom, htmlcss
@@ -714,6 +716,7 @@ type
     p: ptr Page
     k: float                   ## logical pixels per CSS pixel
     fk: float                  ## ... per CSS pixel of text
+    zoom: float                ## the page's zoom (1: as the UI's text)
     stamp: int
     pics: PicSource
     sep: int8
@@ -761,7 +764,7 @@ proc lenPx(c: Lay; l: Len; base: int): int =
 
 proc measureStyles(c: var Lay) =
   for t in c.d.tstyles.mitems:
-    var size = float(t.fontPx) / RootPx
+    var size = float(t.fontPx) / RootPx * c.zoom
     t.tiny = t.fontPx < 3
     size = clamp(size, 0.3, 12)
     var ts = style(bold = t.bold, italic = t.italic, mono = t.mono, size = size,
@@ -2128,26 +2131,34 @@ proc layoutTable(c: var Lay; t: Box; x, cbW: int; y: var int; parent: int32): tu
 
 # ---- the page ----------------------------------------------------------------------------------
 
-proc stampOf(imgVersion: int): int =
-  ## What sizes depend on: the text size, the scale, the font, the pictures.
+proc stampOf(imgVersion: int; zoom: float): int =
+  ## What sizes depend on: the text size, the scale, the font, the zoom,
+  ## the pictures.
   var h = hash(textSize()) !& hash(ui.k) !& hash(ord(uiFont())) !& hash(pxScale) !&
-          hash(hdText()) !& hash(imgVersion)
+          hash(hdText()) !& hash(zoom) !& hash(imgVersion)
   !$h
 
 var layoutSerial = 0
 
-proc layoutDoc*(d: Doc; width: int; pics: PicSource; imgVersion = 0; picKey = 0): Page =
+const
+  MinPageZoom* = 0.5           ## the smallest zoom of a page
+  MaxPageZoom* = 3.0           ## ... and the largest
+
+proc layoutDoc*(d: Doc; width: int; pics: PicSource; imgVersion = 0; picKey = 0;
+                zoom = 1.0): Page =
   ## `d` laid out `width` pixels wide: what to draw, in order, in page
   ## coordinates from the top left of its content. `picKey` tells the
-  ## places pictures come from apart (a folder, an app's pictures).
-  var c = Lay(d: d, k: ui.k, fk: textSize() / RootPx, pics: pics)
+  ## places pictures come from apart (a folder, an app's pictures). `zoom`
+  ## (`MinPageZoom` .. `MaxPageZoom`) makes the page larger or smaller, text and all.
+  let z = if zoom > 0: clamp(zoom, MinPageZoom, MaxPageZoom) else: 1.0     # (NaN, 0: 1)
+  var c = Lay(d: d, k: ui.k * z, fk: textSize() / RootPx * z, zoom: z, pics: pics)
   c.p = addr result
   inc layoutSerial
   result.serial = layoutSerial
-  c.stamp = stampOf(imgVersion + 1) !& picKey
+  c.stamp = stampOf(imgVersion + 1, z) !& picKey
   result.links = d.links
   result.bg = d.bg
-  let fontStamp = stampOf(0)
+  let fontStamp = stampOf(0, z)
   if d.stamp != fontStamp:
     c.measureStyles()
     c.measureAll(d.root)

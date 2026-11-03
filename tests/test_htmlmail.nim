@@ -400,6 +400,178 @@ block anchors:
   doAssert state(id).scrollY > 0 and abs(state(id).scrollY - info.word("The end").y) < 30,
     $state(id).scrollY & " " & $info.word("The end").y
 
+# ---- zoom -------------------------------------------------------------------------------------------
+
+proc ctrlUp() =
+  ## Ctrl let go.
+  queue.add Event(kind: KeyUpEvent, key: KeyNone, hasMods: true)
+  run()
+
+proc ctrlKey(k: KeyCode; times = 1) =
+  for _ in 0 ..< times:
+    key(k, {CtrlPressed})
+    run()
+
+block zoomLayout:
+  # at 1.5 the text is half as large again, laid out again in the same width
+  let one = htmlPageInfo(gmail, 560)
+  let big = htmlPageInfo(gmail, 560, zoom = 1.5)
+  let a = one.word("the updated drill plan")
+  let b = big.word("the updated drill plan")
+  doAssert b.h * 10 >= a.h * 13 and b.w * 10 >= a.w * 13, $a & " -> " & $b
+  doAssert big.height * 10 >= one.height * 14, $one.height & " -> " & $big.height
+  doAssert big.right <= 561 and big.text == one.text
+  # its links are where their words are drawn now
+  let l = big.links.filterIt(it.url == "https://intranet.example/safety/fire-2026.pdf")
+  doAssert l.anyIt(it.r.contains(point(b.x + 5, b.y + 3))), $l & " " & $b
+  # a smooth font at every step (a bitmap one in its own sizes): smaller at 0.5
+  let font = uiFont()
+  setUiFont(ufSmooth)
+  let s1 = htmlPageInfo(gmail, 560)
+  let sHalf = htmlPageInfo(gmail, 560, zoom = 0.5)
+  doAssert sHalf.height * 10 <= s1.height * 7, $s1.height & " -> " & $sHalf.height
+  doAssert sHalf.word("the updated drill plan").w * 10 <= s1.word("the updated drill plan").w * 6
+  doAssert htmlPageInfo(gmail, 560, zoom = 1.1).word("Khalid").h > s1.word("Khalid").h
+  setUiFont(font)
+  # the extremes do no harm (0 and NaN: 1; beyond 0.5 .. 3: those)
+  doAssert htmlPageInfo(gmail, 560, zoom = 0).height == one.height
+  doAssert htmlPageInfo(gmail, 560, zoom = NaN).height == one.height
+  doAssert htmlPageInfo(gmail, 560, zoom = 99).height == htmlPageInfo(gmail, 560, zoom = 3).height
+  for (name, html) in samples:
+    for z in [0.01, 0.5, 2.25, 3.0, Inf, -1.0]:
+      let info = htmlPageInfo(html, 320, zoom = z)
+      doAssert info.height > 0 and info.words.len > 10, name & " at " & $z
+  # a block at the zoom the app gives
+  view = proc () = discard htmlBlock(gmail, w = 400, zoom = 2.0)
+  run(2)
+  doAssert ui.lastRect.h == htmlPageInfo(gmail, 400, zoom = 2.0).height
+
+block zoomInTheView:
+  let id = idOf("htmlviewzoom")
+  var z = 1.0
+  var ev: HtmlEvent
+  view = proc () =
+    let e = htmlView(gmail, z, height = 420, key = "zoom")
+    if e.link.len > 0: ev = e
+  run(3)
+  let r = ui.lastRect
+  move(r.x + 100, r.y + 100)
+  run()
+  # Ctrl+wheel over it: a step a notch, as browsers step (up: to a size the
+  # font draws larger)
+  let up1 = htmlZoomStep(1.0, true)
+  doAssert up1 > 1.0 and lineHeight(style(size = up1)) > lineHeight(style(size = 1.0)), $up1
+  queue.add Event(kind: MouseWheelEvent, y: 1, mods: {CtrlPressed}, hasMods: true)
+  run(2)
+  doAssert z == up1, $z
+  queue.add Event(kind: MouseWheelEvent, y: -1, mods: {CtrlPressed}, hasMods: true)
+  run(2)
+  doAssert z == htmlZoomStep(up1, false), $z
+  ctrlKey(Key0)
+  doAssert z == 1.0, $z
+  queue.add Event(kind: MouseWheelEvent, y: -1, mods: {CtrlPressed}, hasMods: true)
+  run(2)
+  doAssert z == 0.9, $z
+  # Ctrl+plus (or =), minus and 0, the pointer over it; up to 3 and down to 0.5
+  ctrlKey(KeyEqual)
+  doAssert z == 1.0, $z
+  ctrlKey(KeyPlus)
+  doAssert z == up1, $z
+  ctrlKey(KeyMinus)
+  doAssert z == htmlZoomStep(up1, false), $z
+  ctrlKey(KeyEqual, 14)
+  doAssert z == 3.0, $z
+  ctrlKey(KeyMinus, 16)
+  doAssert z == 0.5, $z
+  ctrlKey(Key0)
+  doAssert z == 1.0, $z
+  ctrlUp()
+  # two fingers pinching: 1.25 and 1.2 times as far apart, 1.5
+  let c = point(r.x + 200, r.y + 150)
+  for (ph, sc) in [(gsBegin, 1.0), (gsChange, 1.25), (gsChange, 1.2), (gsEnd, 1.0)]:
+    queue.add Event(kind: GestureEvent, phase: ph, scale: float32(sc), x: c.x, y: c.y)
+    run()
+  doAssert abs(z - 1.5) < 0.001, $z
+  # the app's own zoom (View > Zoom) is laid out too
+  z = 1.5
+  run(2)
+  let cw = r.w - SbW - 1 - 2 * dp(12)
+  let info = htmlPageInfo(gmail, cw, zoom = 1.5)
+  # at 1.5 the link is clicked where it is drawn now
+  let l = info.word("the updated drill plan")
+  state(id).scrollY = max(0, l.y - 40)
+  run(2)
+  let o = contentOrigin(r)
+  let p = point(o.x + l.x + 5, o.y + l.y + 3 - state(id).scrollY)
+  doAssert p.y > r.y and p.y < r.y + r.h - SbW, $p & " " & $r
+  move(p.x, p.y)
+  run()
+  down(p.x, p.y)
+  run()
+  up(p.x, p.y)
+  run(2)
+  doAssert ev.link == "https://intranet.example/safety/fire-2026.pdf", ev.link
+  # a word chosen stays chosen at another zoom
+  let k = info.word("Khalid")
+  state(id).scrollY = max(0, k.y - 40)
+  run(2)
+  let kp = point(o.x + k.x + 6, o.y + k.y + 3 - state(id).scrollY)
+  down(kp.x, kp.y, clicks = 2)
+  run()
+  up(kp.x, kp.y)
+  run()
+  ctrlKey(KeyMinus)
+  doAssert z == 1.25, $z
+  ctrlKey(KeyC)
+  ctrlUp()
+  doAssert getClipboardText() == "Khalid", getClipboardText()
+
+block zoomKeepsItsPlace:
+  let id = idOf("htmlviewzoomplace")
+  var z = 1.0
+  view = proc () = discard htmlView(newsletter, z, height = 300, key = "zoomplace")
+  run(3)
+  let r = ui.lastRect
+  let cw = r.w - SbW - 1 - 2 * dp(12)
+  const mark = "On orders over OMR 15"
+  # a line at the top: the keys keep it there
+  state(id).scrollY = htmlPageInfo(newsletter, cw).word(mark).y
+  run(2)
+  move(r.x + 60, r.y + 60)
+  ctrlKey(KeyEqual)
+  let z1 = z
+  doAssert z1 > 1.0
+  run()
+  let at = htmlPageInfo(newsletter, cw, zoom = z1).word(mark).y
+  doAssert abs(state(id).scrollY - at) <= 16, $state(id).scrollY & " vs " & $at
+  ctrlUp()
+  # Ctrl+wheel keeps the line under the pointer under it
+  let top = r.y + 1 + dp(12)
+  let shown = top + at - state(id).scrollY                  # (where the line is on the screen)
+  move(r.x + 120, shown + 4)
+  run()
+  queue.add Event(kind: MouseWheelEvent, y: 2, mods: {CtrlPressed}, hasMods: true)
+  run(2)
+  let z2 = z
+  doAssert z2 > z1, $z
+  let now = top + htmlPageInfo(newsletter, cw, zoom = z2).word(mark).y - state(id).scrollY
+  doAssert abs(now - shown) <= 24, "the line moved from " & $shown & " to " & $now
+  ctrlUp()
+  # zoomed far in, the page wider than the view scrolls sideways (Shift+wheel)
+  z = 3.0
+  run(2)
+  let wide = htmlPageInfo(newsletter, cw, zoom = 3.0)
+  if wide.right > cw:
+    let x0 = state(id).scrollX
+    queue.add Event(kind: MouseWheelEvent, y: -2, mods: {ShiftPressed}, hasMods: true)
+    run(2)
+    doAssert state(id).scrollX > x0, "sideways"
+    queue.add Event(kind: KeyUpEvent, key: KeyNone, hasMods: true)
+    run()
+  z = 1.0
+  run(2)
+  doAssert state(id).scrollX == 0, "back in the width: nothing to the side"
+
 # ---- pictures ---------------------------------------------------------------------------------------
 
 block pictures:
@@ -494,6 +666,10 @@ block speed:
   let t1 = getMonoTime()
   discard htmlPageInfo(big & "<!-- 2 -->", 600)
   let relayUs = (getMonoTime() - t1).inMicroseconds
+  # zoomed: measured and laid out again at the new size
+  let tz = getMonoTime()
+  doAssert htmlPageInfo(big & "<!-- 2 -->", 600, zoom = 1.5).height > 20_000
+  let zoomUs = (getMonoTime() - tz).inMicroseconds
   # a frame while it scrolls (drawn and rasterized)
   let id = idOf("htmlviewbig")
   var pos = 0
@@ -509,9 +685,11 @@ block speed:
   let frameUs = (getMonoTime() - t2).inMicroseconds div (frames + 1)
   echo "200 KB newsletter: read + styled + laid out ", formatFloat(float(best) / 1000, ffDecimal, 1),
        " ms, laid out again ", formatFloat(float(relayUs) / 1000, ffDecimal, 1),
-       " ms, a frame scrolling ", formatFloat(float(frameUs) / 1000, ffDecimal, 2), " ms"
+       " ms, a frame scrolling ", formatFloat(float(frameUs) / 1000, ffDecimal, 2), " ms, zoomed ",
+       formatFloat(float(zoomUs) / 1000, ffDecimal, 1), " ms"
   when defined(release):
     doAssert best < 50_000, "too slow: " & $best & " us"
+    doAssert zoomUs < 50_000, "zooming too slow: " & $zoomUs & " us"
     doAssert frameUs < 16_000, "frames too slow: " & $frameUs & " us"
   else:
     doAssert best < 2_000_000

@@ -411,3 +411,62 @@ proc pill*(text: string; c = Color()) =
   vline(pr.x, pr.y + 1, pr.h - 2, col)
   vline(pr.x + pr.w - 1, pr.y + 1, pr.h - 2, col)
   text(pr.x + dp(6), pr.y + dp(1), text, contrastInk(col, color(255, 255, 255), color(0, 0, 0)), st)
+
+# ---- a snack bar: what just happened, and Undo ---------------------------------------------------
+
+var snack: tuple[msg, action: string; until: int; id: int]
+
+proc showSnackbar*(msg: string; action = "Undo"; ms = 8000) =
+  ## Shows a bar at the bottom of the window saying what was just done
+  ## ("3 messages deleted") with one action (`action`, "" none) for `ms`
+  ## milliseconds: the Undo of today's apps. `snackbar` draws it and says
+  ## when the action was clicked.
+  inc snack.id
+  snack = (msg, action, ui.now + ms, snack.id)
+  ui.redraw = true
+
+proc hideSnackbar*() =
+  ## Takes the bar (`showSnackbar`) away now.
+  snack.msg = ""
+  ui.redraw = true
+
+proc snackbarShown*(): bool = snack.msg.len > 0 and ui.now < snack.until
+  ## The bar (`showSnackbar`) is on screen.
+
+proc snackbarLeft*(): int = max(0, snack.until - ui.now)
+  ## Milliseconds before the bar goes away by itself.
+
+proc snackbar*(): bool =
+  ## Draws the bar `showSnackbar` asked for (call it once a frame, after the
+  ## window's content); true the frame its action is clicked (or Ctrl+Z
+  ## pressed and no text box took it), which also takes the bar away.
+  if snack.msg.len == 0: return false
+  if ui.now >= snack.until:
+    snack.msg = ""
+    ui.redraw = true
+    return false
+  wakeIn(min(500, snack.until - ui.now))
+  # (drawn last on the window's own layer: over its content, under dialogs,
+  # and it takes clicks and keys as the window does)
+  let pad = dp(10)
+  let aw = if snack.action.len > 0: textWidth(snack.action, true) + 2 * pad else: 0
+  let w = min(ui.w - dp(24), textWidth(snack.msg) + aw + 3 * pad)
+  let h = FontH + 2 * pad
+  let r = rect(ui.safe.left + dp(12), ui.bottom - h - dp(10), w, h)
+  ui.overlayNow = r
+  fill(rect(r.x + 3, r.y + 3, r.w, r.h), th.shadow)
+  fill(r, color(48, 48, 48))
+  box(r, th.frame)
+  text(r.x + pad, r.y + pad, ellipsize(snack.msg, r.w - aw - 2 * pad), color(255, 255, 255))
+  if snack.action.len > 0:
+    let ar = rect(r.x + r.w - aw, r.y, aw, r.h)
+    let hit = interact(idOf("snackbar" & $snack.id), ar, focusable = false)
+    if hit.hover: fill(inset(ar, 2), color(80, 80, 80))
+    text(ar.x + pad, r.y + pad, snack.action, color(120, 190, 255), true)
+    let key = canInput() and not ui.keyUsed and ui.key == KeyZ and CtrlPressed in ui.mods
+    if hit.clicked or key:
+      if key: ui.keyUsed = true
+      snack.msg = ""
+      ui.redraw = true
+      return true
+  false

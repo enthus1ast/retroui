@@ -10,7 +10,9 @@
 ##   newsletter's "preheader") stays hidden. Scrolls with the wheel, a
 ##   finger, the scroll bar and the keys; links show the hand and are
 ##   reported when clicked; text is selected with the mouse and copied
-##   with Ctrl+C (Ctrl+A: all of it).
+##   with Ctrl+C (Ctrl+A: all of it). Given a `zoom`, it zooms as a
+##   browser does -- Ctrl+wheel, Ctrl+plus, minus and 0, two fingers
+##   pinching -- laid out again at the new size, the same lines in view.
 ##   No page can run code or reach the network: scripts are never run,
 ##   forms are left out, and pictures come from the page itself (`data:`),
 ##   from files next to it (`baseDir`, never outside it) or from the app
@@ -31,10 +33,13 @@
 ##     pictures.getOrDefault(src))
 ##   for src in m.wantedImages: fetchLater(src)   # ... then htmlImagesChanged()
 ##
+##   # a mail the reader zooms (the app keeps the size in its settings)
+##   discard htmlView(body, settings.mailZoom, key = "mail")
+##
 ##   let w = webView("https://nim-lang.org", key = "docs")
 ##   if w.back: requestClose()      # Back with no page before (Android)
 
-import std/[strutils, unicode, tables, os, hashes, times, base64]
+import std/[strutils, unicode, tables, os, hashes, times, base64, math]
 import core, widgets, markdown, pixelicons, nerdicons, imaging, htmldom, htmllayout, htmlcss
 import webp, gifanim
 import uirelays/[services, input]
@@ -645,7 +650,7 @@ proc picSource(baseDir: string; images: HtmlImageSource): PicSource =
 
 type
   PageKey = tuple[h: Hash; n, w: int; dir: string; img: int; em: float; k: float;
-                  font: int; scale: int]
+                  font: int; scale: int; zoom: float]
 
 var
   docCache: seq[tuple[h: Hash; n: int; doc: Doc]]
@@ -663,11 +668,18 @@ proc docOf(html: string; h: Hash): Doc =
   docCache.insert((h, html.len, result), 0)
   if docCache.len > 4: docCache.setLen(4)
 
-proc pageOf(html: string; width: int; baseDir: string; images: HtmlImageSource): ref Page =
-  ## `html` laid out `width` wide (read, styled and laid out once; kept).
-  let h = hash(html)
+proc layoutZoom(z: float): float =
+  ## The zoom a page is laid out at: `z` in steps of 5% (a pinch lays it
+  ## out again a step at a time, not every frame); 0 and NaN: 1.
+  if not (z > 0): return 1.0
+  round(clamp(z, MinPageZoom, MaxPageZoom) * 20) / 20
+
+proc pageOfHash(html: string; h: Hash; width: int; baseDir: string; images: HtmlImageSource;
+                zoom: float): ref Page =
+  ## `html` (its hash `h`) laid out `width` wide at `zoom` (read, styled and
+  ## laid out once; kept).
   let key: PageKey = (h, html.len, width, baseDir, imgVersion, textSize(), ui.k,
-                      ord(uiFont()), pxScale)
+                      ord(uiFont()), pxScale, zoom)
   for i, e in pageCache:
     if e.key == key:
       if i > 0:
@@ -679,9 +691,14 @@ proc pageOf(html: string; width: int; baseDir: string; images: HtmlImageSource):
   result = new Page
   var pk = hash(baseDir)
   if images != nil: pk = pk !& hash(cast[int](rawProc(images))) !& hash(cast[int](rawEnv(images)))
-  result[] = layoutDoc(d, width, picSource(baseDir, images), imgVersion, !$pk)
+  result[] = layoutDoc(d, width, picSource(baseDir, images), imgVersion, !$pk, zoom)
   pageCache.insert((key, result), 0)
   if pageCache.len > 8: pageCache.setLen(8)
+
+proc pageOf(html: string; width: int; baseDir: string; images: HtmlImageSource;
+            zoom = 1.0): ref Page =
+  ## `html` laid out `width` wide (read, styled and laid out once; kept).
+  pageOfHash(html, hash(html), width, baseDir, images, zoom)
 
 # ---- colors -----------------------------------------------------------------------------------------
 
@@ -776,6 +793,9 @@ type
     dragging, moved: bool
     word: bool                 ## a double click chose a word
     pressX, pressY: int
+    zoom: float                ## the zoom the page is laid out at (0: none yet)
+    w: int                     ## ... its width
+    src: Hash                  ## ... and which page
 
 var views: Table[Id, ViewState]
 
@@ -870,6 +890,59 @@ proc allText(p: ref Page): string =
       break
   if last < 0: return ""
   textBetween(p, (0, 0), (last, p.items[last].text.len))
+
+proc textMark(p: ref Page; pos: SelPos): int =
+  ## Where `pos` is in the page's text, counted in letters that are not
+  ## spaces: the same place at any width and zoom.
+  if pos.item < 0: return -1
+  for i in 0 ..< min(pos.item, p.items.len):
+    if p.items[i].kind == dkText:
+      for c in p.items[i].text:
+        if c != ' ': inc result
+  if pos.item < p.items.len and p.items[pos.item].kind == dkText:
+    let t = p.items[pos.item].text
+    for k in 0 ..< clamp(pos.off, 0, t.len):
+      if t[k] != ' ': inc result
+
+proc posOfMark(p: ref Page; mark: int; after = true): SelPos =
+  ## The text position `textMark` counted to; between two pieces of text,
+  ## the start of the second (`after`) or the end of the first.
+  if mark < 0: return noSel()
+  var left = mark
+  var last = -1
+  for i, d in p.items:
+    if d.kind != dkText: continue
+    last = i
+    var n = 0
+    for c in d.text:
+      if c != ' ': inc n
+    if left < n or left == n and n > 0 and not after:
+      var k = 0
+      var seen = 0
+      while k < d.text.len and seen < left:
+        if d.text[k] != ' ': inc seen
+        inc k
+      return (i, k)
+    left -= n
+  if last < 0: noSel() else: (last, p.items[last].text.len)
+
+const zoomSteps = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
+
+proc htmlZoomStep*(z: float; up: bool): float =
+  ## The zoom after `z` one step up or down, as the view's keys and wheel
+  ## step (50% .. 300%, as browsers do) -- for an app's View > Zoom In.
+  ## Up from 1, steps the UI's font would draw no larger are passed over
+  ## (a bitmap font keeps its size up to 1.5 times).
+  if up:
+    let now = lineHeight(style(size = z))
+    for s in zoomSteps:
+      if s > z + 0.01 and (z < 0.99 or lineHeight(style(size = s)) > now or s == zoomSteps[^1]):
+        return s
+    zoomSteps[^1]
+  else:
+    for i in countdown(zoomSteps.high, 0):
+      if zoomSteps[i] < z - 0.01: return zoomSteps[i]
+    zoomSteps[0]
 
 proc drawBox(d: DItem; r: Rect) =
   ## A block's background and borders.
@@ -987,7 +1060,7 @@ type HtmlEvent* = object
     ## the app to fetch, then call `htmlImagesChanged`
 
 proc htmlView*(html: string; baseDir = ""; height = -1; key = ""; images: HtmlImageSource = nil;
-               padding = -1): HtmlEvent {.discardable.} =
+               padding = -1; zoom: ptr float = nil): HtmlEvent {.discardable.} =
   ## HTML in a framed view that scrolls (wheel, finger, scroll bar, arrows,
   ## Page keys, Space, Home, End). Returns the link clicked (links to
   ## "#a-name" scroll there themselves) and the one under the pointer.
@@ -997,16 +1070,82 @@ proc htmlView*(html: string; baseDir = ""; height = -1; key = ""; images: HtmlIm
   ## has none for are in `wantedImages`. `padding` (pixels, -1: a
   ## comfortable default) is room around the page. `key` tells several
   ## views apart (each keeps where it is scrolled to).
+  ##
+  ## `zoom`: the page's size, text and all (1.0 normal, 0.5 .. 3.0; 0: 1).
+  ## When given, Ctrl+wheel and two fingers pinching over the view, and
+  ## Ctrl+plus, minus and 0 (the view focused or under the pointer) change
+  ## it; the app keeps it (in its settings), and may change it itself
+  ## (View > Zoom). The page is laid out again at the new size, with the
+  ## lines under the pointer (or at the top) kept where they were. A page
+  ## wider than the view (zoomed in far) scrolls sideways too: Shift+wheel,
+  ## a finger, the bar at the bottom, Left and Right.
   let r = place(0, if height < 0: remainingH() else: height, fill = true)
   let id = idOf("htmlview" & key)
   var st = state(id)
   var hit = interact(id, r)
   let pad = if padding < 0: dp(12) else: dp(padding)
-  let inner = rect(r.x + 1, r.y + 1, r.w - SbW - 1, r.h - 2)
-  let page = pageOf(html, max(40, inner.w - 2 * pad), baseDir, images)
+  var inner = rect(r.x + 1, r.y + 1, r.w - SbW - 1, r.h - 2)
+  let pw = max(40, inner.w - 2 * pad)
+  # the zoom: Ctrl+wheel, a pinch, Ctrl+plus/minus/0
+  var anchor = point(inner.x, inner.y)          # (what stays where it is when it changes)
+  if zoom != nil:
+    var z = if zoom[] > 0: clamp(zoom[], MinPageZoom, MaxPageZoom) else: 1.0
+    if canInput():
+      if ui.wheel != 0 and not ui.wheelUsed and CtrlPressed in ui.mods and mouseIn(r):
+        ui.wheelUsed = true
+        for _ in 1 .. min(abs(ui.wheel), 4): z = htmlZoomStep(z, ui.wheel > 0)
+        anchor = point(ui.mx, ui.my)
+      if ui.pinch != 1 and ui.pinch > 0 and r.contains(point(ui.pinchX, ui.pinchY)):
+        z = clamp(z * ui.pinch, MinPageZoom, MaxPageZoom)
+        anchor = point(ui.pinchX, ui.pinchY)
+        ui.pinch = 1                            # (taken: one view zooms)
+      if CtrlPressed in ui.mods and not ui.keyUsed and (hit.focused or mouseIn(r)):
+        case ui.key
+        of KeyPlus, KeyEqual: z = htmlZoomStep(z, true); ui.keyUsed = true
+        of KeyMinus: z = htmlZoomStep(z, false); ui.keyUsed = true
+        of Key0: z = 1.0; ui.keyUsed = true
+        else: discard
+    if z != zoom[]:
+      zoom[] = z
+      ui.redraw = true                          # (what shows the zoom shows the new one)
+  let zl = if zoom != nil: layoutZoom(zoom[]) else: 1.0
+  let h = hash(html)
+  let src = h !& html.len
+  let page = pageOfHash(html, h, pw, baseDir, images, zl)
   var v = views.getOrDefault(id)
   if v.page != page.serial:
-    v = ViewState(page: page.serial, a: noSel(), b: noSel(), anchor: noSel())
+    if v.zoom > 0 and v.zoom != zl and v.w == pw and v.src == src:
+      # the same page at another zoom: the same text where it was, the
+      # selection kept
+      let old = pageOfHash(html, h, pw, baseDir, images, v.zoom)
+      let ay = clamp(anchor.y, inner.y, inner.y + inner.h)
+      let oldY = ay - (inner.y + pad) + st.scrollY
+      let at = hitText(old, anchor.x - inner.x - pad + st.scrollX, oldY)
+      let np = if at.item >= 0: posOfMark(page, textMark(old, at)) else: noSel()
+      if np.item >= 0:
+        let into = float(oldY - old.items[at.item].y) * zl / v.zoom
+        st.scrollY = max(0, page.items[np.item].y + int(round(into)) - (ay - inner.y - pad))
+      else:                                     # (no text: as far down, in proportion)
+        st.scrollY = int(float(st.scrollY) * float(page.height) / float(max(1, old.height)))
+      st.scrollX = int(float(st.scrollX) * zl / v.zoom)
+      scrollStop(id)
+      scrollStop(id + 3)
+      if v.a.item >= 0 and v.b.item >= 0:
+        # (a selection's start: where the text after it starts; its end:
+        # where the text before it ends)
+        let ma = textMark(old, v.a)
+        let mb = textMark(old, v.b)
+        let mn = textMark(old, v.anchor)
+        v.a = posOfMark(page, ma, after = ma <= mb)
+        v.b = posOfMark(page, mb, after = mb < ma or ma == mb)
+        v.anchor = posOfMark(page, mn, after = mn <= min(ma, mb) or ma == mb)
+      v.page = page.serial
+      v.dragging = false
+    else:
+      v = ViewState(page: page.serial, a: noSel(), b: noSel(), anchor: noSel())
+  v.zoom = zl
+  v.w = pw
+  v.src = src
   v.seen = ui.frameNo
   if views.len > 64:
     # (views not drawn for a while forget their selection)
@@ -1014,13 +1153,25 @@ proc htmlView*(html: string; baseDir = ""; height = -1; key = ""; images: HtmlIm
     for k, e in views:
       if ui.frameNo - e.seen > 600: old.add k
     for k in old: views.del k
+  # (a page wider than the view -- zoomed in, mostly -- scrolls sideways too)
+  let maxX = max(0, page.right - pw)
+  if maxX > 0: inner.h -= SbW
   let maxY = max(0, page.height + 2 * pad - inner.h)
   var y = clamp(st.scrollY, 0, maxY)
+  var x = clamp(st.scrollX, 0, maxX)
   scrollWheel(id, y, maxY, r, 3 * FontH)
-  scrollPan(id, y, maxY, r)
+  if maxX > 0:
+    scrollWheel(id + 3, x, maxX, r, 3 * FontH, sideways = true)
+    scrollPan2(id, y, maxY, id + 3, x, maxX, r)
+  else:
+    scrollPan(id, y, maxY, r)
   if hit.focused and canInput():
     let ctrl = CtrlPressed in ui.mods
     case ui.key
+    of KeyLeft, KeyRight:
+      if maxX > 0 and not ctrl:
+        scrollBy(id + 3, x, (if ui.key == KeyLeft: -3 else: 3) * FontH, maxX)
+        ui.keyUsed = true
     of KeyUp: scrollBy(id, y, -FontH, maxY); ui.keyUsed = true
     of KeyDown: scrollBy(id, y, FontH, maxY); ui.keyUsed = true
     of KeyPageUp: scrollBy(id, y, -(inner.h - FontH), maxY); ui.keyUsed = true
@@ -1051,7 +1202,7 @@ proc htmlView*(html: string; baseDir = ""; height = -1; key = ""; images: HtmlIm
         ui.keyUsed = true
     else: discard
   # the mouse: a click (a link), a drag (a selection)
-  let ox = inner.x + pad
+  let ox = inner.x + pad - x
   let oyOf = proc (y: int): int = inner.y + pad - y
   let overContent = canInput() and mouseIn(inner)
   if overContent and ui.pressed and not finger() and ui.active == id:
@@ -1096,8 +1247,15 @@ proc htmlView*(html: string; baseDir = ""; height = -1; key = ""; images: HtmlIm
       v.b = hitText(page, mx - ox, my - oyOf(y))
   scrollTick(id, y, maxY)
   y = clamp(y, 0, maxY)
-  scrollBarFor(id + 9, id, rect(r.x + r.w - SbW, r.y, SbW, r.h), true, y,
-               maxY, max(FontH, inner.h - FontH), FontH)
+  if maxX > 0:
+    scrollTick(id + 3, x, maxX)
+    x = clamp(x, 0, maxX)
+  scrollBarFor(id + 9, id, rect(r.x + r.w - SbW, r.y, SbW, r.h - (if maxX > 0: SbW else: 0)), true,
+               y, maxY, max(FontH, inner.h - FontH), FontH)
+  if maxX > 0:
+    scrollBarFor(id + 10, id + 3, rect(r.x, r.y + r.h - SbW, r.w - SbW, SbW), false, x,
+                 maxX, max(FontH, inner.w - FontH), FontH)
+    fill(rect(r.x + r.w - SbW, r.y + r.h - SbW, SbW, SbW), th.face)
   fill(inner, colorOf(page.bg, th.field, forBg))
   fieldFrame(r)
   pushClip(inner)
@@ -1118,19 +1276,28 @@ proc htmlView*(html: string; baseDir = ""; height = -1; key = ""; images: HtmlIm
     if a >= 0: scrollTo(id, y, a, maxY)          # (it glides there)
     result.link = ""
   result.wantedImages = page.wanted
-  if y != st.scrollY:
+  if y != st.scrollY or x != st.scrollX:
     st.scrollY = y
+    st.scrollX = x
     ui.redraw = true
   state(id) = st
   views[id] = v
   ui.lastId = id
   ui.lastRect = r
 
-proc htmlBlock*(html: string; baseDir = ""; w = 0; images: HtmlImageSource = nil): HtmlEvent {.discardable.} =
+proc htmlView*(html: string; zoom: var float; baseDir = ""; height = -1; key = "";
+               images: HtmlImageSource = nil; padding = -1): HtmlEvent {.discardable.} =
+  ## `htmlView` that zooms, its zoom in `zoom` (the app's to keep):
+  ## `htmlView(body, settings.mailZoom, key = "mail")`.
+  htmlView(html, baseDir, height, key, images, padding, addr zoom)
+
+proc htmlBlock*(html: string; baseDir = ""; w = 0; images: HtmlImageSource = nil;
+                zoom = 1.0): HtmlEvent {.discardable.} =
   ## HTML flowing in the layout at its natural height (in a page that
-  ## scrolls, a card, a dialog). Pictures as in `htmlView`.
+  ## scrolls, a card, a dialog). Pictures as in `htmlView`; `zoom` as
+  ## there (1.0 normal, 0.5 .. 3.0), set by the app.
   let width = if w > 0: w else: available()
-  let page = pageOf(html, max(20, width), baseDir, images)
+  let page = pageOf(html, max(20, width), baseDir, images, layoutZoom(zoom))
   let r = place(width, page.height)
   let id = idOf("htmlblock" & $page.height & $width & $html.len)
   let hit = interact(id, r, focusable = false)
@@ -1165,10 +1332,11 @@ type HtmlPageInfo* = object
   images*: seq[tuple[src: string; r: Rect; shown: bool]]  ## pictures (shown: it has the picture)
   wantedImages*: seq[string]                     ## as `HtmlEvent.wantedImages`
 
-proc htmlPageInfo*(html: string; width: int; baseDir = ""; images: HtmlImageSource = nil): HtmlPageInfo =
+proc htmlPageInfo*(html: string; width: int; baseDir = ""; images: HtmlImageSource = nil;
+                   zoom = 1.0): HtmlPageInfo =
   ## `html` laid out `width` pixels wide (its content, without the view's
-  ## padding), as `htmlView` and `htmlBlock` show it.
-  let p = pageOf(html, max(20, width), baseDir, images)
+  ## padding) at `zoom`, as `htmlView` and `htmlBlock` show it.
+  let p = pageOf(html, max(20, width), baseDir, images, layoutZoom(zoom))
   result.height = p.height
   result.right = p.right
   result.text = allText(p)

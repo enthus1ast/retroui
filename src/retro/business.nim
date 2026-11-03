@@ -2553,6 +2553,26 @@ proc startDir(): string =
   when phone: dataDir("")
   else: getCurrentDir()
 
+proc downloadsDir*(): string =
+  ## The user's Downloads folder (the XDG one on Linux, "Download" on a
+  ## phone's storage), else the home folder: where Save As starts for a file
+  ## that came from elsewhere (an attachment, a download).
+  when defined(linux) and not defined(android):
+    try:
+      for line in lines(getConfigDir() / "user-dirs.dirs"):
+        if line.startsWith("XDG_DOWNLOAD_DIR="):
+          var p = line[17 .. ^1].strip.strip(chars = {'"'})
+          p = p.replace("$HOME", getHomeDir().strip(leading = false, chars = {'/'}))
+          if dirExists(p): return p
+    except IOError, OSError: discard
+  when defined(android):
+    for p in ["/storage/emulated/0/Download", "/sdcard/Download"]:
+      if dirExists(p): return p
+    return dataDir("")
+  for sub in ["Downloads", "Download"]:
+    if dirExists(getHomeDir() / sub): return getHomeDir() / sub
+  getHomeDir()
+
 proc listDrives(): seq[string] =
   when defined(windows):
     for c in 'A' .. 'Z':

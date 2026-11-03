@@ -23,9 +23,17 @@
 ## at the right. Only the paragraphs that changed are laid out again and
 ## only the lines in view are drawn: long mails stay quick.
 ##
+## Spelling, as Outlook checks it (`RichDoc.spell`, with `retro/spell`): a
+## red wavy line under the misspelled words; a right click (a long press)
+## on one offers corrections, "Ignore All" and "Add to Dictionary"; F7 goes
+## to the next. AutoCorrect (`RichDoc.autoCorrect`) fixes "teh" and "الى"
+## as they are typed; Ctrl+Z right after gives back what was typed.
+##
 ## .. code-block:: nim
 ##   import retro, retro/richedit
 ##   var body = richFromHtml("<p>Hello <b>Sultan</b>,</p><p><br></p>")
+##   body.spell = true
+##   body.autoCorrect = true
 ##   app "Compose", 640, 480:
 ##     richToolbar body
 ##     richEdit body, placeholder = "Write your message"
@@ -33,7 +41,8 @@
 
 import std/[strutils, unicode, hashes, tables, math, sequtils]
 import uirelays/input
-import core, widgets, business, pixelicons, nerdicons
+import core, widgets, business, pixelicons, nerdicons, spell
+from extras import toast
 from typeset import bidiInfo, visualOrderOf
 
 template th: untyped = ui.theme
@@ -110,6 +119,8 @@ type
     pieces: seq[Piece]
     textL, textR: int    ## the room of its text (from the text area's left)
     st0: TextStyle       ## its first run's look (markers, an empty line)
+    badKey: int          ## what `bad` was found for (`spellKey`; 0: not looked yet)
+    bad: seq[tuple[a, b: int32]]  ## its misspelled words' bytes
 
   RichDoc* = object
     ## Formatted text: paragraphs of styled runs. The editor's caret,
@@ -117,6 +128,10 @@ type
     paras*: seq[RichPara]
     base*: RichStyle     ## the look of text typed where there is none to follow (an
                          ## empty line): a reply in Outlook's blue, say
+    spell*: bool         ## misspelled words underlined in red, corrections in the
+                         ## editor's menu (`retro/spell`)
+    autoCorrect*: bool   ## AutoCorrect as one types (what it does: `autoCorrectEnable`)
+    spellLang*: string   ## the language of both ("": each word's, by its letters)
     caret, anchor: RichPos
     typing: RichStyle    ## the style typing takes (toggled at a caret)
     hasTyping: bool
@@ -140,6 +155,10 @@ type
     linkAsk, linkHad: bool
     linkUrl: string
     linkFrame: int
+    typingWord: bool     ## the word at the caret is being typed: no red line yet
+    spellHit: tuple[para, a, b: int; word: string; sugs: seq[string]]
+                         ## the misspelled word the menu is for (word "": none)
+    spellMenu: bool      ## F7: its menu to open where the word is
 
 const
   MaxLevel = 8                  ## deepest lists, quotes and indents
@@ -396,6 +415,7 @@ proc richUndo*(d: var RichDoc) =
   d.caret = clampPos(d, s.caret0)
   d.anchor = clampPos(d, s.anchor0)
   d.hasTyping = false
+  d.typingWord = false
   d.redos.add s
   d.dirty = true
   d.reveal = true
@@ -412,6 +432,7 @@ proc richRedo*(d: var RichDoc) =
   d.caret = clampPos(d, s.caret1)
   d.anchor = clampPos(d, s.anchor1)
   d.hasTyping = false
+  d.typingWord = false
   d.undos.add s
   d.dirty = true
   d.reveal = true
@@ -846,6 +867,7 @@ proc richSelect*(d: var RichDoc; anchor, caret: RichPos) =
   d.anchor = clampPos(d, anchor)
   d.caret = clampPos(d, caret)
   d.hasTyping = false
+  d.typingWord = false
   d.reveal = true
   caretT = ui.now
 
@@ -870,6 +892,124 @@ proc isEmpty*(d: RichDoc): bool =
       for c in r.text:
         if c != ' ': return false
   true
+
+# ---- spelling and AutoCorrect ----------------------------------------------------------------------
+
+proc unchecked(p: RichPara): seq[(int, int)] =
+  ## The bytes of `p` spelling leaves alone: links and code.
+  var pos = 0
+  for r in p.runs:
+    if r.style.link.len > 0 or r.style.mono:
+      if result.len > 0 and result[^1][1] == pos: result[^1][1] = pos + r.text.len
+      else: result.add (pos, pos + r.text.len)
+    pos += r.text.len
+
+proc overlaps(spans: seq[(int, int)]; a, b: int): bool =
+  for (x, y) in spans:
+    if x < b and a < y: return true
+
+proc findBad(p: RichPara; text, lang: string): seq[tuple[a, b: int32]] =
+  ## The misspelled words of paragraph `p` (its `text`), not in links or code.
+  let skip = unchecked(p)
+  for (a, b) in spellWords(text):
+    if not overlaps(skip, a, b) and isMisspelled(text[a ..< b], lang):
+      result.add (int32(a), int32(b))
+
+proc spellKey(d: RichDoc): int =
+  ## What the verdicts depend on: the words ignored and added, the language.
+  (spellGeneration() * 1_000_003 + int(hash(d.spellLang) and 0xFFFFF)) or 1
+
+proc badIn(d: RichDoc; pi: int): seq[tuple[a, b: int32]] =
+  ## The misspelled words of paragraph `pi`: kept with its layout when there
+  ## is one for it.
+  if pi < d.lays.len and d.lays[pi] != nil and d.lays[pi].src == d.paras[pi]:
+    let l = d.lays[pi]
+    let k = spellKey(d)
+    if l.badKey != k:
+      l.bad = findBad(d.paras[pi], l.text, d.spellLang)
+      l.badKey = k
+    return l.bad
+  findBad(d.paras[pi], paraText(d.paras[pi]), d.spellLang)
+
+proc richMisspelled*(d: RichDoc; para: int): seq[tuple[a, b: int]] =
+  ## The misspelled words of paragraph `para` (bytes of its text, `b` past
+  ## the end), as the red lines show them: words in links and code left out.
+  if para < 0 or para >= d.paras.len: return
+  for (a, b) in badIn(d, para): result.add (int(a), int(b))
+
+proc replaceIn(d: var RichDoc; pi, a, b: int; text: string; selectAfter: bool) =
+  ## Bytes `a ..< b` of paragraph `pi` become `text`, in the style of their
+  ## first character: one undo step. The caret goes after it
+  ## (`selectAfter`) or stays where it was in the text.
+  let p = d.paras[pi]
+  var found = false
+  var st = styleAfter(p, a, found)
+  if not found: st = styleBefore(p, a)
+  let delta = text.len - (b - a)
+  let c0 = d.caret
+  recording(d, pi, pi, ekOther, true):
+    deleteRange(d, RichPos(para: pi, off: a), RichPos(para: pi, off: b))
+    insertRuns(d.paras[pi], a, [RichRun(text: text, style: st)])
+    if selectAfter: d.caret = RichPos(para: pi, off: a + text.len)
+    elif c0.para == pi and c0.off >= b: d.caret = RichPos(para: pi, off: c0.off + delta)
+    d.anchor = d.caret
+  d.hasTyping = false
+  d.typingWord = false
+
+proc richReplace*(d: var RichDoc; a, b: RichPos; text: string) =
+  ## Puts `text` in place of the text from `a` to `b`, in the style of its
+  ## first character, the caret after it: one undo step (a spelling
+  ## correction, a find and replace). Its lines become paragraphs.
+  fixup(d)
+  var x = clampPos(d, a)
+  var y = clampPos(d, b)
+  if y < x: swap(x, y)
+  let t = cleanText(text)
+  if x.para == y.para and '\n' notin t:
+    replaceIn(d, x.para, x.off, y.off, t, true)
+  else:
+    d.anchor = x
+    d.caret = y
+    d.hasTyping = false
+    richInsert(d, t)
+
+proc richNextMisspelled*(d: var RichDoc): bool =
+  ## Selects the next misspelled word after the caret (from the top again
+  ## at the end); false when there is none.
+  fixup(d)
+  let (_, s) = selRange(d)
+  for round in 0 .. 1:
+    let first = if round == 0: s.para else: 0
+    let last = if round == 0: d.paras.high else: s.para
+    for pi in first .. last:
+      for (a, b) in badIn(d, pi):
+        if round == 0 and pi == s.para and a < s.off: continue
+        if round == 1 and pi == s.para and a >= s.off: continue
+        d.anchor = RichPos(para: pi, off: int(a))
+        d.caret = RichPos(para: pi, off: int(b))
+        d.hasTyping = false
+        d.typingWord = false
+        d.reveal = true
+        return true
+  false
+
+proc autoFix(d: var RichDoc; enter = false) =
+  ## AutoCorrect on what was just typed before the caret (`enter`: the
+  ## paragraph before the caret's just ended), as an undo step of its own.
+  if not d.autoCorrect: return
+  let (a0, b0) = selRange(d)
+  if a0 != b0: return
+  let pi = if enter: a0.para - 1 else: a0.para
+  if pi < 0 or (enter and a0.off != 0): return
+  let p = d.paras[pi]
+  let full = paraText(p)
+  let upto = if enter: full.len else: a0.off
+  let fix = if enter: autoCorrect(full & "\n", full.len + 1, d.spellLang)
+            else: autoCorrect(full[0 ..< upto], upto, d.spellLang)
+  if fix.replacement.len == 0 or fix.b > full.len or fix.a >= fix.b: return
+  if overlaps(unchecked(p), fix.a, max(fix.b, upto)): return     # (links and code as typed)
+  replaceIn(d, pi, fix.a, fix.b, fix.replacement, false)
+  d.lastTyped = ' '
 
 # ---- layout ------------------------------------------------------------------------------------
 
@@ -1291,6 +1431,7 @@ proc typeIn(d: var RichDoc; t: string) =
     d.anchor = d.caret
   d.lastTyped = t[^1]
   d.hasTyping = false
+  d.typingWord = true
 
 proc deleteSel(d: var RichDoc) =
   let (a, b) = selRange(d)
@@ -1317,6 +1458,7 @@ proc enterKey(d: var RichDoc) =
     d.caret = RichPos(para: a.para + 1, off: 0)
     d.anchor = d.caret
   d.lastTyped = ' '
+  d.typingWord = false
 
 proc backspaceKey(d: var RichDoc; word: bool) =
   ## Backspace: the selection, or the character (word) before the caret; at
@@ -1358,6 +1500,7 @@ proc backspaceKey(d: var RichDoc; word: bool) =
     d.caret = from0
     d.anchor = from0
   d.hasTyping = false
+  d.typingWord = true
 
 proc deleteKey(d: var RichDoc; word: bool) =
   ## Delete: the selection, or the character (word) after the caret; at a
@@ -1479,8 +1622,26 @@ proc drawMarker(p: RichPara; l: ParaLay; x0, py, num: int; ink: Color) =
       let s = int(r * 1.6)
       fill(rect(int(cx) - s div 2, int(cy) - s div 2, s, s), ink)
 
+proc squiggle(x, y, w: int; c: Color; clip: Rect) =
+  ## Word's wavy line under `w` pixels from `x` (its top at `y`); the waves
+  ## keep their places on the screen, so pieces of a word join up.
+  if w <= 0: return
+  let s = max(2, dp(2))
+  let r = intersect(rect(x, y, w, s + 1), clip)
+  if r.w <= 0 or r.h <= 0: return
+  pushClip(r)
+  var px = (x div s) * s
+  var up = ((px div s) and 1) == 0
+  while px < x + w:
+    line(px, (if up: y + s else: y), px + s, (if up: y else: y + s), c)
+    px += s
+    up = not up
+  popClip()
+
 proc drawPara(d: RichDoc; pi: int; x0, py: int; clipR: Rect; num: int;
-              selA, selB: RichPos; focused, enabled: bool) =
+              selA, selB: RichPos; focused, enabled, spellOn: bool; typingAt: RichPos) =
+  ## Paragraph `pi` at `x0`, `py`; `spellOn`: red lines under its misspelled
+  ## words, but the one being typed at `typingAt`.
   let l = d.lays[pi]
   template p: untyped = d.paras[pi]
   let ink = if enabled: th.fieldText else: th.gray
@@ -1503,6 +1664,8 @@ proc drawPara(d: RichDoc; pi: int; x0, py: int; clipR: Rect; num: int;
     sb = if pi == selB.para: selB.off else: l.text.len
     pastEnd = pi < selB.para
   let selBg = if focused: th.select else: mixColor(th.field, th.select, 0.22)
+  let bad = if spellOn: badIn(d, pi) else: @[]
+  let red = if lumaOfColor(th.field) < 128: color(255, 96, 96) else: color(255, 0, 0)
   for li, ln in l.lines:
     let ly = py + ln.y
     if ly + ln.h < clipR.y or ly > clipR.y + clipR.h: continue
@@ -1533,6 +1696,18 @@ proc drawPara(d: RichDoc; pi: int; x0, py: int; clipR: Rect; num: int;
             pushClip(intersect(c, clipR))
             text(x0 + pc.x, ly + ln.base - pc.asc, s, th.selectText, pc.st)
             popClip()
+    # the misspelled words' red lines (right to left pieces measure from their right)
+    for (wa, wb) in bad:
+      if wb <= ln.a or wa >= max(ln.b, ln.a + 1): continue
+      if typingAt.para == pi and wa < typingAt.off and typingAt.off <= wb: continue
+      for k in ln.p0 ..< ln.p1:
+        let pc = l.pieces[k]
+        let oa = max(pc.a, wa)
+        let ob = min(pc.b, wb)
+        if ob > oa:
+          let xa = x0 + pieceX(l, pc, int(oa))
+          let xb = x0 + pieceX(l, pc, int(ob))
+          squiggle(min(xa, xb), ly + ln.base + 1, abs(xb - xa), red, clipR)
 
 # ---- the editor ---------------------------------------------------------------------------------
 
@@ -1565,6 +1740,40 @@ proc richCaretRect*(d: RichDoc): Rect =
 proc richFocused*(d: RichDoc): bool =
   ## The editor of `d` had the keyboard focus when drawn last.
   d.focusedNow
+
+proc enterAndFix(d: var RichDoc) =
+  ## Enter, then AutoCorrect on the paragraph it ended.
+  let n0 = d.paras.len
+  let (a, b) = selRange(d)
+  enterKey(d)
+  if a == b and d.paras.len == n0 + 1: autoFix(d, enter = true)
+
+proc completeChar(t: string): bool =
+  ## `t` ends with a whole character (typed text comes a byte at a time).
+  var k = t.len - 1
+  while k > 0 and (t[k].uint8 and 0xC0) == 0x80: dec k
+  let b = t[k].uint8
+  let n = if b < 0x80: 1 elif b >= 0xF0: 4 elif b >= 0xE0: 3 elif b >= 0xC0: 2 else: 1
+  k + n == t.len
+
+proc pickSpell(d: var RichDoc; at: RichPos) =
+  ## The misspelled word at `at` for the menu, with its suggestions.
+  d.spellHit = (-1, 0, 0, "", @[])
+  if not d.spell or at.para < 0 or at.para >= d.paras.len: return
+  for (a, b) in badIn(d, at.para):
+    if a <= at.off and at.off <= b:
+      let word = paraText(d.paras[at.para])[a ..< b]
+      d.spellHit = (at.para, int(a), int(b), word, spellSuggest(word, d.spellLang))
+      return
+
+proc spellFix(d: var RichDoc; by: string) =
+  ## The menu's word becomes `by` (when it is still there).
+  let h = d.spellHit
+  d.spellHit.word = ""
+  if h.word.len == 0 or h.para >= d.paras.len: return
+  let t = paraText(d.paras[h.para])
+  if h.b <= t.len and t[h.a ..< h.b] == h.word:
+    replaceIn(d, h.para, h.a, h.b, by, true)
 
 proc richEdit*(d: var RichDoc; height = -1; key = ""; placeholder = "";
                enabled = true): bool {.discardable.} =
@@ -1683,6 +1892,8 @@ proc richEdit*(d: var RichDoc; height = -1; key = ""; placeholder = "";
     # typing (what was typed this frame came before its key)
     if ui.typed.len > 0 and canInput():
       # (a line end typed, as some on-screen keyboards send Enter: Enter)
+      # (AutoCorrect: each character typed on its own, the word it may end
+      # looked at)
       var t = ""
       for i, c in ui.typed:
         if c in {'\n', '\r'}:
@@ -1690,8 +1901,13 @@ proc richEdit*(d: var RichDoc; height = -1; key = ""; placeholder = "";
           t.setLen(0)
           if c == '\n' or i + 1 >= ui.typed.len or ui.typed[i + 1] != '\n':
             ensureLayout(d, cw)
-            enterKey(d)
-        elif c.uint8 >= 32 and c != '\x7F': t.add c
+            enterAndFix(d)
+        elif c.uint8 >= 32 and c != '\x7F':
+          t.add c
+          if d.autoCorrect and completeChar(t) and not c.isAlphaNumeric:
+            typeIn(d, t)
+            t.setLen(0)
+            autoFix(d)
       if t.len > 0: typeIn(d, t)
       if d.dirty: ensureLayout(d, cw)
     # keys
@@ -1752,7 +1968,15 @@ proc richEdit*(d: var RichDoc; height = -1; key = ""; placeholder = "";
         elif shift: pasteHere(d)
       of KeyEnter:
         ui.keyUsed = true
-        enterKey(d)
+        enterAndFix(d)
+      of KeyF7:
+        # the next misspelled word, its menu open
+        if d.spell:
+          ui.keyUsed = true
+          if richNextMisspelled(d):
+            moved = true
+            d.spellMenu = true
+          else: toast("The spelling check is complete.")
       of KeyTab:
         if not ctrl:
           var inList = false
@@ -1820,7 +2044,9 @@ proc richEdit*(d: var RichDoc; height = -1; key = ""; placeholder = "";
           richClearFormat(d)
       else: discard
     if not vert and (moved or d.dirty): d.goalX = -1
-    if moved and not d.dirty: d.hasTyping = false
+    if moved and not d.dirty:
+      d.hasTyping = false
+      d.typingWord = false
   let edited = d.dirty
   d.dirty = dirty0 or edited
   if edited or moved:
@@ -1856,8 +2082,11 @@ proc richEdit*(d: var RichDoc; height = -1; key = ""; placeholder = "";
     pi = lo
   let nums = numbering(d)
   let (sa, sb) = selRange(d)
+  let spellOn = d.spell and enabled and spellAvailable()
+  let typingAt = if focused and d.typingWord and sa == sb: sa else: RichPos(para: -1)
   while pi < d.paras.len and d.tops[pi] < vBot:
-    drawPara(d, pi, ox, y0 + d.tops[pi], inner, nums[pi], sa, sb, focused, enabled)
+    drawPara(d, pi, ox, y0 + d.tops[pi], inner, nums[pi], sa, sb, focused, enabled,
+             spellOn, typingAt)
     inc pi
   if placeholder.len > 0 and d.paras.len == 1 and paraLen(d.paras[0]) == 0:
     let l = d.lays[0]
@@ -1880,11 +2109,48 @@ proc richEdit*(d: var RichDoc; height = -1; key = ""; placeholder = "";
   let menuKey = "richedit-menu:" & $uint32(id)
   if enabled and canInput() and ui.rpressed and mouseIn(area):
     ui.focus = id
+    # (on a misspelled word: its corrections first; the menu key: the caret's)
+    pickSpell(d, if ui.menuKey: clampPos(d, d.caret)
+                 else: posAt(d, ui.mx - ox, ui.my - y0))
     openPopupMenu(menuKey, ui.mx, ui.my)
+  elif d.spellMenu:
+    # F7 chose a word: its menu under it
+    d.spellMenu = false
+    let (a1, _) = selRange(d)
+    pickSpell(d, a1)
+    if d.spellHit.word.len > 0:
+      let g = caretGeo(d, a1)
+      openPopupMenu(menuKey, ox + g.x, y0 + g.y + g.h)
   if beginPopupMenuFor(menuKey):
     let (a1, b1) = selRange(d)
     let some = a1 != b1
     let lk = linkAround(d, a1)
+    if d.spellHit.word.len > 0:
+      # Word's: the suggestions in bold, Ignore All, Add to Dictionary
+      let sugs = d.spellHit.sugs
+      if sugs.len == 0: discard menuItem("(no spelling suggestions)", enabled = false)
+      let bold0 = boldMenus
+      boldMenus = true
+      var pick = ""
+      for s in sugs:
+        if menuItem(s.replace("&", "&&")): pick = s
+      boldMenus = bold0
+      menuSeparator()
+      if menuItem("&Ignore All"):
+        spellIgnore(d.spellHit.word)
+        d.spellHit.word = ""
+      if menuItem("&Add to Dictionary"):
+        spellAdd(d.spellHit.word)
+        d.spellHit.word = ""
+      if sugs.len > 0:
+        submenu("AutoCorr&ect"):
+          # (a suggestion chosen here is used from now on as one types)
+          for s in sugs:
+            if menuItem(s.replace("&", "&&")):
+              autoCorrectAdd(d.spellHit.word, s)
+              pick = s
+      menuSeparator()
+      if pick.len > 0: spellFix(d, pick)
     if menuItem("&Undo", "Ctrl+Z", enabled = d.undos.len > 0): richUndo(d)
     if menuItem("&Redo", "Ctrl+Y", enabled = d.redos.len > 0): richRedo(d)
     menuSeparator()

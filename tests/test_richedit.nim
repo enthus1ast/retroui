@@ -4,8 +4,9 @@
 ##
 ##   nim c -r tests/test_richedit.nim
 
-import std/[strutils, sequtils, times, monotimes, random]
-import retro, retro/richedit
+import std/[strutils, sequtils, times, monotimes, random, os]
+from std/unicode import runes, toUTF8
+import retro, retro/richedit, retro/spell
 import retro/uirelays/input
 import harness
 
@@ -694,5 +695,237 @@ block baseStyle:
   richSelect(d2, RichPos(para: 0, off: 5), RichPos(para: 0, off: 5))
   richInsert(d2, " more")
   doAssert d2.paras[0].runs[^1].style.color.a == 0
+
+# ---- spelling and AutoCorrect -----------------------------------------------------------------------
+
+# (the user's dictionary and AutoCorrect list in a folder of the test's)
+let spellData = getTempDir() / "retro-test-richedit-spell"
+removeDir(spellData)
+createDir(spellData)
+putEnv("XDG_DATA_HOME", spellData)
+
+proc typeRunes(s: string) =
+  ## Like `typeText`, a whole character an event (Arabic letters too).
+  for r in s.runes:
+    queue.add Event(kind: KeyDownEvent, key: KeyNone)
+    var e = Event(kind: TextInputEvent)
+    let u = r.toUTF8
+    for i, c in u: e.text[i] = c
+    queue.add e
+
+proc rightClick(x, y: int) =
+  queue.add Event(kind: MouseMoveEvent, x: x, y: y)
+  queue.add Event(kind: MouseDownEvent, x: x, y: y, button: RightButton, clicks: 1)
+  queue.add Event(kind: MouseUpEvent, x: x, y: y, button: RightButton)
+  run()
+
+proc xAt(off: int; para = 0): int =
+  ## Where the caret at byte `off` is drawn.
+  richSelect(doc, RichPos(para: para, off: off), RichPos(para: para, off: off))
+  run()
+  richCaretRect(doc).x
+
+proc reds(x0, x1, y0, y1: int): int =
+  ## The red pixels (the misspelled words' lines) in that box.
+  for y in max(0, y0) ..< min(H, y1):
+    for x in max(0, x0) ..< min(W, x1):
+      let p = px(x, y)
+      if (p shr 16) > 200 and ((p shr 8) and 0xFF) < 90 and (p and 0xFF) < 90: inc result
+
+block replaceAndUndo:
+  var d = richFromHtml("<p>one <i>twoo</i> three</p>")
+  richReplace(d, RichPos(para: 0, off: 4), RichPos(para: 0, off: 8), "two")
+  doAssert d.texts == @["one two three"], $d.texts
+  doAssert runOf(d, 0, "two").style.italic, "the word's style is kept"
+  doAssert richCaret(d) == RichPos(para: 0, off: 7)
+  richUndo(d)
+  doAssert d.texts == @["one twoo three"] and runOf(d, 0, "twoo").style.italic
+  doAssert not richCanUndo(d), "one undo step"
+
+if spellAvailable("en-US"):
+  block spellLines:
+    showBar = false
+    doc = richFromHtml("<p>This sentense has <b>mistakse</b> and a <a href=\"https://x.y\">lnik</a>" &
+                       " in <code>codde</code> here</p>")
+    doc.spell = true
+    ui.focus = 0
+    run()
+    let t = paraText(doc.paras[0])
+    let bad = richMisspelled(doc, 0)
+    doAssert bad.mapIt(t[it.a ..< it.b]) == @["sentense", "mistakse"], $bad.mapIt(t[it.a ..< it.b])
+    # red waves under those two, under the words, and nowhere else
+    let top = richCaretRect(doc).y
+    let lineH = richCaretRect(doc).h
+    var spans: seq[(int, int)]
+    for (a, b) in bad: spans.add (xAt(a), xAt(b))
+    ui.focus = 0
+    run()
+    for (xa, xb) in spans:
+      doAssert reds(xa, xb, top + lineH div 2, top + lineH + 3) > (xb - xa) div 2,
+               "a red line under the word"
+    doAssert reds(edRect.x, edRect.x + edRect.w, top, top + lineH div 2) == 0, "under the text, not over it"
+    var outside = 0
+    for x in edRect.x ..< edRect.x + edRect.w - SbW:
+      if spans.allIt(x < it[0] - 1 or x > it[1] + 1): outside += reds(x, x + 1, top, top + lineH + 3)
+    doAssert outside == 0, "only under the misspelled words: " & $outside
+
+  block notUnderTheWordTyped:
+    doc = richDoc("")
+    doc.spell = true
+    run()
+    clickAt(edRect.x + 40, edRect.y + 10)
+    typeText("Gud")
+    run()
+    doAssert richMisspelled(doc, 0).len == 1
+    let r = richCaretRect(doc)
+    doAssert reds(edRect.x, edRect.x + edRect.w, r.y, r.y + r.h + 3) == 0,
+             "no red line while the word is typed"
+    typeText(" day")
+    run()
+    doAssert reds(edRect.x, edRect.x + edRect.w, r.y, r.y + r.h + 3) > 4, "once it is left: red"
+    key(KeyLeft, {CtrlPressed})
+    key(KeyLeft, {CtrlPressed})
+    key(KeyRight)                         # (into it, by the arrows: shown)
+    run()
+    doAssert reds(edRect.x, edRect.x + edRect.w, r.y, r.y + r.h + 3) > 4
+
+  block arabicLine:
+    doc = richDoc("قرأت كتابب جميلا")
+    doc.spell = true
+    ui.focus = 0
+    run()
+    if spellAvailable("ar"):
+      let t = paraText(doc.paras[0])
+      let bad = richMisspelled(doc, 0)
+      doAssert bad.len == 1 and t[bad[0].a ..< bad[0].b] == "كتابب", $bad
+      # right to left: the word's start is at its right
+      let xa = xAt(bad[0].a)
+      let xb = xAt(bad[0].b)
+      doAssert xb < xa, "Arabic goes right to left"
+      ui.focus = 0
+      run()
+      let top = richCaretRect(doc).y
+      doAssert reds(xb, xa, top, top + richCaretRect(doc).h + 3) > (xa - xb) div 2
+
+  block suggestionMenu:
+    doc = richFromHtml("<p>We <b>recieve</b> mail</p>")
+    doc.spell = true
+    run()
+    let y = edRect.y + 2 + dp(6) + FontH div 2
+    rightClick(xAt(6), y)                 # on "recieve": its suggestions first
+    key(KeyDown)
+    key(KeyEnter)                         # the first: "receive"
+    run()
+    doAssert doc.texts == @["We receive mail"], $doc.texts
+    doAssert runOf(doc, 0, "receive").style.bold, "it keeps the word's bold"
+    doAssert richMisspelled(doc, 0).len == 0
+    ctrl(KeyZ)                            # one undo step
+    run()
+    doAssert doc.texts == @["We recieve mail"] and runOf(doc, 0, "recieve").style.bold
+    # Ignore All: not marked again (this session)
+    rightClick(xAt(6), y)
+    key(KeyI)
+    run()
+    doAssert richMisspelled(doc, 0).len == 0 and doc.texts == @["We recieve mail"]
+    # Add to Dictionary: kept in the user's words
+    doc = richDoc("Regards, Foxomann")
+    doc.spell = true
+    run()
+    doAssert richMisspelled(doc, 0).len == 1
+    rightClick(xAt(12), y)
+    key(KeyA)
+    run()
+    doAssert richMisspelled(doc, 0).len == 0
+    doAssert "Foxomann" in readFile(spellWordsFile())
+    # a right click elsewhere: the usual menu (its first item Undo)
+    rightClick(xAt(3), y)
+    key(KeyEsc)
+    run()
+
+  block f7:
+    doc = richDoc("Good mornin all\nthe meating is at nine")
+    doc.spell = true
+    run()
+    clickAt(edRect.x + 2 + dp(6) + 1, edRect.y + 2 + dp(6) + FontH div 2)
+    key(KeyF7)
+    run()
+    doAssert richSelectedText(doc) == "mornin", richSelectedText(doc)
+    doAssert ui.popup != 0, "its menu is open"
+    key(KeyDown)
+    key(KeyEnter)
+    run()
+    doAssert doc.texts[0] == "Good morning all", $doc.texts
+    key(KeyF7)
+    run()
+    doAssert richSelectedText(doc) == "meating"
+    key(KeyEsc)
+    run()
+    doAssert ui.popup == 0
+
+block autoCorrectTyping:
+  showBar = false
+  doc = richDoc("")
+  doc.autoCorrect = true
+  run()
+  clickAt(edRect.x + 40, edRect.y + 10)
+  typeText("teh cat adn i ")
+  run()
+  doAssert doc.texts == @["The cat and I "], $doc.texts
+  # Ctrl+Z right after a correction: what was typed, then the typing
+  typeText("dont")
+  run()
+  typeText(" ")
+  run()
+  doAssert doc.texts == @["The cat and I don't "], $doc.texts
+  ctrl(KeyZ)
+  run()
+  doAssert doc.texts == @["The cat and I dont "], $doc.texts
+  ctrl(KeyZ)
+  run()
+  doAssert doc.texts == @["The cat and I "], $doc.texts
+  # Enter ends a word too
+  typeText("see thier")
+  key(KeyEnter)
+  run()
+  doAssert doc.texts == @["The cat and I see their", ""], $doc.texts
+  ctrl(KeyZ)
+  run()
+  doAssert doc.texts == @["The cat and I see thier", ""], $doc.texts
+  # addresses are left alone
+  doc = richDoc("")
+  doc.autoCorrect = true
+  run()
+  clickAt(edRect.x + 40, edRect.y + 10)
+  typeText("Mail www.teh.com or me@teh.org now.")
+  run()
+  doAssert doc.texts == @["Mail www.teh.com or me@teh.org now."], $doc.texts
+  # ... and links
+  doc = richFromHtml("<p>A <a href=\"https://x.y\">tehx</a></p>")
+  doc.autoCorrect = true
+  run()
+  clickAt(edRect.x + 40, edRect.y + 10)
+  richSelect(doc, RichPos(para: 0, off: 5), RichPos(para: 0, off: 5))   # (in the link: "teh|x")
+  typeText(" ")
+  run()
+  doAssert doc.texts == @["A teh x"], $doc.texts
+  # off: nothing changes
+  doc = richDoc("")
+  run()
+  clickAt(edRect.x + 40, edRect.y + 10)
+  typeText("teh ")
+  run()
+  doAssert doc.texts == @["teh "]
+  # Arabic
+  doc = richDoc("")
+  doc.autoCorrect = true
+  run()
+  clickAt(edRect.x + 40, edRect.y + 10)
+  typeRunes("ذهبت الى السوق ان شاء الله ")
+  run()
+  doAssert doc.texts == @["ذهبت إلى السوق إن شاء الله "], $doc.texts
+  ctrl(KeyZ)
+  run()
+  doAssert doc.texts == @["ذهبت إلى السوق ان شاء الله "], $doc.texts
+  showBar = true
 
 echo "richedit: all tests passed"

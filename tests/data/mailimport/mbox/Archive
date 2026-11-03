@@ -1,0 +1,28 @@
+From - Mon Nov 03 10:00:00 2025
+From: archive@hotel.example
+To: sultan@hotel.example
+Subject: Archived one
+Date: Fri, 7 Nov 2025 08:00:00 +0400
+X-Mozilla-Status: 0001
+
+One.
+>From the start.
+
+From - Mon Nov 03 10:05:00 2025
+From: archive@hotel.example
+To: sultan@hotel.example
+Subject: Archived two
+Date: Fri, 7 Nov 2025 08:00:00 +0400
+X-Mozilla-Status: 0005
+
+Two.
+
+From - Mon Nov 03 10:06:00 2025
+From: archive@hotel.example
+To: sultan@hotel.example
+Subject: Archived deleted
+Date: Fri, 7 Nov 2025 08:00:00 +0400
+X-Mozilla-Status: 0009
+
+Gone.
+

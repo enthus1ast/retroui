@@ -1,0 +1,4 @@
+Shopping: milk
+Date: today
+
+Not a message.
