@@ -1,0 +1,47 @@
+Fixedsys Excelsior (FixedsysExcelsior.ttf, FixedsysExcelsiorHD.ttf and the
+.ttf.z files made from them)
+===========================================================================
+
+What it is
+  Fixedsys Excelsior is Darien Valentine's recreation and extension of
+  Fixedsys, the 8 x 16 pixel fixed-width system font of Windows 3.x and of
+  DOS-era screens, with thousands of characters added (Latin, Greek,
+  Cyrillic, Armenian, Hebrew, Ethiopic, box drawing, Braille, symbols...).
+
+Where it comes from
+  Fixedsys Excelsior 3.022: Darien Valentine (https://github.com/bathos),
+    first published at fixedsysexcelsior.com (no longer online).
+  Additions (programming symbols and ligatures): Kirill Pertsev (kika),
+    https://github.com/kika/fixedsys -- the source these files are built
+    from (FSEX.ttx).
+
+Licence
+  Public domain. In the words of the source repository: "The creator(s) of
+  this content have released it to the public domain. For jurisdictions
+  where this is not permitted, it is released under the terms of the
+  Creative Commons Zero Dedication."
+    https://creativecommons.org/publicdomain/zero/1.0/
+
+  The files here are released the same way: public domain, CC0 1.0 where
+  that is not possible. Use them for anything; no credit is required, but
+  it is kindly given above.
+
+  "Fixedsys" is the name of a Microsoft bitmap font; Fixedsys Excelsior is
+  a separate work, not affiliated with or endorsed by Microsoft.
+
+Changes made by Retro Nim UI (tools/genfixedsys.py, by Sultan Al Isaiee)
+
+  - the outlines traced again from the font's pixels: the source draws
+    every pixel as an overlapping 10 x 10 square; here each glyph is a few
+    clean contours, a pixel 100 units, 1200 units to the em (12 pixels per
+    em), the line 13 pixels above the baseline and 3 below (16) -- the
+    advances, the pixels and the line are the font's own
+  - "HD" version (FixedsysExcelsiorHD.ttf): the same glyphs smoothed
+    (twice Scale2x: one-pixel staircases become diagonals) for large text
+    and high-resolution screens
+  - left out: the C0 and C1 control characters, the Arabic (which the font
+    joins only through OpenType substitutions; Retro Nim UI takes Arabic
+    from GNU Unifont, see LICENSE-Unifont.txt), the private use area, the
+    programming ligatures, the layout tables and the embedded bitmaps
+  - no bold file: Retro Nim UI draws bold Fixedsys as Windows drew a
+    bitmap font's bold, each glyph again one pixel to the right

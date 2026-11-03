@@ -266,7 +266,7 @@ for round in 0 ..< rounds:
   if round mod 7 == 0:
     scaleK = sample([50, 75, 100, 133, 200, 300])
     setUiScale(scaleK)
-  if round mod 11 == 0: setUiFont(UiFont(rand(1)))
+  if round mod 11 == 0: setUiFont(sample(builtinUiFonts))
   explorer = round mod 3 == 1
   business = round mod 3 == 2
   if business:

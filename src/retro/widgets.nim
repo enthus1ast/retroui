@@ -9,7 +9,8 @@
 ##   `msgBox`
 ## - bars and menus: `menubar` / `menu` / `menuItem` / `submenu`,
 ##   `contextMenu`, `popupMenu`, `toolbar` / `toolButton`, `statusbar`,
-##   `captionBar`
+##   `captionBar` (and the Windows 3.1 window frame on desktops:
+##   `frameLayout`, `framePartAt`, `sizingBorder`)
 ## - the pieces they are made of: `buttonFace`, `raised`, `sunken`,
 ##   `checkBox`, `radioDisc`, `arrow`, `scrollbarAt`, `focusDots`
 
@@ -2213,7 +2214,7 @@ template scrollPanel*(height: int; body: untyped) =
   body
   endScroll()
 
-var panelStack: seq[tuple[id: Id; inner: Rect]]
+var panelStack: seq[tuple[id: Id; inner: Rect; top, reveal: int; glide: bool]]
 
 proc beginPanel*(height = -1; key = ""; plain = false) =
   ## Starts a `panel`: a framed white area (as a list's) whose content sits
@@ -2233,7 +2234,7 @@ proc beginPanel*(height = -1; key = ""; plain = false) =
   pushClip(inner)
   beginClipped()
   ui.focusRect = rect(0, 0, 0, 0)
-  panelStack.add (id, inner)
+  panelStack.add (id, inner, inner.y + Pad - y, -1, true)
   pushFrame(rect(inner.x + Pad, inner.y + Pad - y,
                  inner.w - 2 * Pad - (if over: SbW else: 0), inner.h - 2 * Pad))
 
@@ -2242,10 +2243,16 @@ proc endPanel*() =
   let ch = popFrame() + 2 * Pad
   endClipped()
   popClip()
-  let (id, inner) = panelStack.pop()
+  let (id, inner, _, reveal, glide) = panelStack.pop()
   var st = state(id)
   let maxY = if ch - inner.h > dp(2): ch - inner.h else: 0
   var y = clamp(st.scrollY, 0, maxY)
+  if reveal >= 0:
+    let goal = clamp(reveal, 0, maxY)
+    if not glide:
+      scrollStop(id)
+      y = goal
+    elif scrollTarget(id, y) != goal: scrollTo(id, y, goal, maxY)
   if maxY > 0:
     scrollWheel(id, y, maxY, inner, 3 * ItemH)
     scrollPan(id, y, maxY, inner)
@@ -2263,6 +2270,15 @@ proc endPanel*() =
     st.aux = over
     ui.redraw = true
   state(id) = st
+
+proc revealInPanel*(r: Rect; glide = true) =
+  ## Inside a `panel` (or `pane`): scrolls it so that `r` (drawn this frame)
+  ## comes to its top, or as near as it can: a message picked in a
+  ## conversation, a heading jumped to. `glide` false: at once.
+  if panelStack.len == 0: return
+  let p = addr panelStack[^1]
+  p.reveal = r.y - p.top
+  p.glide = glide
 
 template panel*(body: untyped) =
   ## A framed white area down to the bottom, its content `Pad` in from
@@ -3264,16 +3280,274 @@ proc msgBox*(open: var bool; title, msg: string;
     endDialog()
   if was and not open and result == 0: result = buttons.len
 
-# ---- the title bar on phones ---------------------------------------------------
+# ---- the 3.1 window frame on desktops ---------------------------------------------
 
 import uirelays/services
 
+type
+  FramePart* = enum
+    ## A part of the 3.1 window frame (`framePartAt`).
+    fpNone,                                ## not the frame: the window's content
+    fpCaption,                             ## the title bar: drags the window,
+                                           ## a double click maximizes it
+    fpControlBox, fpMinimize, fpMaximize,  ## the title bar's buttons
+    fpLeft, fpRight, fpTop, fpBottom,      ## the sizing border...
+    fpTopLeft, fpTopRight, fpBottomLeft, fpBottomRight  ## ... and its corners
+
+  FrameLayout* = object
+    ## Where the parts of the 3.1 frame are this frame (`frameLayout`), in
+    ## logical pixels.
+    border*: int                           ## the sizing border's width (0 maximized)
+    corner*: int                           ## how far a corner's part reaches along
+                                           ## the border (to the dark lines across it)
+    caption*: Rect                         ## the title bar, without the line under it
+    controlBox*, minimize*, maximize*: Rect
+
+const
+  ClassicMenuId = Id(0x31f2a7c5'u32)       # the control menu
+  ClassicMinId = Id(0x31f2a7c6'u32)
+  ClassicMaxId = Id(0x31f2a7c7'u32)
+
+var
+  classicDrawn = -1        # the frame `classicCaption` last ran in
+  classicHeld = fpNone     # the button the mouse went down on
+
+proc frameLayout*(): FrameLayout =
+  ## The parts of the 3.1 frame (`setClassicFrame`): the sizing border all
+  ## round, the title bar inside it with the control-menu box at its left
+  ## and the minimize and maximize buttons at its right. All empty when the
+  ## frame is not drawn.
+  if not ui.ownFrame: return
+  let b = ui.frameBorder
+  let h = max(1, ui.captionH - 1)
+  result.border = b
+  result.corner = b + h          # (in line with the title bar's bottom)
+  result.caption = rect(b, b, ui.w - 2 * b, h)
+  result.controlBox = rect(b, b, h, h)
+  result.maximize = rect(ui.w - b - h, b, h, h)
+  result.minimize = rect(ui.w - b - 2 * h, b, h, h)
+
+proc framePartAt*(x, y: int): FramePart =
+  ## Which part of the 3.1 frame is at `x`, `y` (`fpNone`: the content, or
+  ## no such frame). A corner's part reaches as far along the border as
+  ## the title bar is low, as in 3.1.
+  if not ui.ownFrame: return fpNone
+  let f = frameLayout()
+  let p = point(x, y)
+  if f.controlBox.contains(p): return fpControlBox
+  if f.minimize.contains(p): return fpMinimize
+  if f.maximize.contains(p): return fpMaximize
+  if rect(f.caption.x, f.caption.y, f.caption.w, ui.captionH).contains(p): return fpCaption
+  let b = f.border
+  if b <= 0 or x < 0 or y < 0 or x >= ui.w or y >= ui.h: return fpNone
+  let left = x < b
+  let right = x >= ui.w - b
+  let top = y < b
+  let bottom = y >= ui.h - b
+  if not (left or right or top or bottom): return fpNone
+  let c = f.corner
+  let nearL = x < c
+  let nearR = x >= ui.w - c
+  let nearT = y < c
+  let nearB = y >= ui.h - c
+  if nearT and nearL: fpTopLeft
+  elif nearT and nearR: fpTopRight
+  elif nearB and nearL: fpBottomLeft
+  elif nearB and nearR: fpBottomRight
+  elif left: fpLeft
+  elif right: fpRight
+  elif top: fpTop
+  else: fpBottom
+
+proc onScreen(p: FramePart): FramePart =
+  ## (a part as the system sees it: right to left, the window is drawn
+  ## mirrored, and its left edge is on the right)
+  if not ui.rtl: return p
+  case p
+  of fpLeft: fpRight
+  of fpRight: fpLeft
+  of fpTopLeft: fpTopRight
+  of fpTopRight: fpTopLeft
+  of fpBottomLeft: fpBottomRight
+  of fpBottomRight: fpBottomLeft
+  else: p
+
+proc systemPart*(p: FramePart): WindowPart =
+  ## The part of the window the system moves or sizes it by
+  ## (`startWindowResize`) for a part of the 3.1 frame.
+  case onScreen(p)
+  of fpCaption: wpCaption
+  of fpLeft: wpLeft
+  of fpRight: wpRight
+  of fpTop: wpTop
+  of fpBottom: wpBottom
+  of fpTopLeft: wpTopLeft
+  of fpTopRight: wpTopRight
+  of fpBottomLeft: wpBottomLeft
+  of fpBottomRight: wpBottomRight
+  else: wpClient
+
+proc frameCursor(p: FramePart): CursorKind =
+  case onScreen(p)
+  of fpLeft, fpRight: curSizeWE
+  of fpTop, fpBottom: curSizeNS
+  of fpTopLeft, fpBottomRight: curSizeNWSE
+  of fpTopRight, fpBottomLeft: curSizeNESW
+  else: curDefault
+
+proc sizingBorder*(r: Rect; border, corner: int) =
+  ## The 3.1 window's sizing border round `r`: the gray band between two
+  ## black lines, cut by dark lines `corner` pixels from each corner -- the
+  ## parts that size the window both ways.
+  windowFrame(r, border)
+  if border < 3: return
+  let band = border - 2
+  for x in [r.x + corner, r.x + r.w - corner]:
+    vline(x, r.y + 1, band, th.frame)
+    vline(x, r.y + r.h - 1 - band, band, th.frame)
+  for y in [r.y + corner, r.y + r.h - 1 - corner]:
+    hline(r.x + 1, y, band, th.frame)
+    hline(r.x + r.w - 1 - band, y, band, th.frame)
+
+proc openControlMenu() =
+  ui.popup = ClassicMenuId
+  ui.menuOpen = false
+  ui.popupHi = -1
+  ui.redraw = true
+
+proc classicCaption() =
+  ## (the 3.1 frame's title bar: drawn first in the frame, so its presses
+  ## are its own; the border is drawn last, over the bars, by
+  ## `classicFrameEnd`)
+  classicDrawn = ui.frameNo
+  pushLayer(LayerBase)
+  defer: popLayer()
+  let f = frameLayout()
+  let maxed = windowMaximized()
+  # the frame takes the mouse (in front of the dialogs too) unless a menu is
+  # open, which a press anywhere closes
+  let free = ui.popup == 0
+  let part = framePartAt(ui.mx, ui.my)
+  if ui.pressed and not ui.pressUsed and part != fpNone:
+    if part == fpControlBox and ui.popup == ClassicMenuId:
+      # (its own menu open: a second click closes the window, one closes the menu)
+      ui.pressUsed = true
+      ui.popup = 0
+      ui.redraw = true
+      if ui.clicks >= 2: requestClose()
+    elif free:
+      ui.pressUsed = true
+      case part
+      of fpControlBox:
+        if ui.clicks >= 2: requestClose() else: openControlMenu()
+      of fpMinimize, fpMaximize:
+        classicHeld = part
+        ui.redraw = true
+      of fpCaption:
+        if ui.clicks >= 2: maximizeWindow(not maxed)
+        else: startWindowMove()
+      else:
+        startWindowResize(systemPart(part))
+  if classicHeld != fpNone and (ui.released or not ui.mouseDown):
+    if ui.released and part == classicHeld:
+      if classicHeld == fpMinimize: minimizeApp()
+      else: maximizeWindow(not maxed)
+    classicHeld = fpNone
+    ui.redraw = true
+  # the keyboard: Alt+Space opens the control menu; Alt+F4 closes (Windows
+  # closes on its own)
+  if not ui.keyUsed and AltPressed in ui.mods:
+    if ui.key == KeySpace:
+      ui.keyUsed = true
+      if ui.popup == ClassicMenuId: ui.popup = 0 else: openControlMenu()
+    elif ui.key == KeyF4 and not defined(windows):
+      ui.keyUsed = true
+      requestClose()
+  if free and ui.active == 0 and not ui.mouseDown:
+    let c = frameCursor(part)
+    if c != curDefault: ui.cursor = c
+  # draw: the title bar in the active colors (white while another window is
+  # in front), the line under it, its buttons, the title
+  let (tbg, tfg) = titleColors(ui.active31 and windowActive())
+  let cap = f.caption
+  fill(cap, tbg)
+  hline(cap.x, cap.y + cap.h, cap.w, th.frame)
+  let cb = f.controlBox
+  captionButton(cb, false)
+  vline(cb.x + cb.w, cap.y, cap.h, th.frame)
+  controlMenuMark(cb)
+  for (r, p) in [(f.minimize, fpMinimize), (f.maximize, fpMaximize)]:
+    vline(r.x, r.y, r.h, th.frame)
+    let face = rect(r.x + 1, r.y, r.w - 1, r.h)
+    let down = classicHeld == p and part == p and ui.mouseDown
+    captionButton(face, down)
+    if p == fpMinimize: captionArrow(face, false, down)
+    elif maxed: captionRestore(face, down)
+    else: captionArrow(face, true, down)
+  let left = cb.x + cb.w + 1
+  let room = f.minimize.x - left - dp(8)
+  let t = ellipsize(ui.title, room, style(bold = true))
+  text(left + max(dp(4), (f.minimize.x - left - textWidth(t, true)) div 2),
+       cap.y + (cap.h - FontH) div 2, t, tfg, true)
+  # (nothing under the frame answers the mouse)
+  ui.blockers.add rect(0, 0, ui.w, f.border + ui.captionH)
+  if f.border > 0:
+    ui.blockers.add rect(0, 0, f.border, ui.h)
+    ui.blockers.add rect(ui.w - f.border, 0, f.border, ui.h)
+    ui.blockers.add rect(0, ui.h - f.border, ui.w, f.border)
+  # the control menu
+  # (hanging from the box, as a menu bar's menu from its title)
+  if ui.popup == ClassicMenuId and
+     beginPopupMenu(ClassicMenuId, cb.x, cap.y + ui.captionH, fixedTop = true):
+    if menuItem("&Restore", enabled = maxed): maximizeWindow(false)
+    if menuItem("&Move", enabled = not maxed): startWindowMove(keyboard = true)
+    if menuItem("&Size", enabled = not maxed):
+      startWindowResize(wpBottomRight, keyboard = true)
+    if menuItem("Mi&nimize"): minimizeApp()
+    if menuItem("Ma&ximize", enabled = not maxed): maximizeWindow(true)
+    menuSeparator()
+    if menuItem("&Close", "Alt+F4"): requestClose()
+    menuSeparator()
+    if menuItem("&Larger", "Ctrl++", enabled = uiScale() < 300):
+      setUiScale(scaleStep(1))
+    if menuItem("Sm&aller", "Ctrl+-", enabled = uiScale() > 50):
+      setUiScale(scaleStep(-1))
+    if menuItem("N&ormal size", "Ctrl+0", enabled = uiScale() != 100):
+      setUiScale(100)
+    endMenu()
+
+proc classicFrameEnd() =
+  ## (end of the frame: the sizing border over the bars and the content
+  ## that reach the window's edges; the sizing arrows over it)
+  if not ui.ownFrame: return
+  # (an app whose own loop does not call `captionBar`: its title bar now)
+  if classicDrawn != ui.frameNo: classicCaption()
+  let f = frameLayout()
+  if f.border > 0:
+    pushLayer(LayerBase)
+    sizingBorder(rect(0, 0, ui.w, ui.h), f.border, f.corner)
+    popLayer()
+  if ui.popup == 0 and ui.active == 0 and not ui.mouseDown:
+    let c = frameCursor(framePartAt(ui.mx, ui.my))
+    if c != curDefault: ui.cursor = c
+
+endFrameHooks.add classicFrameEnd
+
+# ---- the title bar on phones ---------------------------------------------------
+
 proc captionBar*() =
-  ## Phones and tablets: the window's 3.1 title bar, which the system does
-  ## not draw there -- navy from the top of the screen (under the status
-  ## bar, whose icons turn white over it), the control-menu box (zoom,
-  ## minimize, close; also Alt+Space), the title, and the minimize button.
-  ## `app` calls it every frame; it draws nothing on the desktop.
+  ## The window's 3.1 title bar where the app draws it. Phones and tablets:
+  ## the system does not draw one there -- navy from the top of the screen
+  ## (under the status bar, whose icons turn white over it), the
+  ## control-menu box (zoom, minimize, close; also Alt+Space), the title,
+  ## and the minimize button. Desktops with the 3.1 frame on
+  ## (`setClassicFrame`): the title bar of a Windows 3.1 window, its
+  ## control-menu box, its minimize and maximize buttons, inside the sizing
+  ## border. `app` calls it every frame; with the system's frame it draws
+  ## nothing.
+  if ui.ownFrame:
+    classicCaption()
+    return
   if ui.captionH == 0: return
   pushLayer(LayerBase)
   defer: popLayer()

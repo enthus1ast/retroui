@@ -83,6 +83,12 @@ proc builtinEntries(): seq[FontEntry] =
                             (fKawkab, "Kawkab Mono", "Regular", 400), (fKawkabBold, "Kawkab Mono", "Bold", 700),
                             (fW98, "MS W98 UI", "Regular", 400), (fW98Bold, "MS W98 UI", "Bold", 700)]:
     result.add FontEntry(family: fam, style: st, builtin: id, weight: wt)
+  if hasOpenSans():
+    result.add FontEntry(family: "Open Sans", style: "Regular", builtin: fOpenSans, weight: 400)
+    result.add FontEntry(family: "Open Sans", style: "Bold", builtin: fOpenSansBold, weight: 700)
+  if hasFixedsys():
+    # (no bold of its own: made bold here, as other one-weight families are)
+    result.add FontEntry(family: "Fixedsys Excelsior", style: "Regular", builtin: fFixedsys, weight: 400)
   for m in memFonts: result.add m.entry
 
 proc systemFontDirs*(): seq[string] =

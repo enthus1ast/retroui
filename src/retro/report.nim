@@ -944,7 +944,7 @@ proc drawGlyphs(b: Bitmap; op: Op; scale: float) =
     if gx < -sizePx * 2 or gx > float(b.w) + sizePx: continue
     let ix = int(floor(gx))
     let frac = int((gx - float(ix)) * 4) and 3
-    let key = (uint64(ord(g.face)) shl 60) or (uint64(g.gid) shl 40) or
+    let key = (uint64(ord(g.face)) shl 56) or (uint64(g.gid) shl 40) or
               (uint64(int(sizePx * 4) and 0xFFFFF) shl 8) or (uint64(frac) shl 2) or
               uint64(ord(op.italic))
     if not masks.hasKey(key):

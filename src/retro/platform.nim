@@ -103,6 +103,27 @@ proc loadUiFontFile*(path: string) =
   setUiFontFile(regular, if b.len > 0: readFile(b) else: "")
   uiFontPath = path
 
+proc uiFontKey*(f: UiFont): string =
+  ## The word settings keep font `f` as: "w98", "kawkab", "retro",
+  ## "smooth", "file", "fixedsys", "opensans" (what `storeAppearance`
+  ## writes; `uiFontOfKey` reads it back).
+  case f
+  of ufW98: "w98"
+  of ufKawkab: "kawkab"
+  of ufRetro: "retro"
+  of ufSmooth: "smooth"
+  of ufFile: "file"
+  of ufFixedsys: "fixedsys"
+  of ufOpenSans: "opensans"
+
+proc uiFontOfKey*(key: string; f: var UiFont): bool =
+  ## The built-in font `key` names (a word of `uiFontKey`), into `f`; false
+  ## for an unknown word or "file" (a font from a file: `loadUiFontFile`).
+  for u in UiFont:
+    if u != ufFile and uiFontKey(u) == key:
+      f = u
+      return true
+
 proc recentFiles*(s: Settings; key = "recent"): seq[string] =
   ## The files last opened (or saved), the newest first (`addRecentFile`).
   for i in 1 .. 100:
@@ -122,7 +143,8 @@ proc addRecentFile*(s: var Settings; path: string; keep = 10; key = "recent") =
   for i, p in l: s[key & "." & $(i + 1)] = p
 
 proc storeAppearance*(s: var Settings) =
-  ## Puts the look the user chose (colors, sizes, font) into `s`.
+  ## Puts the look the user chose (colors, sizes, font, the window's frame)
+  ## into `s`.
   let t = themeIndex()
   if t >= 0: s["look.colors"] = $t
   s["look.size"] = $uiScale()
@@ -141,14 +163,16 @@ proc storeAppearance*(s: var Settings) =
                    of gmAuto: "auto"
                    of gmGpu: "gpu"
                    of gmCpu: "cpu")
-  s["look.font"] = (case uiFont()
-                    of ufRetro: "retro"
-                    of ufSmooth: "smooth"
-                    of ufKawkab: "kawkab"
-                    of ufW98: "w98"
-                    of ufFile: "file")
+  s["look.font"] = uiFontKey(uiFont())
   s["look.fontv"] = "2"
   if uiFontPath.len > 0: s["look.fontfile"] = uiFontPath
+  # the window's frame: kept only when it is not the one the app was built
+  # with (`retroFrame`), and left as it was while RETRO_FRAME says
+  if not existsEnv("RETRO_FRAME"):
+    if classicFrameWanted() != (retroFrame == "classic"):
+      s["look.frame"] = if classicFrameWanted(): "classic" else: "system"
+    else:
+      s.del("look.frame")
 
 proc restoreAppearance*(s: Settings) =
   ## Brings back the look `storeAppearance` stored.
@@ -177,6 +201,11 @@ proc restoreAppearance*(s: Settings) =
   of "gpu": setGpuMode(gmGpu)
   of "cpu": setGpuMode(gmCpu)
   else: discard
+  # ($RETRO_FRAME, when set, wins over what was kept)
+  case (if existsEnv("RETRO_FRAME"): "" else: s.getOrDefault("look.frame", ""))
+  of "classic": setClassicFrame(true)
+  of "system": setClassicFrame(false)
+  else: discard
   # (the old "look.pixelfont" key said false for everyone before Retro Sans
   # was the default: only a choice made since counts)
   # (Kawkab Mono was the default before MS W98 UI: stored before then, it
@@ -187,6 +216,8 @@ proc restoreAppearance*(s: Settings) =
   of "smooth": setUiFont(ufSmooth)
   of "kawkab": setUiFont(ufKawkab)
   of "w98": setUiFont(ufW98)
+  of "fixedsys": setUiFont(ufFixedsys)
+  of "opensans": setUiFont(ufOpenSans)
   of "file":
     # (the font from a file: when it is still there)
     let p = s.getOrDefault("look.fontfile", "")

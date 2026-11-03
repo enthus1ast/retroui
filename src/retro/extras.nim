@@ -1243,7 +1243,8 @@ proc extractFilenameOf(p: string): string =
 proc appearanceSettings*(): bool {.discardable.} =
   ## Settings rows for how every app looks: the color scheme, the size of
   ## everything, the size of the text, the size of controls (for a mouse
-  ## or fingers) and the font. True when something changed (store them with
+  ## or fingers), the window's frame (on desktops: the system's or Windows
+  ## 3.1's) and the font. True when something changed (store them with
   ## `storeAppearance`).
   var t = max(0, themeIndex())
   var names: seq[string]
@@ -1263,6 +1264,14 @@ proc appearanceSettings*(): bool {.discardable.} =
                                "Touch sizes (fingers)"], cs):
     setControlSizes(ControlSizes(cs))
     result = true
+  if canClassicFrame():
+    # (the window's frame: the desktop's, or the 3.1 one the app draws)
+    var fr = ord(classicFrame())
+    let own = if platformName() == "windows": "Windows' own frame"
+              else: "The desktop's own frame"
+    if settingCombo("Window", [own, "Windows 3.1 frame"], fr):
+      setClassicFrame(fr == 1)
+      result = true
   var gm = ord(gpuMode())
   if settingCombo("Drawing", ["Automatic (the GPU when there is a real one)", "With the GPU",
                               "On the CPU"], gm):
@@ -1273,23 +1282,37 @@ proc appearanceSettings*(): bool {.discardable.} =
   of 2: setTextScale(100); result = true
   of 3: setTextScale(textScale() + 10); result = true
   else: discard
-  var f = ord(uiFont())
-  let fileName = if uiFontPath.len > 0: "Font File: " & uiFontPath.extractFilenameOf else: "A Font File..."
-  if settingCombo("Font", ["Windows 98 (MS W98 UI)", "Kawkab Mono (Arabic and Latin)",
-                           "Windows 3.1 (Retro Sans)", "Smooth (DejaVu Sans)", fileName], f):
-    if UiFont(f) == ufFile and uiFontPath.len == 0:
+  # (the built-in fonts in their menu order, then a font from a file)
+  var fonts: seq[UiFont]
+  var fontNames: seq[string]
+  for u in builtinUiFonts:
+    fonts.add u
+    fontNames.add(case u
+                  of ufW98: "Windows 98 (MS W98 UI)"
+                  of ufRetro: "Windows 3.1 (Retro Sans)"
+                  of ufFixedsys: "Fixedsys (Fixedsys Excelsior)"
+                  of ufKawkab: "Kawkab Mono (Arabic and Latin)"
+                  of ufSmooth: "Smooth (DejaVu Sans)"
+                  of ufOpenSans: "Modern (Open Sans)"
+                  of ufFile: "")
+  fonts.add ufFile
+  fontNames.add(if uiFontPath.len > 0: "Font File: " & uiFontPath.extractFilenameOf else: "A Font File...")
+  var f = max(0, fonts.find(uiFont()))
+  if settingCombo("Font", fontNames, f):
+    if fonts[f] == ufFile and uiFontPath.len == 0:
       fontFileOpen = true                 # (which font: asked first)
-    elif UiFont(f) == ufFile:
+    elif fonts[f] == ufFile:
       try:
         loadUiFontFile(uiFontPath)
         result = true
       except CatchableError: fontFileOpen = true
     else:
-      setUiFont(UiFont(f))
+      setUiFont(fonts[f])
       result = true
-  if uiFont() == ufW98:
+  if uiFont() in {ufW98, ufFixedsys}:
     var hd = if hdText(): 0 else: 1
-    if settingCombo("Large text and HD screens", ["Smooth (MS W98 UI HD)", "Pixels (as in 1998, magnified)"], hd):
+    let smoothName = if uiFont() == ufW98: "Smooth (MS W98 UI HD)" else: "Smooth (Fixedsys HD)"
+    if settingCombo("Large text and HD screens", [smoothName, "Pixels (as in 1998, magnified)"], hd):
       setHdText(hd == 0)
       result = true
   var ics = ord(iconStyle())

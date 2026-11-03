@@ -140,6 +140,8 @@ type
     retro: bool              ## Retro Sans (its smooth outlines)
     kawkab: bool             ## Kawkab Mono
     w98: bool                ## MS W98 UI
+    fixedsys: bool           ## Fixedsys Excelsior
+    openSans: bool           ## Open Sans
     align: CanvasTextAlign
     baseline: CanvasTextBaseline
     shadowColor: uint32
@@ -1810,8 +1812,11 @@ proc glyphMask(f: FaceId; gid: uint16; size: float; frac: float; italic, hint: b
     glyphCache.clear()
     glyphBytes = 0
   result = MaskRef()
+  # (Fixedsys's bold: the regular thickened by one of its pixels, to the right)
+  let thicken = if f in {fFixedsysBold, fFixedsysHDBold} and hasFixedsys(): float32(size) / FixedsysGrid
+                else: 0'f32
   result[] = face(f).render(int(gid), float32(size), float32(round(frac * 4) / 4),
-                            if italic: 0.2'f32 else: 0'f32, hint = hint)
+                            if italic: 0.2'f32 else: 0'f32, embolden = thicken, hint = hint)
   glyphBytes += result.a.len + 64
   glyphCache[key] = result
 
@@ -1849,18 +1854,32 @@ proc parseFont(c: Canvas2D; s: string): bool =
   c.st.bold = bold
   c.st.italic = italic
   c.st.mono = mono
-  # "Retro Sans" (or "system-ui"); plain "sans-serif" follows the UI's font
-  c.st.retro = not mono and (retroFace or (sans and uiFont() == ufRetro))
-  c.st.kawkab = not retroFace and ("kawkab" in s.toLowerAscii or ((sans or mono) and uiFont() == ufKawkab))
-  c.st.w98 = not mono and not c.st.kawkab and ("w98" in s.toLowerAscii or (sans and uiFont() == ufW98))
+  # "Retro Sans" (or "system-ui"); plain "sans-serif" follows the UI's font;
+  # "Fixedsys" and "Open Sans", named, win over it ("monospace" with
+  # Fixedsys as the UI's font is Fixedsys too)
+  let low = s.toLowerAscii
+  let named = "fixedsys" in low or "open sans" in low or "opensans" in low
+  let other = retroFace or "kawkab" in low or "w98" in low
+  c.st.retro = not named and not mono and (retroFace or (sans and uiFont() == ufRetro))
+  c.st.kawkab = not named and not retroFace and ("kawkab" in low or ((sans or mono) and uiFont() == ufKawkab))
+  c.st.w98 = not named and not mono and not c.st.kawkab and ("w98" in low or (sans and uiFont() == ufW98))
+  c.st.fixedsys = "fixedsys" in low or
+                  (not named and not other and (sans or mono) and uiFont() == ufFixedsys)
+  c.st.openSans = not c.st.fixedsys and not mono and
+                  ("open sans" in low or "opensans" in low or
+                   (not named and not other and sans and uiFont() == ufOpenSans))
   c.st.font = s
   true
 
 proc faceFor(st: State): FaceId =
-  if st.kawkab: (if st.bold: fKawkabBold else: fKawkab)
+  if st.fixedsys:
+    if st.fontSize >= FixedsysGrid * 1.5 and hdText(): (if st.bold: fFixedsysHDBold else: fFixedsysHD)
+    else: (if st.bold: fFixedsysBold else: fFixedsys)
+  elif st.kawkab: (if st.bold: fKawkabBold else: fKawkab)
   elif st.mono: (if st.bold: fMonoBold else: fMono)
   elif st.w98: (if st.bold: fW98Bold else: fW98)
   elif st.retro: (if st.bold: fRetroBold else: fRetro)
+  elif st.openSans: (if st.bold: fOpenSansBold else: fOpenSans)
   else: (if st.bold: fBold else: fSans)
 
 proc textMatrix(c: Canvas2D; s: string; x, y, maxWidth: float; run: Run): DOMMatrix =

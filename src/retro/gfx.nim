@@ -61,6 +61,10 @@ type
     ufSmooth = "DejaVu Sans"   ## smooth vector text at every size
     ufFile = "Font File"       ## a font from a file (`setUiFontFile`): one of the user's; a
                                ## pixel font is drawn on its grid (crisp, as its bitmaps were)
+    ufFixedsys = "Fixedsys Excelsior" ## Windows' Fixedsys look, 8 x 16 pixels a letter (Darien
+                               ## Valentine's, public domain), monospaced: crisp pixels at
+                               ## 100 % and whole multiples, smooth outlines on HD screens
+    ufOpenSans = "Open Sans"   ## a smooth modern font (SIL OFL 1.1)
 
   Bitmap* = ref object
     ## A picture of any size (a photo, a thumbnail), 0xAARRGGBB per pixel.
@@ -402,17 +406,22 @@ proc patchFill*(i: int; r: Rect; c: Color) =
 
 # ---- Text -------------------------------------------------------------------
 #
-# The UI's text is Retro Sans (the default: lou's MS Sans Serif with Arabic
-# from GNU Unifont) or DejaVu Sans, with the Nerd icons. Retro Sans is drawn
-# from its bitmaps at one pixel per brick (12 device pixels per em: a
-# desktop at 100 %) and from its smoothed outlines at every other size --
-# large text, 125 %, phones, HD and 4K screens -- rendered at the screen's
-# own resolution like DejaVu.
+# The UI's text is MS W98 UI (the default), Kawkab Mono, Retro Sans (lou's
+# MS Sans Serif with Arabic from GNU Unifont), Fixedsys Excelsior, DejaVu
+# Sans, Open Sans or a font from a file, with the Nerd icons. The pixel
+# fonts are drawn on their grids: MS W98 UI's 11 pixels to the em and
+# Fixedsys's 12 fall on whole screen pixels at 100 % and its multiples (on
+# HD screens and in large text, their smoothed HD outlines); Retro Sans is
+# drawn from its bitmaps at one pixel per brick (12 device pixels per em: a
+# desktop at 100 %) and from its smoothed outlines at every other size. The
+# rest is rendered at the screen's own resolution.
 
 proc retro(): bool {.inline.} = uiFontSel == ufRetro
 proc kawkab(): bool {.inline.} = uiFontSel == ufKawkab
 proc user(): bool {.inline.} = uiFontSel == ufFile
 proc w98(): bool {.inline.} = uiFontSel == ufW98
+proc fixedsys(): bool {.inline.} = uiFontSel == ufFixedsys
+proc openSans(): bool {.inline.} = uiFontSel == ufOpenSans
 
 const KawkabScale = 0.95'f32
   ## Kawkab Mono's em next to the others' (its letters are big for their em):
@@ -434,12 +443,18 @@ proc w98hd(em: float32): bool {.inline.} =
   ## (not whole multiples of its pixels), and a line is as wide as at 100 %.
   hdTextOn and em * W98Ratio * float32(pxScale) >= 11 * 1.5
 
+proc fixedsysHd(em: float32): bool {.inline.} =
+  ## Fixedsys Excelsior at `em` drawn from its smoothed outlines: as MS W98
+  ## UI (`w98hd`), where its pixels would be half again as big as the
+  ## screen's, or more.
+  hdTextOn and hasFixedsys() and em * float32(pxScale) >= FixedsysGrid * 1.5
+
 proc gridEm(f: FaceId; em: float32): float32
 
 proc advGrid(f: FaceId): int {.inline.} =
   ## The grid the letters of face `f` start on (in its pixels to the em):
-  ## a pixel font's, and MS W98 UI HD's (its advances are the pixel font's).
-  if isW98HD(f): 11 else: pixelGrid(f)
+  ## a pixel font's, and the HD faces' (their advances are the pixel font's).
+  if isW98HD(f): 11 elif isFixedsysHD(f): pixelGrid(fFixedsys) else: pixelGrid(f)
 
 proc w98hdEm(em: float32): float32 =
   ## The size MS W98 UI HD is drawn at: as big as the other fonts' letters
@@ -453,14 +468,26 @@ proc w98hdEm(em: float32): float32 =
     if abs(g - em) <= em * 0.09'f32: return g
   em
 
+proc fixedsysHdEm(em: float32): float32 =
+  ## The size Fixedsys Excelsior HD is drawn at: `em` (its grid is the UI
+  ## text's 12 to the em), or on whole-pixel scaled screens (2x, 3x) its
+  ## pixel grid when that is within 9 % of it -- every straight edge on a
+  ## pixel.
+  if pxScale >= 2:
+    let g = gridEm(fFixedsys, em)
+    if abs(g - em) <= em * 0.09'f32: return g
+  em
+
 proc uiBase(): FaceId {.inline.} =
   ## The face of the UI's plain text.
-  if w98(): fW98 elif kawkab(): fKawkab elif retro(): fRetro elif user(): fUser else: fSans
+  if w98(): fW98 elif kawkab(): fKawkab elif retro(): fRetro elif user(): fUser
+  elif fixedsys(): fFixedsys elif openSans(): fOpenSans else: fSans
 
 proc metricsFace(f: FaceId): FaceId {.inline.} =
   ## The face whose line (height, baseline) text in face `f` keeps.
   if isW98(f) or isW98HD(f): fW98 elif isKawkab(f): fKawkab elif isRetro(f): fRetro
-  elif isUser(f): fUser else: fSans
+  elif isUser(f): fUser elif isFixedsys(f) or isFixedsysHD(f): fFixedsys
+  elif isOpenSans(f): fOpenSans else: fSans
 
 proc lineK(): float32 = lineFactor(uiBase()) + 0.02
 
@@ -475,7 +502,7 @@ proc kawkabEm(em: float32): float32 =
   px / adv / float32(pxScale)
 
 proc gridEm(f: FaceId; em: float32): float32 =
-  ## A pixel font (MS W98 UI, a font from a file) at `em`: at a whole
+  ## A pixel font (MS W98 UI, Fixedsys, a font from a file) at `em`: at a whole
   ## number of device pixels per its pixel (its edges on the screen's),
   ## nearest to `em`.
   let n = pixelGrid(f)
@@ -499,7 +526,8 @@ proc setTextSize*(em: float) =
   if retro(): textEm = snapRetro(textEm)
   let e = if kawkab(): kawkabEm(textEm)
           elif w98() and w98hd(textEm): w98hdEm(textEm)
-          elif user() or w98(): gridEm(uiBase(), textEm)
+          elif fixedsys() and fixedsysHd(textEm): fixedsysHdEm(textEm)
+          elif user() or w98() or fixedsys(): gridEm(uiBase(), textEm)
           else: textEm
   FontH = max(8, int(round(e * lineK())))
   FontAscent = int(round((float32(FontH) - lineFactor(uiBase()) * e) / 2 +
@@ -518,11 +546,13 @@ proc setUiFont*(f: UiFont) =
   ## Windows 3.1/98 system font, crisp at every scale, with Arabic; it
   ## comes with no licence -- see fonts/NOTICE-MSW98UI.txt), `ufKawkab`
   ## (Kawkab Mono: monospaced Arabic and Latin), `ufRetro` (Retro Sans: the
-  ## Windows 3.1 look, CC BY-SA) or `ufSmooth` (DejaVu Sans).
+  ## Windows 3.1 look, CC BY-SA), `ufFixedsys` (Fixedsys Excelsior: the
+  ## Fixedsys look, 8 x 16 pixels, public domain; Arabic from Unifont),
+  ## `ufSmooth` (DejaVu Sans) or `ufOpenSans` (Open Sans, SIL OFL).
   ## Call it before `app` (or `startApp`) to choose an app's font, or at
   ## any time; `appearanceSettings` lets the user choose, `storeAppearance`
-  ## keeps it. Monospaced text (code, hex) is Kawkab Mono with the first,
-  ## DejaVu Sans Mono with the others.
+  ## keeps it. Monospaced text (code, hex) is Kawkab Mono with Kawkab,
+  ## Fixedsys with Fixedsys, DejaVu Sans Mono with the others.
   if f == uiFontSel: return
   uiFontSel = f
   setTextSize(float(textEm))
@@ -530,11 +560,15 @@ proc setUiFont*(f: UiFont) =
 proc uiFont*(): UiFont = uiFontSel
   ## The font of the UI's text (see `setUiFont`).
 
+const builtinUiFonts* = [ufW98, ufRetro, ufFixedsys, ufKawkab, ufSmooth, ufOpenSans]
+  ## The fonts the kit carries, in the order a menu offers them (`$f` is a
+  ## font's name; a font from a file, `ufFile`, is not one of them).
+
 proc setHdText*(on: bool) =
-  ## MS W98 UI on high-resolution screens and in large text: from its
-  ## smoothed outlines, at exactly the size asked for (`on`, the default),
-  ## or from its pixels, each a block of whole screen pixels -- the look of
-  ## a 1998 screen magnified.
+  ## MS W98 UI and Fixedsys Excelsior on high-resolution screens and in
+  ## large text: from their smoothed outlines, at exactly the size asked
+  ## for (`on`, the default), or from their pixels, each a block of whole
+  ## screen pixels -- the look of a 1998 screen magnified.
   if on == hdTextOn: return
   hdTextOn = on
   setTextSize(float(textEm))
@@ -570,19 +604,24 @@ proc sizeOf(st: TextStyle): float32 {.inline.} =
 
 proc faceOf(st: TextStyle): FaceId {.inline.} =
   if kawkab(): (if st.bold: fKawkabBold else: fKawkab)
+  elif fixedsys():                       # (monospaced itself: its mono too)
+    if fixedsysHd(textEm * sizeOf(st)): (if st.bold: fFixedsysHDBold else: fFixedsysHD)
+    else: (if st.bold: fFixedsysBold else: fFixedsys)
   elif st.mono: (if st.bold: fMonoBold else: fMono)
   elif w98():
     if w98hd(textEm * sizeOf(st)): (if st.bold: fW98HDBold else: fW98HD)
     else: (if st.bold: fW98Bold else: fW98)
   elif user(): (if st.bold: fUserBold else: fUser)
   elif retro(): (if st.bold: fRetroBold else: fRetro)
+  elif openSans(): (if st.bold: fOpenSansBold else: fOpenSans)
   else: (if st.bold: fBold else: fSans)
 
 proc emOf(st: TextStyle; f: FaceId): float32 {.inline.} =
   ## The size text in style `st` (face `f`) is drawn at, logical pixels per em.
   if isKawkab(f): kawkabEm(textEm * sizeOf(st))
-  elif isUser(f) or isW98(f): gridEm(f, textEm * sizeOf(st))
+  elif isUser(f) or isW98(f) or isFixedsys(f): gridEm(f, textEm * sizeOf(st))
   elif isW98HD(f): w98hdEm(textEm * sizeOf(st))
+  elif isFixedsysHD(f): fixedsysHdEm(textEm * sizeOf(st))
   else: textEm * sizeOf(st)
 
 proc flagsOf(st: TextStyle): uint8 =
@@ -600,7 +639,9 @@ proc lineHeight*(st = TextStyle()): int =
   let k = sizeOf(st)
   if k == 1: FontH
   else:
-    let bf = if w98() and w98hd(textEm * k): fW98HD else: uiBase()
+    let bf = if w98() and w98hd(textEm * k): fW98HD
+             elif fixedsys() and fixedsysHd(textEm * k): fFixedsysHD
+             else: uiBase()
     max(4, int(round(emOf(st, bf) * lineK())))
 
 proc glyphIndex(cp: int): int =
@@ -1514,15 +1555,15 @@ proc prepMask(f: FaceId; gid: uint16; size: float32; phase: int;
   ## its slot, or (when another glyph of this frame holds the slot) a copy
   ## of its own in `frameMasks` (-1, -2...). Not on worker threads.
   let sq = uint64(round(size * 4))
-  let key = (uint64(gid) or (uint64(ord(f)) shl 16) or (uint64(phase) shl 20) or
-             (uint64(ord(italic)) shl 22) or (sq shl 23)) + 1
+  let key = (uint64(gid) or (uint64(ord(f)) shl 16) or (uint64(phase) shl 24) or
+             (uint64(ord(italic)) shl 26) or (sq shl 27)) + 1
   let slot = int(((key * 0x9E3779B97F4A7C15'u64) shr 51) and (MaskSlots - 1))
   if maskKeys[slot] == key:
     slotFrame[slot] = frameNo
     return int32(slot)
   let m = face(f).render(int(gid), size, float32(phase) / 4,
-                         if italic: 0.2 else: 0, fitStems = isKawkab(f),
-                         bold = f == fKawkabBold,
+                         if italic: 0.2 else: 0, fitStems = isKawkab(f) or isOpenSans(f),
+                         bold = f in {fKawkabBold, fOpenSansBold},
                          hint = pixelGrid(f) == 0, grid = pixelGrid(f))
   if slotFrame[slot] == frameNo:
     frameMasks.add m
@@ -1572,8 +1613,12 @@ proc prepVText(c: var Cmd) =
                                          ascentFactor(mf) * emDev))
   let x0 = float32(c.r.x * pxScale)
   let brick = emDev / 12
-  let bitmaps = isRetro(f) and abs(brick - 1) < 0.001 and not st.italic
+  # (Retro Sans at one pixel a brick: its bitmaps; Fixedsys's Arabic, at one
+  # pixel a pixel, Unifont's too -- the same 8 x 16 cells)
+  let bitmaps = (isRetro(f) or isFixedsys(f)) and abs(brick - 1) < 0.001 and not st.italic
   let boldDx = max(1, int(round(brick)))
+  # (bold drawn as Windows drew a bitmap font's: again, a pixel to the right)
+  let overstruck = {fRetroAr} + (if hasFixedsys(): {fFixedsysBold, fFixedsysHDBold} else: {})
   let a = prepGlyphs.len
   template one(g: PGlyph) =
     # (a pixel font's letters start on its grid: no drift along a line)
@@ -1595,7 +1640,7 @@ proc prepVText(c: var Cmd) =
       if m.w > 0:
         let my = base - int(round(g.y * emDev)) + m.top
         prepGlyphs.add PrepGlyph(x: int32(ix + m.left), y: int32(my), slot: k)
-        if st.bold and g.face == fRetroAr:
+        if st.bold and g.face in overstruck:
           prepGlyphs.add PrepGlyph(x: int32(ix + m.left + boldDx), y: int32(my), slot: k)
   if not st.rtl and plainAscii(arena.toOpenArray(c.a, c.a + c.b - 1)):
     for g in asciiGlyphs(arena.toOpenArray(c.a, c.a + c.b - 1), f): one(g)

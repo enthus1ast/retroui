@@ -168,6 +168,9 @@ proc importCsv(path: string): int =
     inc result
 
 setScheme(scheme)
+block:
+  var f: UiFont
+  if uiFontOfKey(settings.get("font", ""), f): setUiFont(f)
 
 # ---- pages -----------------------------------------------------------------------
 
@@ -311,6 +314,9 @@ app "Ledger", 820, 560:
         for z in 0 .. 3:
           if menuItem(if z == 0: "&Automatic" else: "&" & $z & "x",
                       checked = z > 0 and zoomLevel() == z): setZoom(z)
+      submenu "F&ont":
+        for f in builtinUiFonts:
+          if menuItem($f, checked = uiFont() == f): setUiFont(f)
     menu "&Help":
       if menuItem("&About Ledger..."): showAbout = true
 
@@ -411,6 +417,7 @@ app "Ledger", 820, 560:
   of 1:
     settings.put("scheme", scheme)
     settings.put("navWidth", navW)
+    settings.put("font", uiFontKey(uiFont()))
     try: saveSettings("retro-ledger", settings)
     except IOError, OSError: discard
     quitApp()

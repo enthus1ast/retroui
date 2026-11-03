@@ -15,7 +15,7 @@ import uirelays/services
 import gfx, busy
 export busy
 
-const RetroVersion* = "0.17.0"
+const RetroVersion* = "0.18.0"
 const
   RetroDeveloper* = "Sultan Al Isaiee"
     ## Who made Retro Nim UI (and its apps): every About box says so.
@@ -257,10 +257,15 @@ type Ctx* = object
   baseEm: float                  ## text size at 100%
   paused*: bool                  ## mobile app in the background
   safe*: tuple[top, left, bottom, right: int]
-    ## margins a notch or system bars cover, in logical pixels
+    ## margins a notch or system bars cover, in logical pixels (and the
+    ## sizing border of the 3.1 frame, `setClassicFrame`)
+  layoutSafe: tuple[top, left, bottom, right: int]   # ... the system's alone
   title*: string                 ## the window's title
-  ownCaption*: bool              ## phones: the app draws its own title bar
-  captionH*: int                 ## its height (0 on the desktop)
+  ownCaption*: bool              ## the app draws its own title bar (phones; the 3.1 frame)
+  captionH*: int                 ## its height (0: none, the system's)
+  ownFrame*: bool                ## desktops: the app draws the window's whole frame, as
+                                 ## Windows 3.1 did (`setClassicFrame`)
+  frameBorder*: int              ## ... its sizing border's width now (0 while maximized)
   pageY*: int                    ## how far the window's content is scrolled
   pageMax*: int                  ## ... at most
   pageOn*: bool                  ## the content is taller than the window
@@ -951,6 +956,30 @@ proc cancelDrag*() =
   ui.drag = DragInfo()
   ui.redraw = true
 
+# ---- files dropped from the system's file manager ----------------------------
+
+var
+  dropFiles: seq[string]       # the files dropped on the window this frame
+  dropAt: Point                # ... where
+
+proc droppedFiles*(): seq[string] = dropFiles
+  ## The files dropped on the window this frame from the system's file
+  ## manager (Explorer, Finder, Nautilus...): their paths. Empty in every
+  ## other frame.
+
+proc dropPoint*(): Point = dropAt
+  ## Where this frame's files were dropped (logical pixels, as `ui.mx`).
+
+proc fileDropTarget*(r: Rect): seq[string] =
+  ## The files dropped this frame inside `r` where nothing covers it (a
+  ## dialog, a menu, another window): a place to drop attachments,
+  ## pictures, documents. Empty in every other frame.
+  if dropFiles.len == 0: return
+  let p = dropAt
+  if r.contains(p) and clipRect().contains(p) and canInput() and
+     (ui.blockers.len == 0 or layer() > 0 or not blocked(p)):
+    result = dropFiles
+
 proc dropTarget*(r: Rect; kind = ""; enabled = true): DropState =
   ## Whether a drag of `kind` is over `r` (draw `r` highlighted) or was
   ## dropped on it this frame (take `ui.drag.items`). Only the first target
@@ -1498,8 +1527,12 @@ proc applyLayout(l: ScreenLayout) =
   ui.w = l.width div zoom
   ui.h = l.height div zoom
   template inset(v: int): int = (max(0, v) + zoom - 1) div zoom
-  ui.safe = (inset(l.safeTop), inset(l.safeLeft), inset(l.safeBottom),
-             inset(l.safeRight))
+  ui.layoutSafe = (inset(l.safeTop), inset(l.safeLeft), inset(l.safeBottom),
+                   inset(l.safeRight))
+  # (and the 3.1 frame's border all round, worked out again by `beginFrame`)
+  let fb = ui.frameBorder
+  ui.safe = (ui.layoutSafe.top + fb, ui.layoutSafe.left + fb,
+             ui.layoutSafe.bottom + fb, ui.layoutSafe.right + fb)
   ui.touch = l.touch or getEnv("RETRO_TOUCH") == "1"
   # (a tablet: its shorter side is 600 dp or more -- the size Android calls
   # sw600dp)
@@ -1611,6 +1644,14 @@ proc pump(waitMs: int) =
     of MouseWheelEvent:
       if e.hasMods: ui.mods = e.mods
       ui.wheel += e.y
+    of FileDropEvent:
+      # (files from the system's file manager: this frame's drop)
+      ui.mx = mirroredX(e.x div zoom)
+      ui.my = e.y div zoom
+      ui.mouseMoved = true
+      dropFiles = e.files
+      dropAt = point(ui.mx, ui.my)
+      break
     of GestureEvent:
       # (two fingers: pinched and moved -- the frame's changes together)
       ui.pinch *= max(0.01, e.scale.float)
@@ -1828,6 +1869,49 @@ var windowIcon*: seq[uint32]
   ## set before `startApp`: `windowIconFromPng` makes it from an app icon.
   ## Empty: the desktop's own.
 
+const retroFrame* {.strdefine.} = "system"
+  ## The window's frame on desktops, chosen when the app is built:
+  ## `-d:retroFrame=classic` draws Windows 3.1's (`setClassicFrame`),
+  ## "system" (the default) keeps the system's own. RETRO_FRAME=classic or
+  ## system, when the app starts, wins over it.
+
+const FrameDesignBorder = 5
+  ## The 3.1 frame's sizing border at 100%: a black line, the gray band, a
+  ## black line.
+
+var
+  frameWanted = retroFrame == "classic"   # (asked for; drawn when it can be)
+  captionEnv = false                       # RETRO_CAPTION=1: the phones' title bar
+
+proc canClassicFrame*(): bool =
+  ## The 3.1 frame can be drawn here: a desktop whose windows can do without
+  ## the system's frame (Windows, X11, macOS -- not Wayland, not phones).
+  not (defined(android) or defined(ios)) and canDrawFrame()
+
+proc setClassicFrame*(on: bool) =
+  ## The window's frame as Windows 3.1 drew it (true): the sizing border and
+  ## the title bar with its control-menu box and its minimize and maximize
+  ## buttons, drawn by the app in a window without the system's frame -- or
+  ## the system's own frame (false). Before `startApp` it is how the window
+  ## opens, after it the window changes. Where it cannot be
+  ## (`canClassicFrame`), the system's frame stays.
+  frameWanted = on
+  if not ui.running: return
+  var now = false
+  if on and canClassicFrame(): now = setSystemFrame(false)
+  elif not on and ui.ownFrame: discard setSystemFrame(true)
+  if now != ui.ownFrame:
+    ui.ownFrame = now
+    ui.ownCaption = defined(android) or defined(ios) or captionEnv or now
+    ui.force = true
+
+proc classicFrame*(): bool = ui.ownFrame
+  ## The 3.1 frame is drawn now (`setClassicFrame`).
+
+proc classicFrameWanted*(): bool = frameWanted
+  ## The 3.1 frame was asked for (by the build, RETRO_FRAME or
+  ## `setClassicFrame`), drawn or not.
+
 proc startApp*(title: string; w, h: int; theme = ui.theme; zoom = 0) =
   ## Open the window. `zoom` forces whole-pixel magnification (0 = the
   ## display's own scale).
@@ -1848,6 +1932,17 @@ proc startApp*(title: string; w, h: int; theme = ui.theme; zoom = 0) =
   let sc = getEnv("RETRO_SCALE")
   if sc.len > 0:
     try: ui.uiScale = clamp(parseInt(sc), 50, 300) except ValueError: discard
+  # the window's frame: the 3.1 one the app draws, or the system's
+  case getEnv("RETRO_FRAME")
+  of "classic": frameWanted = true
+  of "system": frameWanted = false
+  else: discard
+  captionEnv = getEnv("RETRO_CAPTION") == "1"
+  ui.ownFrame = frameWanted and canClassicFrame() and setSystemFrame(false)
+  if ui.ownFrame:
+    # (the frame goes round the size asked for: the app's room stays as big)
+    if w >= 0: w += 2 * FrameDesignBorder
+    if h >= 0: h += 2 * FrameDesignBorder + MenuH + 1
   let l = createWindow(w * max(1, ui.zoomWanted), h * max(1, ui.zoomWanted), icon = windowIcon)
   setWindowTitle(title)
   # (a file there while the GPU is started: a crash then is not repeated)
@@ -1867,8 +1962,7 @@ proc startApp*(title: string; w, h: int; theme = ui.theme; zoom = 0) =
   else: discard
   themeFromEnv()
   ui.title = title
-  ui.ownCaption = defined(android) or defined(ios) or
-                  getEnv("RETRO_CAPTION") == "1"
+  ui.ownCaption = defined(android) or defined(ios) or captionEnv or ui.ownFrame
   applyLayout(l)
   ui.running = true
   ui.prevBottom = ui.h
@@ -1986,6 +2080,7 @@ proc beginFrame*(): bool =
   ui.mnemonic = '\0'
   ui.altTapped = false
   ui.typed.setLen(0)
+  dropFiles.setLen(0)
   ui.closeCancelled = false
   let busy = (ui.redraw or ui.force) and not ui.paused
   let waitMs =
@@ -2075,8 +2170,16 @@ proc beginFrame*(): bool =
   ui.cursor = curArrow
   # a frame asked for (`wakeIn`) still comes when frames ran in between
   if ui.wakeAt <= ui.now: ui.wakeAt = 0
+  # the 3.1 frame: its border is a margin all round (none while maximized),
+  # its title bar and the line under it are over the bars
+  ui.frameBorder = if ui.ownFrame and not windowMaximized(): dp(FrameDesignBorder) else: 0
+  let fb = ui.frameBorder
+  ui.safe = (ui.layoutSafe.top + fb, ui.layoutSafe.left + fb,
+             ui.layoutSafe.bottom + fb, ui.layoutSafe.right + fb)
   ui.bottom = ui.h - ui.safe.bottom
-  ui.captionH = if ui.ownCaption: (if fingers(): CtrlH else: MenuH) else: 0
+  ui.captionH = if ui.ownFrame: MenuH + 1
+                elif ui.ownCaption: (if fingers(): CtrlH else: MenuH)
+                else: 0
   ui.barY = ui.safe.top + ui.captionH
   ui.takesEnter = false
   ui.takesText = false
@@ -2291,7 +2394,8 @@ proc endFrame*() =
   for hook in endFrameHooks: hook()
   # What a key or a click changed late in the frame (after the widgets that
   # show it were drawn) appears on one more frame.
-  if ui.keyUsed or ui.pressed or ui.released or ui.wheelUsed or ui.typed.len > 0:
+  if ui.keyUsed or ui.pressed or ui.released or ui.wheelUsed or ui.typed.len > 0 or
+     dropFiles.len > 0:
     ui.redraw = true
   if ui.drag.active:
     if ui.dragDropping:

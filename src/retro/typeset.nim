@@ -9,10 +9,12 @@
 ## characters the base face lacks come from the other faces: Latin, Greek,
 ## Cyrillic and Arabic from DejaVu Sans, icons from the Nerd Fonts symbols.
 ##
-## Retro Sans (the default UI font) comes as smooth outlines for large text
-## and high-resolution screens (`fRetro`, `fRetroBold`, with Unifont's
-## Arabic in `fRetroAr`); at one pixel per brick the kit draws its bitmaps
-## instead (see `font.nim`).
+## Retro Sans comes as smooth outlines for large text and high-resolution
+## screens (`fRetro`, `fRetroBold`, with Unifont's Arabic in `fRetroAr`);
+## at one pixel per brick the kit draws its bitmaps instead (see
+## `font.nim`). MS W98 UI and Fixedsys Excelsior are pixel fonts as
+## outlines, drawn on their grids, each with a smoothed HD face; Fixedsys's
+## Arabic is Unifont's (`fRetroAr`), Open Sans's DejaVu's.
 
 import std/[tables, unicode, math, locks]
 import ttf, arabicdata, codec
@@ -24,7 +26,11 @@ type
     fKawkab, fKawkabBold,                 ## Kawkab Mono (Arabic and Latin, monospaced)
     fW98, fW98Bold,                       ## MS W98 UI (MS Sans Serif made outlines; on an 11 grid)
     fW98HD, fW98HDBold,                   ## ... its staircases smoothed (large text, HD screens)
-    fUser, fUserBold                      ## a font from a file (`setUserFont`)
+    fUser, fUserBold,                     ## a font from a file (`setUserFont`)
+    fFixedsys, fFixedsysBold,             ## Fixedsys Excelsior (8 x 16 pixels, on a 12 grid; the
+                                          ## bold is the regular, drawn twice a pixel apart)
+    fFixedsysHD, fFixedsysHDBold,         ## ... its staircases smoothed (large text, HD screens)
+    fOpenSans, fOpenSansBold              ## Open Sans
 
   PGlyph* = object
     face*: FaceId
@@ -38,9 +44,9 @@ type
     rtl*: bool               ## the text reads right to left
 
 const
-  # the fonts, zlib-compressed (tools/genfonts.py, tools/genretro.py): 590 KB
-  # of TrueType take 325 KB in every app, and are unpacked when a face is
-  # first used
+  # the fonts, zlib-compressed (tools/genfonts.py, genretro.py, genkawkab.py,
+  # genw98hd.py, genfixedsys.py, genopensans.py): 2.4 MB of TrueType take
+  # 1 MB in every app, and are unpacked when a face is first used
   fontPacked: array[FaceId, string] = [
     staticRead("fonts/Sans.ttf.z"), staticRead("fonts/SansBold.ttf.z"),
     staticRead("fonts/Mono.ttf.z"), staticRead("fonts/MonoBold.ttf.z"),
@@ -51,10 +57,20 @@ const
     (when defined(retroNoW98): "" else: staticRead("fonts/MSW98UI.ttf.z")),
     (when defined(retroNoW98): "" else: staticRead("fonts/MSW98UIBold.ttf.z")),
     (when defined(retroNoW98): "" else: staticRead("fonts/MSW98UIHD.ttf.z")),
-    (when defined(retroNoW98): "" else: staticRead("fonts/MSW98UIHDBold.ttf.z")), "", ""]
+    (when defined(retroNoW98): "" else: staticRead("fonts/MSW98UIHDBold.ttf.z")), "", "",
+    (when defined(retroNoFixedsys): "" else: staticRead("fonts/FixedsysExcelsior.ttf.z")), "",
+    (when defined(retroNoFixedsys): "" else: staticRead("fonts/FixedsysExcelsiorHD.ttf.z")), "",
+    (when defined(retroNoOpenSans): "" else: staticRead("fonts/OpenSans.ttf.z")),
+    (when defined(retroNoOpenSans): "" else: staticRead("fonts/OpenSansBold.ttf.z"))]
     ## (MS W98 UI has no licence: see fonts/NOTICE-MSW98UI.txt; -d:retroNoW98
     ## leaves it out, Retro Sans standing in. -d:retroNoKawkab leaves Kawkab
-    ## Mono out, DejaVu Sans Mono standing in: for the smallest programs)
+    ## Mono out, DejaVu Sans Mono standing in; -d:retroNoFixedsys Fixedsys
+    ## Excelsior, DejaVu Sans Mono standing in; -d:retroNoOpenSans Open Sans,
+    ## DejaVu Sans standing in: for the smallest programs)
+  FixedsysGrid* = 12
+    ## Fixedsys Excelsior's pixels to the em: at 12 pixels per em (100 %) one
+    ## of its pixels is one of the screen's, its line 16 (13 above the
+    ## baseline, 3 below)
   IconCell = 1.25'f32        ## icons sit centered in cells this many ems wide
   TabStops = 4               ## a tab is this many spaces wide
 
@@ -64,11 +80,31 @@ var
   asciiAdv: array[FaceId, array[128, float32]]
   asciiKern: array[FaceId, seq[float32]]   ## 96 x 96 pairs of 32..127, in ems
   runCache, rtlCache: array[FaceId, Table[string, Run]]
-  grids: array[FaceId, int] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, -1, -1]
-    ## a pixel font's pixels per em (0: not one; -1: not known yet)
+  grids: array[FaceId, int] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, -1, -1,
+                               0, 0, 0, 0, 0, 0]
+    ## a pixel font's pixels per em (0: not one; -1: not known yet; Fixedsys:
+    ## `FixedsysGrid`)
 
 var unpackLock: Lock
 initLock(unpackLock)
+
+proc hasFixedsys*(): bool = not defined(retroNoFixedsys)
+  ## Fixedsys Excelsior is built in (not left out with -d:retroNoFixedsys).
+
+proc hasOpenSans*(): bool = not defined(retroNoOpenSans)
+  ## Open Sans is built in (not left out with -d:retroNoOpenSans).
+
+proc dataOf(id: FaceId): FaceId {.inline.} =
+  ## The face whose font file face `id` is drawn from: itself, but for
+  ## Fixedsys's bold (its regular) and the faces left out of the program
+  ## (the ones standing in for them).
+  case id
+  of fFixedsys, fFixedsysHD: (if hasFixedsys(): id else: fMono)
+  of fFixedsysBold: (if hasFixedsys(): fFixedsys else: fMonoBold)
+  of fFixedsysHDBold: (if hasFixedsys(): fFixedsysHD else: fMonoBold)
+  of fOpenSans: (if hasOpenSans(): id else: fSans)
+  of fOpenSansBold: (if hasOpenSans(): id else: fBold)
+  else: id
 
 proc unpack(id: FaceId) =
   if id in {fUser, fUserBold} and fontFiles[id].len == 0:
@@ -99,12 +135,19 @@ proc faceBytes*(id: FaceId): string =
   ## of its own (faces are not shared between threads).
   {.cast(gcsafe).}:
     withLock unpackLock:
-      unpack(id)
-      result = fontFiles[id]
+      unpack(dataOf(id))
+      result = fontFiles[dataOf(id)]
 
 proc face*(id: FaceId): Face =
   ## The parsed face `id` (parsed on first use).
   if faces[id] == nil:
+    let d = dataOf(id)
+    if d != id:
+      # (drawn from another face's file: that face, shared)
+      faces[id] = face(d)
+      asciiAdv[id] = asciiAdv[d]
+      asciiKern[id] = asciiKern[d]
+      return faces[id]
     withLock unpackLock: unpack(id)
     faces[id] = parseFace(fontFiles[id])
     let f = faces[id]
@@ -138,6 +181,15 @@ proc isW98HD*(id: FaceId): bool {.inline.} = id in {fW98HD, fW98HDBold}
 proc hasW98*(): bool = not defined(retroNoW98)
   ## MS W98 UI is built in (not left out with -d:retroNoW98).
 
+proc isFixedsys*(id: FaceId): bool {.inline.} = id in {fFixedsys, fFixedsysBold}
+  ## A face of Fixedsys Excelsior (its pixels).
+
+proc isFixedsysHD*(id: FaceId): bool {.inline.} = id in {fFixedsysHD, fFixedsysHDBold}
+  ## A face of Fixedsys Excelsior HD (its smoothed outlines).
+
+proc isOpenSans*(id: FaceId): bool {.inline.} = id in {fOpenSans, fOpenSansBold}
+  ## A face of Open Sans.
+
 proc setUserFont*(regular: string; bold = "") =
   ## The font from a file (TrueType bytes; `bold` its bold, when it has
   ## one): the faces `fUser` and `fUserBold`. Raises `FontError` when it
@@ -163,6 +215,7 @@ proc pixelGrid*(id: FaceId): int =
   ## A pixel font's pixels per em: its letters are drawn on a grid (the
   ## bitmap fonts of old, made outlines), so at that size -- or twice,
   ## three times it -- every edge falls on a pixel; 0 when it is not one.
+  if isFixedsys(id): return (if hasFixedsys(): FixedsysGrid else: 0)
   if not (isUser(id) or isW98(id)): return 0
   if grids[id] >= 0 and faces[id] != nil: return grids[id]
   let f = face(id)
@@ -578,6 +631,13 @@ proc fallbacks(base: FaceId): array[4, FaceId] =
   of fW98HDBold: [fW98HDBold, fW98HD, fRetroAr, fBold]
   of fUser: [fUser, fRetroAr, fSans, fIcons]
   of fUserBold: [fUserBold, fUser, fRetroAr, fBold]
+  # (Fixedsys's Arabic: Unifont's, the same 8 x 16 cell; Open Sans's: DejaVu's)
+  of fFixedsys: [fFixedsys, fRetroAr, fSans, fIcons]
+  of fFixedsysBold: [fFixedsysBold, fRetroAr, fBold, fIcons]
+  of fFixedsysHD: [fFixedsysHD, fRetroAr, fSans, fIcons]
+  of fFixedsysHDBold: [fFixedsysHDBold, fRetroAr, fBold, fIcons]
+  of fOpenSans: [fOpenSans, fSans, fIcons, fOpenSans]
+  of fOpenSansBold: [fOpenSansBold, fBold, fIcons, fOpenSansBold]
 
 proc pick(base: FaceId; cp: int): (FaceId, int) =
   if (cp in 0xE000 .. 0xF8FF or cp in 0xF0000 .. 0xFFFFD) and base != fIcons:
@@ -749,5 +809,5 @@ proc fontData*(id: FaceId): lent string =
   ## Sans Bold, Sans Mono, Sans Mono Bold, the icons) -- for code that
   ## embeds the glyphs elsewhere (`retro/pdf` puts their outlines into PDF
   ## files). The same bytes the screen uses: nothing is copied.
-  unpack(id)
-  fontFiles[id]
+  unpack(dataOf(id))
+  fontFiles[dataOf(id)]
