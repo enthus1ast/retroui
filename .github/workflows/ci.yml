@@ -47,7 +47,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p build
-          for app in hello gallery notepad ledger filemanager charts invoice native photo retroboard magazine; do
+          for app in hello gallery notepad ledger filemanager charts invoice native photo retroboard magazine mail; do
             nim c -d:release --hints:off -o:build/$app examples/$app.nim
           done
       - name: Tools

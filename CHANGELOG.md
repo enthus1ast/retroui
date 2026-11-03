@@ -1,5 +1,54 @@
 # Changes
 
+## 0.17.0
+
+- **Retro Mail 1.0** (`examples/mail.nim`, `nimble mail`): Outlook Express 4
+  to look at and to use, with what the new Outlook does, for Microsoft 365,
+  Outlook.com and Gmail. Signed in in the browser (the services' own pages:
+  no password typed here, the tokens kept encrypted); Microsoft Graph and
+  the Gmail API only, through app registrations of your own (the Add
+  Account Wizard says where to make them, `docs/retromail.md` step by
+  step). Everything is kept in a local SQLite store: the list opens at
+  once, search answers offline in milliseconds (`from:`, `tag:`, `is:`,
+  `has:attachment`, `before:`), and changes made offline go out later.
+  The start page, the Outlook bar, the folder tree with sub-folders and
+  unread counts, the contacts pane, threads with + and - boxes (your
+  replies in Sent Items in them), Focused and Other, tags in their colors
+  (Outlook categories, Gmail labels), flags, pin, snooze, quick replies,
+  rich text writing with signatures for new mail and for replies (a reply
+  written in Outlook's blue, as it used to be; Options turns it off), send
+  later, attachments of any size (Graph's upload sessions), the calendar,
+  people, to do, notes, Tools > Options in OE's tabs, a phone layout where
+  a message swipes right to archive and left to delete. Pictures from the
+  web wait until asked. `tests/test_mail.nim` runs the engine against
+  `tests/mailmock.py`, a stand-in for both sign-ins, Graph and Gmail.
+- **New modules** (imported on their own: `import retro/http`):
+  - `http`: requests from any thread -- WinHTTP on Windows, libcurl (or the
+    curl command) elsewhere, Java's HTTP on Android (PATCH too).
+  - `oauth`: OAuth 2.0 in the system browser with PKCE and a loopback
+    redirect; Microsoft and Google ready; refresh; the id token's claims.
+  - `secrets`: tokens kept safe -- DPAPI, the keychain, libsecret, else an
+    encrypted file.
+  - `sha2`: SHA-256 and HMAC.
+  - `db`: SQLite 3.54 compiled in, with FTS5 and an Arabic-aware folding
+    for search; prepared statements kept, transactions that nest.
+  - `mime`: mail messages read and written -- multipart, charsets
+    (Arabic's windows-1256 and ISO-8859-6 among them), encoded words,
+    RFC 2231 file names, addresses, dates.
+  - `richedit`: a rich text editor that reads and writes HTML -- bold,
+    italic, colors, sizes, lists, quotes, links, undo, the clipboard,
+    Arabic paragraphs, a ready tool bar; `base`, the look of what is typed
+    on an empty line (a reply's blue).
+- **The HTML view reads mail.** `htmlView` / `htmlBlock` have a layout
+  engine of their own (`htmldom`, `htmlcss`, `htmllayout`): style sheets
+  and inline styles, tables as newsletters nest them, hidden preheaders
+  left hidden, quotes as mail clients draw them, right to left,
+  pictures through the app (`images`: cid: and the web only when allowed),
+  selection and copying, `htmlToText`. No script, no network; a 200 KB
+  newsletter lays out in about 15 ms.
+- `tools/android/build_dex.sh` writes the dex in groups (a single long
+  chain made the compiler crash).
+
 ## 0.16.3
 
 - **uirelays is the code of the `uirelays` branch.** That branch is

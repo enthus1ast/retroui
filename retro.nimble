@@ -2,7 +2,7 @@ import std/strutils
 
 # Package
 
-version       = "0.16.3"
+version       = "0.17.0"
 author        = "Sultan Al Isaiee (@foxoman) <sultan@foxoman.net>"
 description   = "Retro Nim UI: a small, fast, dependency-free Windows 3.1 style UI toolkit for business and desktop apps on Windows, macOS, Linux, Android and iOS"
 license       = "MIT"
@@ -43,7 +43,7 @@ task test, "Run the headless tests":
             "test_scroll", "test_apk", "test_xlsx", "test_letters", "test_photo",
             "test_parallel", "test_textengine", "test_photomore", "test_photopro", "test_photoapp",
             "test_photomerge", "test_icc", "test_brushfiles", "test_raw", "test_brushes",
-            "test_adobefiles", "test_deep", "test_gpu", "test_rsa", "test_morecontrols", "test_neural", "test_photopdf", "test_pdfread", "test_googlefonts", "test_filecolumns", "test_blendfast", "test_dock", "test_presets", "test_photocc", "test_photoartistic", "test_photohdr", "test_channelspanel", "test_photodeep", "test_photoanim", "test_photovp", "test_photosvg", "test_otshape", "test_icccmyk", "test_webp", "test_exrgif", "test_rawformats", "test_rscript", "test_psdround", "test_phototemplates", "test_gpucomposite", "test_penmap", "test_systemimage", "test_qrcode", "test_videoenc", "test_jxl", "test_assetstore", "test_svgimport", "test_morepictures", "test_memcache", "test_memsoak", "test_filespeed", "test_filesapp", "test_bigpicture", "test_edgetrace", "test_board", "test_boardapp"]:
+            "test_adobefiles", "test_deep", "test_gpu", "test_rsa", "test_morecontrols", "test_neural", "test_photopdf", "test_pdfread", "test_googlefonts", "test_filecolumns", "test_blendfast", "test_dock", "test_presets", "test_photocc", "test_photoartistic", "test_photohdr", "test_channelspanel", "test_photodeep", "test_photoanim", "test_photovp", "test_photosvg", "test_otshape", "test_icccmyk", "test_webp", "test_exrgif", "test_rawformats", "test_rscript", "test_psdround", "test_phototemplates", "test_gpucomposite", "test_penmap", "test_systemimage", "test_qrcode", "test_videoenc", "test_jxl", "test_assetstore", "test_svgimport", "test_morepictures", "test_memcache", "test_memsoak", "test_filespeed", "test_filesapp", "test_bigpicture", "test_edgetrace", "test_board", "test_boardapp", "test_http", "test_oauth", "test_secrets", "test_db", "test_mime", "test_htmlmail", "test_richedit", "test_mail"]:
     exec "nim c -r --hints:off tests/" & t & ".nim"
 
 task fuzz, "Feed damaged files to the decoders and random input to the widgets":
@@ -93,28 +93,31 @@ const RetroApps: seq[RetroApp] = @[
   (key: "board", src: "examples/retroboard.nim", name: "Retro Board", stem: "RetroBoard",
    id: "org.retro.board", version: "1.3.1", icon: "examples/assets/board-icon-512.png",
    apk: "--storage --nim:-d:lto", code: 5, small: true),
+  (key: "mail", src: "examples/mail.nim", name: "Retro Mail", stem: "RetroMail",
+   id: "org.retro.mail", version: "1.0.0", icon: "examples/assets/mail-icon-512.png",
+   apk: "--permission:INTERNET --nim:-d:lto", code: 1, small: false),
   (key: "gallery", src: "examples/gallery.nim", name: "Retro Gallery", stem: "RetroGallery",
-   id: "org.retro.gallery", version: "0.16.3", icon: "examples/assets/gallery-icon.png",
-   apk: "--permission:INTERNET --permission:VIBRATE --nim:-d:lto --nim:--opt:size", code: 163, small: true),
+   id: "org.retro.gallery", version: "0.17.0", icon: "examples/assets/gallery-icon.png",
+   apk: "--permission:INTERNET --permission:VIBRATE --nim:-d:lto --nim:--opt:size", code: 170, small: true),
   # the small examples (the gallery's icon)
   (key: "notepad", src: "examples/notepad.nim", name: "Retro Notepad", stem: "RetroNotepad",
-   id: "org.retro.notepad", version: "0.16.3", icon: "examples/assets/gallery-icon.png",
-   apk: "--storage --nim:-d:lto --nim:--opt:size", code: 163, small: true),
+   id: "org.retro.notepad", version: "0.17.0", icon: "examples/assets/gallery-icon.png",
+   apk: "--storage --nim:-d:lto --nim:--opt:size", code: 170, small: true),
   (key: "ledger", src: "examples/ledger.nim", name: "Retro Ledger", stem: "RetroLedger",
-   id: "org.retro.ledger", version: "0.16.3", icon: "examples/assets/gallery-icon.png",
-   apk: "--nim:-d:lto --nim:--opt:size", code: 163, small: true),
+   id: "org.retro.ledger", version: "0.17.0", icon: "examples/assets/gallery-icon.png",
+   apk: "--nim:-d:lto --nim:--opt:size", code: 170, small: true),
   (key: "charts", src: "examples/charts.nim", name: "Retro Charts", stem: "RetroCharts",
-   id: "org.retro.charts", version: "0.16.3", icon: "examples/assets/gallery-icon.png",
-   apk: "--storage --nim:-d:lto --nim:--opt:size", code: 163, small: true),
+   id: "org.retro.charts", version: "0.17.0", icon: "examples/assets/gallery-icon.png",
+   apk: "--storage --nim:-d:lto --nim:--opt:size", code: 170, small: true),
   (key: "invoice", src: "examples/invoice.nim", name: "Retro Invoice", stem: "RetroInvoice",
-   id: "org.retro.invoice", version: "0.16.3", icon: "examples/assets/gallery-icon.png",
-   apk: "--storage --nim:-d:lto --nim:--opt:size", code: 163, small: true),
+   id: "org.retro.invoice", version: "0.17.0", icon: "examples/assets/gallery-icon.png",
+   apk: "--storage --nim:-d:lto --nim:--opt:size", code: 170, small: true),
   (key: "native", src: "examples/native.nim", name: "Retro Native", stem: "RetroNative",
-   id: "org.retro.native", version: "0.16.3", icon: "examples/assets/gallery-icon.png",
-   apk: "--permission:VIBRATE --nim:-d:lto --nim:--opt:size", code: 163, small: true),
+   id: "org.retro.native", version: "0.17.0", icon: "examples/assets/gallery-icon.png",
+   apk: "--permission:VIBRATE --nim:-d:lto --nim:--opt:size", code: 170, small: true),
   (key: "hello", src: "examples/hello.nim", name: "Retro Hello", stem: "RetroHello",
-   id: "org.retro.hello", version: "0.16.3", icon: "examples/assets/gallery-icon.png",
-   apk: "--nim:-d:lto --nim:--opt:size", code: 163, small: true)]
+   id: "org.retro.hello", version: "0.17.0", icon: "examples/assets/gallery-icon.png",
+   apk: "--nim:-d:lto --nim:--opt:size", code: 170, small: true)]
 
 proc app(key: string): RetroApp =
   for a in RetroApps:
@@ -186,6 +189,15 @@ task magazine, "Make the sample magazine with Retro Photo's engine (build/magazi
 
 task board, "Build and run Retro Board, the whiteboard":
   exec "nim c -r -d:release examples/retroboard.nim"
+
+task mail, "Build and run Retro Mail, the mail program (Microsoft 365, Outlook.com, Gmail)":
+  exec "nim c -r -d:release examples/mail.nim"
+
+task mailapk, "Build Retro Mail as an Android APK (build/RetroMail.apk)":
+  apkOf(app("mail"))
+
+task mailexe, "Retro Mail for Windows from Linux or macOS (needs MinGW: x86_64-w64-mingw32-gcc)":
+  exeOf(app("mail"))
 
 task photoapk, "Build Retro Photo as an Android APK (build/RetroPhoto.apk)":
   apkOf(app("photo"))

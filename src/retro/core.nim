@@ -15,7 +15,7 @@ import uirelays/services
 import gfx, busy
 export busy
 
-const RetroVersion* = "0.16.3"
+const RetroVersion* = "0.17.0"
 const
   RetroDeveloper* = "Sultan Al Isaiee"
     ## Who made Retro Nim UI (and its apps): every About box says so.

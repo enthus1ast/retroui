@@ -125,6 +125,7 @@ nimble invoice        # an invoice from an HTML template: preview, PDF, printing
 nimble charts         # Chart Viewer: a CSV file as charts, saved as PNG
 nimble photo          # Retro Photo, the image editor
 nimble board          # Retro Board, the whiteboard
+nimble mail           # Retro Mail: Microsoft 365, Outlook.com and Gmail (mailexe, mailapk)
 nimble apk            # Retro Files as an Android APK (build/RetroFiles.apk)
 nimble photoapk       # Retro Photo as an APK (photoinstall: build and adb install)
 nimble galleryapk     # the gallery as an APK
@@ -985,6 +986,37 @@ app "Canvas", 420, 320:
 
 `canvas(w, h)` is the simpler, faster alternative for pixel-exact 3.1
 drawing (`fill`, `box`, `line`, `text`, `disc`, `polygon`…).
+
+## Mail
+
+![Retro Mail: All Inboxes in threads, tags, the conversation in the preview pane](docs/mail.png)
+
+`examples/mail.nim` is **Retro Mail 1.0**: Outlook Express 4 to look at and to
+use, with what the new Outlook does, for Microsoft 365, Outlook.com and Gmail.
+It is the toolkit's network modules at work:
+
+- `retro/oauth` signs in in the system browser (OAuth 2.0, PKCE, a loopback
+  address) and `retro/secrets` keeps the tokens (DPAPI, the keychain,
+  libsecret): no password is ever typed into the app.
+- `retro/http` talks to Microsoft Graph and the Gmail API from the sync
+  thread (WinHTTP, libcurl, Java's HTTP on Android).
+- `retro/db` keeps every message in SQLite with a full-text index: search
+  is offline and instant; `retro/mime` reads and writes the messages.
+- `htmlView` draws the mail -- newsletters' nested tables and styles,
+  hidden preheaders, quotes, Arabic -- with no browser and no script;
+  pictures from the web wait until asked.
+- `retro/richedit` writes it: bold, colors, lists, quotes, links,
+  signatures.
+
+Threads with + and - boxes, Focused and Other, tags in their colors,
+flags, pin, snooze, quick replies, send later, the calendar, people, to do
+and notes; on a phone, swipe a message right to archive it, left to delete
+it. Each account uses an app registration of your own: `docs/retromail.md`
+says how, step by step.
+
+| | |
+|---|---|
+| ![Retro Mail's start page and Add Account Wizard](docs/mail-wizard.png) | ![Retro Mail on a phone, a message swiped](docs/mail-phone.png) |
 
 ## Whiteboard
 

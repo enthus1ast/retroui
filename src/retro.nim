@@ -37,6 +37,19 @@
 ## `platform`        settings, places, open / share, the clipboard, storage
 ## ================  ==========================================================
 ##
+## Imported on their own (`import retro/http`), as they bring a C library
+## or a thread of their own:
+##
+## ================  ==========================================================
+## `http`            web requests from any thread: WinHTTP, libcurl, Java
+## `oauth`           signing in in the system browser (OAuth 2.0, PKCE)
+## `secrets`         tokens kept safe: DPAPI, the keychain, libsecret
+## `db`              SQLite (compiled in) with full-text search
+## `mime`            mail messages: reading, writing, charsets, addresses
+## `richedit`        a rich text editor that reads and writes HTML
+## `vault`, `rsa`    encryption with a password, RSA keys
+## ================  ==========================================================
+##
 ## .. code-block:: nim
 ##   import retro
 ##   var name = "World"
