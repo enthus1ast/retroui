@@ -81,7 +81,9 @@ proc decodePng*(data: string; hi: ptr seq[uint16] = nil): Bitmap =
   let most = (w * channels * depth + 7) div 8 * h + 2 * h + 64 * (w + h) + 1024
   var raw = try: zlibDecompress(idat, most)
             except InflateError as e: fail("PNG data: " & e.msg)
-  idat = @[]
+  # (let go of now, before the pixels are made -- not `idat = @[]`: Nim
+  # 2.2 made that a bare overwrite here, and every PNG read leaked its data)
+  reset(idat)
   result = newBitmap(w, h)
   let deep = depth == 16 and hi != nil and ctype != 3
   if hi != nil: hi[] = (if deep: newSeq[uint16](w * h * 4) else: @[])

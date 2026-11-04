@@ -1408,7 +1408,7 @@ proc markdownView*(md: string; height = -1; w = 0; baseDir = "";
   ui.lastRect = r
 
 proc toggleTask*(md: var string; index: int) =
-  ## Ticks (or clears) task box number `index` ("- [ ]" / "- [x]") in `md`.
+  ## Ticks (or clears) task box number `index` (``- [ ]`` / ``- [x]``) in `md`.
   var n = 0
   var pos = 0
   for line in md.split('\n'):

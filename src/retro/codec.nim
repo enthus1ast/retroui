@@ -301,12 +301,18 @@ proc deflateBlocks(w: var BitWriter; data: openArray[byte]; level: int; final: b
       let h = hashAt(i)
       pp[i and (Window - 1)] = hp[h]
       hp[h] = int32(i)
+  template load8(i: int): uint64 =
+    # (copied, not read through a uint64 pointer: any byte offset is
+    # unaligned, undefined behaviour in C; it is still one load)
+    var v: uint64
+    copyMem(addr v, addr data[i], 8)
+    v
   template matchLen(a, b, maxLen: int): int =
     ## how many bytes at `a` and `b` are the same (at most `maxLen`)
     var l = 0
     var going = true
     while going and l + 8 <= maxLen:
-      let x = cast[ptr uint64](addr data[a + l])[] xor cast[ptr uint64](addr data[b + l])[]
+      let x = load8(a + l) xor load8(b + l)
       if x != 0:
         l += countTrailingZeroBits(x) shr 3
         going = false

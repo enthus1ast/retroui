@@ -1319,7 +1319,12 @@ proc funnelChart(labels: openArray[string]; ser: openArray[Series]; o: ChartOpts
     return
   let first = s.val(idx[0])
   # the stages' texts in a column at the right when there is room
-  var texts, shorter, shortest: seq[string]
+  # (each given a value where declared: filled only in the loop, Nim 2.2
+  # took `texts = shorter` below for a first value and never freed the
+  # texts it held -- a leak every frame)
+  var texts = newSeqOfCap[string](idx.len)
+  var shorter = newSeqOfCap[string](idx.len)
+  var shortest = newSeqOfCap[string](idx.len)
   var widest = 0
   for i in idx:
     let name = if i < labels.len: labels[i] else: ""

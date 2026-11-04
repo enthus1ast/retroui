@@ -175,7 +175,7 @@ proc propertiesDialog() =
           label "The Internet headers for this message:"
           if propsError.len > 0: paragraph propsError
           elif propsSource.len == 0: label "Getting them from the server..."
-          else: editArea(propsHeaders, lines = 12, wrap = false)
+          else: editArea(propsHeaders, lines = 12, wrap = false, readOnly = true)
           row:
             if button("Message &Source...", enabled = propsSource.len > 0, w = dp(150)):
               sourceOpen = true
@@ -188,7 +188,8 @@ proc propertiesDialog() =
     dialog sourceOpen, subject & " - Message Source", w:
       if propsError.len > 0: paragraph propsError
       elif propsSource.len == 0: label "Getting the message from the server..."
-      else: editArea(propsSource, lines = max(8, (ui.h - dp(170)) div lineHeight()), wrap = false)
+      else: editArea(propsSource, lines = max(8, (ui.h - dp(170)) div lineHeight()), wrap = false,
+                     readOnly = true)
       row:
         if button("&Copy All", enabled = propsSource.len > 0, w = dp(100)):
           putClipboardText(propsSource)

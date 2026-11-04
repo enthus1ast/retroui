@@ -1639,7 +1639,9 @@ proc dpiFromMonitor(): int =
   ## 0 when that cannot be had or makes no sense (projectors say 0 mm).
   let lib = loadLib("libXrandr.so.2")
   if lib == nil: return 0
-  defer: unloadLib(lib)
+  # (never unloaded: its first call hooks RandR -- through libXext -- into
+  # the display, and XCloseDisplay calls those hooks; with the libraries
+  # gone it jumped into whatever was mapped there since and crashed)
   type
     GetRes = proc (d: pointer; w: XID): ptr XRRScreenResources {.cdecl.}
     GetPrimary = proc (d: pointer; w: XID): culong {.cdecl.}
@@ -2739,10 +2741,19 @@ proc x11DragFilesOut(paths: seq[string]; move, backInside: bool): DragOutResult 
 
 proc x11QuitRequest() =
   if gDisplay != nil:
+    # (the fonts still open closed first: the table that holds them is
+    # let go of as the program ends, and they were lost -- leaks)
+    for font in fonts.mitems:
+      if font.xftFont != nil: XftFontClose(gDisplay, font.xftFont)
+      font.xftFont = nil
     if gXic != nil: XDestroyIC(gXic)
     if gXim != nil: discard XCloseIM(gXim)
     discard XDestroyWindow(gDisplay, gWindow)
     discard XCloseDisplay(gDisplay)
+    # (once: a second call finds nothing left to close)
+    gXic = nil
+    gXim = nil
+    gDisplay = nil
 
 
 # ---- Init ----

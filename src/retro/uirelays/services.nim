@@ -69,6 +69,14 @@ type
     active*: proc (): bool {.nimcall.}
       ## The window is the one in front, taking the keyboard: its title bar
       ## is drawn in the active colors.
+    menuItem*: proc (label: string; checked: bool) {.nimcall.}
+      ## One item of the app's own in the menu of the system's frame
+      ## (Windows: the system menu -- the title bar's icon, Alt+Space), with
+      ## `label` ("&" before the access key) and a check mark when `checked`;
+      ## "" takes it away. Set before `createWindow`, it is added with the
+      ## window. `menuItemChosen` tells when the user picks it.
+    menuItemChosen*: proc (): bool {.nimcall.}
+      ## The item of `menuItem` was picked since the last call (once).
 
   DragOutResult* = enum
     ## How a drag of files out of the window ended (`startFileDragOut`).
@@ -340,6 +348,17 @@ proc windowMaximized*(): bool =
 proc windowActive*(): bool =
   ## The window is the one in front (true where the driver cannot tell).
   frameRelays.active == nil or frameRelays.active()
+proc canFrameMenuItem*(): bool = frameRelays.menuItem != nil
+  ## The menu of the system's frame can take an item of the app's here.
+proc setFrameMenuItem*(label: string; checked = false): bool {.discardable.} =
+  ## The app's item in the menu of the system's frame (see
+  ## `FrameRelays.menuItem`); false where there is no such menu.
+  if frameRelays.menuItem == nil: return false
+  frameRelays.menuItem(label, checked)
+  true
+proc frameMenuItemChosen*(): bool =
+  ## The item of `setFrameMenuItem` was picked since the last call.
+  frameRelays.menuItemChosen != nil and frameRelays.menuItemChosen()
 
 var fileDragRelays*: FileDragRelays
   ## Filled by the desktop drivers that can drag files out of the window

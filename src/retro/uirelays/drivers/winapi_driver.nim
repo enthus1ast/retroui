@@ -278,6 +278,10 @@ const
   WM_SYSCOMMAND = 0x0112'u32
   SC_SIZE = 0xF000'u32
   SC_MOVE = 0xF010'u32
+  MF_SEPARATOR = 0x0800'u32
+  MF_CHECKED = 0x0008'u32
+  IDM_APP_SEP = 0x0300'u      # (the app's item in the system menu, and the line
+  IDM_APP_ITEM = 0x0310'u     # over it: ids under 0xF000, low four bits clear)
   HTCAPTION = 2'u
   HTLEFT = 10'u
   HTRIGHT = 11'u
@@ -333,6 +337,15 @@ proc GlobalSize(hMem: HGLOBAL): uint
   {.stdcall, dynlib: "kernel32", importc.}
 
 proc RegisterClassExW(lpwcx: ptr WNDCLASSEXW): ATOM
+  {.stdcall, dynlib: "user32", importc.}
+proc GetSystemMenu(hWnd: HWND; bRevert: BOOL): HMENU
+  {.stdcall, dynlib: "user32", importc.}
+proc AppendMenuW(hMenu: HMENU; uFlags: UINT; uIDNewItem: uint; lpNewItem: ptr uint16): BOOL
+  {.stdcall, dynlib: "user32", importc.}
+proc ModifyMenuW(hMnu: HMENU; uPosition, uFlags: UINT; uIDNewItem: uint;
+                 lpNewItem: ptr uint16): BOOL
+  {.stdcall, dynlib: "user32", importc.}
+proc DeleteMenu(hMenu: HMENU; uPosition, uFlags: UINT): BOOL
   {.stdcall, dynlib: "user32", importc.}
 proc CreateWindowExW(dwExStyle: DWORD; lpClassName, lpWindowName: ptr uint16;
   dwStyle: DWORD; x, y, nWidth, nHeight: int32;
@@ -860,6 +873,38 @@ proc workArea(hwnd: HWND): tuple[monitor, work: WINAPIRECT] =
 
 proc styleWord(style: uint32): int {.inline.} = cast[int](uint(style))
 
+# ---- the app's item in the system menu ----
+var
+  gMenuLabel = ""              # the app's item in the system menu ("" none)
+  gMenuChecked = false
+  gMenuAdded = false           # ... is in the window's menu
+  gMenuChosen = false          # ... was picked (told once)
+
+proc winMenuItem(label: string; checked: bool) =
+  gMenuLabel = label
+  gMenuChecked = checked
+  if gHwnd == nil: return      # (added with the window)
+  let m = GetSystemMenu(gHwnd, 0)
+  if m == nil: return
+  if label.len == 0:
+    if gMenuAdded:
+      discard DeleteMenu(m, UINT(IDM_APP_ITEM), 0)
+      discard DeleteMenu(m, UINT(IDM_APP_SEP), 0)
+      gMenuAdded = false
+    return
+  let w = newWideCString(label)
+  let flags = if checked: MF_CHECKED else: 0'u32
+  if gMenuAdded:
+    discard ModifyMenuW(m, UINT(IDM_APP_ITEM), flags, IDM_APP_ITEM, cast[ptr uint16](w[0].addr))
+  else:
+    discard AppendMenuW(m, MF_SEPARATOR, IDM_APP_SEP, nil)
+    discard AppendMenuW(m, flags, IDM_APP_ITEM, cast[ptr uint16](w[0].addr))
+    gMenuAdded = true
+
+proc winMenuItemChosen(): bool =
+  result = gMenuChosen
+  gMenuChosen = false
+
 proc wndProc(hwnd: HWND; msg: UINT; wp: WPARAM; lp: LPARAM): LRESULT {.stdcall.} =
   # Capture gHwnd from the first message -- WM_SIZE etc. arrive
   # during CreateWindowExW, *before* it returns and assigns gHwnd.
@@ -933,6 +978,13 @@ proc wndProc(hwnd: HWND; msg: UINT; wp: WPARAM; lp: LPARAM): LRESULT {.stdcall.}
       discard SetCursorWin(gCursor)
       return 1
 
+  of WM_SYSCOMMAND:
+    # (the app's item in the system menu: told to the app, which wakes up)
+    if (uint(wp) and 0xFFF0'u) == IDM_APP_ITEM:
+      gMenuChosen = true
+      pushEvent(input.Event(kind: WindowFocusGainedEvent))
+      return 0
+
   of WM_NCACTIVATE:
     # (no frame of Windows' to show in the active or the inactive colors)
     if not gSystemFrame: return DefWindowProcW(hwnd, msg, wp, -1)
@@ -999,7 +1051,8 @@ proc wndProc(hwnd: HWND; msg: UINT; wp: WPARAM; lp: LPARAM): LRESULT {.stdcall.}
 
   of WM_SYSCHAR:
     # Swallowed: DefWindowProc would beep for an Alt+letter with no menu.
-    return 0
+    # Alt+Space goes on to it with Windows' frame: its system menu opens.
+    if not (wp.uint32 == 0x20'u32 and gSystemFrame): return 0
 
   of WM_CHAR:
     # wp is a UTF-16 code unit; a character beyond the BMP comes as two.
@@ -1215,6 +1268,8 @@ proc winCreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
 
   # Files dropped from Explorer come as WM_DROPFILES.
   DragAcceptFiles(gHwnd, 1)
+  # (the app's item in the system menu, asked for before the window)
+  if gMenuLabel.len > 0: winMenuItem(gMenuLabel, gMenuChecked)
 
   # A negative dimension is MaxWindowWidth/MaxWindowHeight. SW_MAXIMIZE is the
   # shell's own idea of how large a window may be, so it stops at the taskbar
@@ -2171,7 +2226,8 @@ proc initWinapiDriver*() =
     setWindowTitle: winSetWindowTitle)
   frameRelays = FrameRelays(
     setSystemFrame: winSetSystemFrame, dragWindow: winDragWindow,
-    setMaximized: winSetMaximized, maximized: winMaximized, active: winActive)
+    setMaximized: winSetMaximized, maximized: winMaximized, active: winActive,
+    menuItem: winMenuItem, menuItemChosen: winMenuItemChosen)
   systemRelays.minimize = winMinimize
   fileDragRelays = FileDragRelays(dragOut: winDragFilesOut)
   initWinapiFontRelays()

@@ -1377,28 +1377,31 @@ proc beginNode*(label: string; expanded: var bool; leaf = false;
     if depth > 0:
       dots(rect(axis(depth - 1), y + rh div 2, x0 + 4 - axis(depth - 1), 1),
            th.gray)
-    let b = rect(x0, y + (rh - 9) div 2, 9, 9)
+    # (the +/- box and the icons grow with the UI's size, in whole pixels:
+    # at 300% they were drawn 9 pixels big beside text three times as tall)
+    let k = max(1, dp(16) div 16)
+    let b = rect(x0, y + (rh - 9 * k) div 2, 9 * k, 9 * k)
     if not leaf and hasKids:
       fill(b, th.field)
       box(b, th.gray)
-      hline(b.x + 2, b.y + 4, 5, th.fieldText)
-      if not expanded: vline(b.x + 4, b.y + 2, 5, th.fieldText)
+      fill(rect(b.x + 2 * k, b.y + 4 * k, 5 * k, k), th.fieldText)
+      if not expanded: fill(rect(b.x + 4 * k, b.y + 2 * k, k, 5 * k), th.fieldText)
     var lx = x0 + dp(14)
     if pic.w > 0:
       image(lx, y + (rh - pic.h) div 2, pic)
       lx += pic.w + 3
     elif icon:
-      let iy = y + (rh - 10) div 2
+      let iy = y + (rh - 10 * k) div 2
       if leaf:
-        fill(lx + 1, iy, 8, 10, color(255, 255, 255))
-        box(rect(lx + 1, iy, 8, 10), color(0, 0, 0))
-        hline(lx + 3, iy + 3, 4, color(0, 0, 128))
-        hline(lx + 3, iy + 5, 4, color(0, 0, 128))
+        fill(lx + k, iy, 8 * k, 10 * k, color(255, 255, 255))
+        box(rect(lx + k, iy, 8 * k, 10 * k), color(0, 0, 0))
+        fill(rect(lx + 3 * k, iy + 3 * k, 4 * k, k), color(0, 0, 128))
+        fill(rect(lx + 3 * k, iy + 5 * k, 4 * k, k), color(0, 0, 128))
       else:
-        fill(lx, iy + 2, 12, 8, color(255, 255, 0))
-        fill(lx, iy, 5, 2, color(255, 255, 0))
-        box(rect(lx, iy + 2, 12, 8), color(128, 128, 0))
-        hline(lx, iy, 5, color(128, 128, 0))
+        fill(lx, iy + 2 * k, 12 * k, 8 * k, color(255, 255, 0))
+        fill(lx, iy, 5 * k, 2 * k, color(255, 255, 0))
+        box(rect(lx, iy + 2 * k, 12 * k, 8 * k), color(128, 128, 0))
+        fill(rect(lx, iy, 5 * k, k), color(128, 128, 0))
       lx += dp(16)
     let tw = textWidth(label)
     let lr = rect(lx - 2, y, tw + 4, rh)

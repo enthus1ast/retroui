@@ -197,13 +197,9 @@ proc storeAppearance*(s: var Settings) =
   s["look.font"] = uiFontKey(uiFont())
   s["look.fontv"] = "2"
   if uiFontPath.len > 0: s["look.fontfile"] = uiFontPath
-  # the window's frame: kept only when it is not the one the app was built
-  # with (`retroFrame`), and left as it was while RETRO_FRAME says
-  if not existsEnv("RETRO_FRAME"):
-    if classicFrameWanted() != (retroFrame == "classic"):
-      s["look.frame"] = if classicFrameWanted(): "classic" else: "system"
-    else:
-      s.del("look.frame")
+  # (the window's frame is kept by the toolkit itself, for every app:
+  # `chooseClassicFrame`; the key stores of before held it)
+  s.del("look.frame")
 
 proc restoreAppearance*(s: Settings) =
   ## Brings back the look `storeAppearance` stored.
@@ -212,7 +208,8 @@ proc restoreAppearance*(s: Settings) =
     ui.theme = builtinThemes[t].theme
     invalidate()
   themeFromEnv()
-  if s.hasKey("look.size"): setUiScale(s.getInt("look.size", 100))
+  # ($RETRO_SCALE, when set, wins over what was kept -- as $RETRO_THEME does)
+  if s.hasKey("look.size") and not existsEnv("RETRO_SCALE"): setUiScale(s.getInt("look.size", 100))
   if s.hasKey("look.text"): setTextScale(s.getInt("look.text", 100))
   if s.hasKey("look.smooth"): setSmoothScrolling(s.getBool("look.smooth", true))
   case s.getOrDefault("look.controls", "")
@@ -232,11 +229,13 @@ proc restoreAppearance*(s: Settings) =
   of "gpu": setGpuMode(gmGpu)
   of "cpu": setGpuMode(gmCpu)
   else: discard
-  # ($RETRO_FRAME, when set, wins over what was kept)
-  case (if existsEnv("RETRO_FRAME"): "" else: s.getOrDefault("look.frame", ""))
-  of "classic": setClassicFrame(true)
-  of "system": setClassicFrame(false)
-  else: discard
+  # (the frame a store of before kept: the user's choice, kept from now on
+  # by the toolkit -- unless one was made since; $RETRO_FRAME wins)
+  if not existsEnv("RETRO_FRAME") and keptFrame().len == 0:
+    case s.getOrDefault("look.frame", "")
+    of "classic": chooseClassicFrame(true)
+    of "system": chooseClassicFrame(false)
+    else: discard
   # (the old "look.pixelfont" key said false for everyone before Retro Sans
   # was the default: only a choice made since counts)
   # (Kawkab Mono was the default before MS W98 UI: stored before then, it

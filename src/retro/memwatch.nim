@@ -40,7 +40,7 @@
 ##   onMemoryPressure(proc (level: MemoryPressure) =
 ##     if level == mpCritical: myCache.clear() else: myCache.trimHalf())
 
-import std/[os, strutils, monotimes, times]
+import std/[strutils, monotimes, times]
 import core
 
 when not defined(useMalloc) and not defined(retroNimAlloc) and not defined(nimscript):

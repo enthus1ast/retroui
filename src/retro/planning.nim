@@ -63,8 +63,13 @@ proc foldBox(b: Rect; open: bool) =
 proc badge(cx, cy, d: int; name: string) =
   ## Someone's initials in a round badge of their color.
   disc(float(cx), float(cy), d / 2, tintOf(name))
-  let st = style(bold = true, size = max(0.5, d / FontH / 1.9))
+  let size = max(0.5, d / FontH / 1.9)
+  var st = style(bold = true, size = size)
   let s = initialsOf(name)
+  # (initials as wide as the badge allows: two wide letters shrink to fit)
+  let room = max(1, d - max(2, d div 6))
+  let tw = textWidth(s, st)
+  if tw > room: st = style(bold = true, size = max(0.4, size * float(room) / float(tw)))
   text(cx - textWidth(s, st) div 2, cy - lineHeight(st) div 2, s, color(255, 255, 255), st)
 
 proc monthShort(m: int): string = monthNames[clamp(m, 1, 12) - 1][0 .. 2]
@@ -500,7 +505,7 @@ proc ganttView*(tasks: var seq[GanttTask]; sel: var int; scale: var GanttScale;
                 key = ""): GanttEvent {.discardable.} =
   ## Tasks on a time line: their names at the left (deeper ones indented
   ## under the task they are part of, which shows as a summary bar and folds
-  ## with its [-] box), their bars at the right with how much is done, the
+  ## with its ``[-]`` box), their bars at the right with how much is done, the
   ## `deps` as arrows, milestones as diamonds, today as a red line, the
   ## `weekend` days (0 Sunday .. 6 Saturday) shaded. Drag a bar to move it,
   ## its ends to change its dates (whole days; a finger: hold, then move);
@@ -1666,7 +1671,7 @@ proc orgChart*(nodes: var seq[OrgNode]; sel: var int; height = -1;
                key = ""): OrgEvent {.discardable.} =
   ## Who reports to whom: each node a box (name, title) under the one in
   ## its `parent`, joined by lines; a box with ones under it folds with the
-  ## [-] box at its foot. Click to choose, double-click (or Enter) to open;
+  ## ``[-]`` box at its foot. Click to choose, double-click (or Enter) to open;
   ## Up goes to the one above, Down to the first under, Left and Right to
   ## the ones beside; Space folds. Bigger than its room, it scrolls (the
   ## bars, the wheel -- Shift for sideways --, a finger). `height` in pixels

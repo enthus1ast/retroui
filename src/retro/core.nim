@@ -15,7 +15,7 @@ import uirelays/services
 import gfx, busy
 export busy
 
-const RetroVersion* = "0.19.0"
+const RetroVersion* = "0.20.0"
 const
   RetroDeveloper* = "Sultan Al Isaiee"
     ## Who made Retro Nim UI (and its apps): every About box says so.
@@ -330,6 +330,8 @@ type Ctx* = object
   focusRect*: Rect               ## where the focused widget was drawn
   focusMoved*: int               ## frame the keyboard last moved focus
   tabOrder: seq[Id]
+  focusSeen: bool                ## the focused widget answered this frame (a stop of Tab
+                                 ## or not: a list that takes keys but no Tab)
   takesEnter*, prevTakesEnter*: bool  ## the focused widget uses Enter itself (no default button)
   takesText*, prevTakesText: bool     ## the focused widget takes typing (keyboard on phones)
   focusWanted: bool
@@ -486,6 +488,22 @@ proc idOf*[T](v: var T; extra = ""): Id =
   ## Id of a widget bound to a variable: its address.
   let a = uint64(cast[uint](addr v))
   makeId(fnv(extra, mixId(uint32(a and 0xFFFFFFFF'u64), uint32(a shr 32))))
+
+proc peekId*(label: string): Id =
+  ## The id the first widget of `label` gets in the current id scope, with
+  ## no use counted (each `idOf` counts one: the same label twice in a frame
+  ## gives two ids). For code before or after the widget that asks about it:
+  ## `if ui.focus == peekId("list"): ...`.
+  let h = mixId(fnv(label), if ui.idStack.len > 0: ui.idStack[^1] else: 0)
+  if h == 0: 1 else: h
+
+proc peekId*[T](v: var T; extra = ""): Id =
+  ## `peekId` of a widget bound to a variable (as `idOf(v, extra)` the first
+  ## time in the frame).
+  let a = uint64(cast[uint](addr v))
+  let h = mixId(fnv(extra, mixId(uint32(a and 0xFFFFFFFF'u64), uint32(a shr 32))),
+                if ui.idStack.len > 0: ui.idStack[^1] else: 0)
+  if h == 0: 1 else: h
 
 proc pushId*(key: string) =
   ## Widgets made until `popId` get ids of their own under `key` (rows of a
@@ -698,7 +716,10 @@ proc scrollTo*(id: Id; v: var int; target, hi: int) =
   a.fromPos = if moving: a.pos else: float(v)
   a.pos = a.fromPos
   a.target = float(t)
-  a.t0 = ui.now
+  # (a step into the glide at once: wheel notches that come every frame
+  # would otherwise start it again at its beginning each time, and it would
+  # not move until they stop)
+  a.t0 = ui.now - StepMs
   a.mode = smGlide
   a.shown = v
   a.n = 0
@@ -909,6 +930,7 @@ proc interact*(id: Id; r: Rect; focusable = true; enabled = true): Hit =
     if ui.focusWanted:
       ui.focusWanted = false
       ui.focus = id
+  if id == ui.focus and canInput(): ui.focusSeen = true
   result.focused = ui.focus == id
   if result.focused: ui.focusRect = r
   let over = hover(r)
@@ -1517,9 +1539,9 @@ proc setUiLanguage*(lang: string; tables: varargs[seq[(string, string)]]) =
 proc uiLanguageCode*(): string = uiLanguage
   ## The interface's language ("" English).
 
-proc tr*(s: string): string =
+proc tr*(s: sink string): string =
   ## `s` in the interface's language (as it is when it has no translation).
-  if uiStrings.len == 0 or s.len == 0: return s
+  if uiStrings.len == 0 or s.len == 0: return s     # (moved, not copied)
   uiStrings.getOrDefault(s, s)
 
 proc mirroredX(x: int): int {.inline.} =
@@ -1574,10 +1596,14 @@ proc splitMnemonic*(label: string): tuple[text: string, at: int] =
 
 proc labelWidth*(label: string; bold = false): int =
   ## The width of a label as `drawLabel` draws it (without its '&').
+  if uiStrings.len == 0 and '&' notin label: return textWidth(label, bold)   # (as it is: no copy)
   textWidth(splitMnemonic(label).text, bold)
 
 proc drawLabel*(x, y: int; label: string; c: Color; bold = false) =
   ## Text with its mnemonic letter underlined, the 3.1 way.
+  if uiStrings.len == 0 and '&' notin label:
+    text(x, y, label, c, bold)           # (nothing to take out or underline: no copy)
+    return
   let (s, at) = splitMnemonic(label)
   text(x, y, s, c, bold)
   if at >= 0:
@@ -1661,9 +1687,22 @@ proc setZoom*(n: int) =
 proc zoomLevel*(): int = zoom
   ## The current magnification.
 
+var lookDirty = false
+
+proc noteLookChanged*() =
+  ## The look was changed by the user's hand (`appearanceSettings`, the
+  ## sizes): `app`'s `look` keeps it (see `lookChanged`).
+  lookDirty = true
+
+proc lookChanged*(): bool =
+  ## The look changed since the last call (`noteLookChanged`).
+  result = lookDirty
+  lookDirty = false
+
 proc setUiScale*(percent: int) =
   ## The size of everything (text, controls, spacing), 50..300 percent of
   ## the normal size for the screen. Ctrl and +, - or 0 change it too.
+  if clamp(percent, 50, 300) != ui.uiScale: lookDirty = true
   ui.uiScale = clamp(percent, 50, 300)
   ui.k = ui.density * float(ui.uiScale) / 100
   fitMetrics()
@@ -1686,6 +1725,7 @@ proc scaleStep*(dir: int): int =
 
 proc setTextScale*(percent: int) =
   ## The size of the text alone (controls grow with it), 50..300 percent.
+  if clamp(percent, 50, 300) != ui.textScale: lookDirty = true
   ui.textScale = clamp(percent, 50, 300)
   fitMetrics()
   ui.force = true
@@ -1971,6 +2011,13 @@ const retroFrame* {.strdefine.} = "system"
   ## "system" (the default) keeps the system's own. RETRO_FRAME=classic or
   ## system, when the app starts, wins over it.
 
+type WindowFrame* = enum
+  ## The frame a desktop app's window opens with (`app`'s `frame`).
+  wfAsBuilt = "as built"   ## the one `-d:retroFrame` built in: the system's,
+                           ## unless it says classic
+  wfSystem = "system"      ## the system's own
+  wfClassic = "classic"    ## Windows 3.1's, drawn by the app
+
 const FrameDesignBorder = 5
   ## The 3.1 frame's sizing border at 100%: a black line, the gray band, a
   ## black line.
@@ -1978,6 +2025,41 @@ const FrameDesignBorder = 5
 var
   frameWanted = retroFrame == "classic"   # (asked for; drawn when it can be)
   captionEnv = false                       # RETRO_CAPTION=1: the phones' title bar
+
+var userFrameChoice* = true
+  ## The user may choose the window's frame in every app -- the system's, or
+  ## Windows 3.1's -- and the choice is kept for the app's next start
+  ## (`appIdent`): with the 3.1 frame, in its control menu; with the
+  ## system's, in its menu where it takes an item (Windows' system menu:
+  ## the title bar's icon, Alt+Space); and in `appearanceSettings`. False
+  ## (set before `startApp`): the app's frame only.
+
+var appIdent* = ""
+  ## The app's name for what the toolkit keeps for it -- the frame the user
+  ## chose, the log of faults -- set before `startApp` (the `app`
+  ## template's `id`); "": the window's title without a version at its end.
+
+const frameMenuLabel = "Windows 3.1 &Frame"   ## (the item in the system's menu)
+
+proc appBaseName(title: string): string =
+  ## The app's name without its version ("Retro Mail 1.0.3": "Retro Mail").
+  result = title
+  let sp = result.rfind(' ')
+  if sp > 0 and sp + 1 < result.len and result[sp + 1] in Digits: result = result[0 ..< sp]
+
+proc keptFramePath(): string =
+  if appIdent.len == 0: return ""
+  try: dataDir(appIdent) / "window.ini" except CatchableError: ""
+
+proc keptFrame*(): string =
+  ## The frame the user chose for this app (`chooseClassicFrame`):
+  ## "classic", "system", or "" (none chosen yet).
+  let p = keptFramePath()
+  if p.len == 0: return ""
+  try:
+    for line in readFile(p).splitLines:
+      if line.startsWith("frame="): return line[6 .. ^1].strip
+  except CatchableError: discard
 
 proc canClassicFrame*(): bool =
   ## The 3.1 frame can be drawn here: a desktop whose windows can do without
@@ -2004,6 +2086,20 @@ proc setClassicFrame*(on: bool) =
 proc classicFrame*(): bool = ui.ownFrame
   ## The 3.1 frame is drawn now (`setClassicFrame`).
 
+proc chooseClassicFrame*(on: bool) =
+  ## The frame the user chose -- the 3.1 one (true) or the system's -- as
+  ## `setClassicFrame` sets it, and kept for the app's next start (it then
+  ## wins over the frame the app was built with). The control menu, the
+  ## system's menu and `appearanceSettings` call it.
+  setClassicFrame(on)
+  if not userFrameChoice: return
+  let p = keptFramePath()
+  if p.len == 0: return
+  try:
+    createDir(p.parentDir)
+    writeFile(p, "frame=" & (if on: "classic" else: "system") & "\n")
+  except CatchableError: discard
+
 proc classicFrameWanted*(): bool = frameWanted
   ## The 3.1 frame was asked for (by the build, RETRO_FRAME or
   ## `setClassicFrame`), drawn or not.
@@ -2011,6 +2107,7 @@ proc classicFrameWanted*(): bool = frameWanted
 proc startApp*(title: string; w, h: int; theme = ui.theme; zoom = 0) =
   ## Open the window. `zoom` forces whole-pixel magnification (0 = the
   ## display's own scale).
+  if appIdent.len == 0: appIdent = appBaseName(title)
   ui.theme = theme
   ui.zoomWanted = zoom
   ui.active31 = true
@@ -2028,7 +2125,13 @@ proc startApp*(title: string; w, h: int; theme = ui.theme; zoom = 0) =
   let sc = getEnv("RETRO_SCALE")
   if sc.len > 0:
     try: ui.uiScale = clamp(parseInt(sc), 50, 300) except ValueError: discard
-  # the window's frame: the 3.1 one the app draws, or the system's
+  # the window's frame: the 3.1 one the app draws, or the system's -- as
+  # built, as the user chose it last time, as RETRO_FRAME says
+  if userFrameChoice:
+    case keptFrame()
+    of "classic": frameWanted = true
+    of "system": frameWanted = false
+    else: discard
   case getEnv("RETRO_FRAME")
   of "classic": frameWanted = true
   of "system": frameWanted = false
@@ -2039,6 +2142,8 @@ proc startApp*(title: string; w, h: int; theme = ui.theme; zoom = 0) =
     # (the frame goes round the size asked for: the app's room stays as big)
     if w >= 0: w += 2 * FrameDesignBorder
     if h >= 0: h += 2 * FrameDesignBorder + MenuH + 1
+  # (with the system's frame, its menu offers the 3.1 one where it can)
+  if userFrameChoice and canClassicFrame(): setFrameMenuItem(frameMenuLabel)
   let l = createWindow(w * max(1, ui.zoomWanted), h * max(1, ui.zoomWanted), icon = windowIcon)
   setWindowTitle(title)
   # (a file there while the GPU is started: a crash then is not repeated)
@@ -2046,15 +2151,13 @@ proc startApp*(title: string; w, h: int; theme = ui.theme; zoom = 0) =
   except CatchableError: discard
   # (what brings the program down written down, for the next start to tell)
   # (the app's name without its version: the log stays when it is updated)
-  var base = title
-  let sp = base.rfind(' ')
-  if sp > 0 and sp + 1 < base.len and base[sp + 1] in Digits: base = base[0 ..< sp]
-  try: faultPath = dataDir(base) / "faults.log"
+  try: faultPath = dataDir(appIdent) / "faults.log"
   except CatchableError: discard
   errorMessageWriter = writeFault
-  case getEnv("RETRO_GPU")
-  of "0": setGpuMode(gmCpu)
-  of "1": setGpuMode(gmGpu)
+  case getEnv("RETRO_GPU").toLowerAscii
+  of "0", "cpu": setGpuMode(gmCpu)
+  of "1", "gpu": setGpuMode(gmGpu)
+  of "auto": setGpuMode(gmAuto)
   else: discard
   themeFromEnv()
   ui.title = title
@@ -2186,6 +2289,13 @@ proc beginFrame*(): bool =
   ui.redraw = false
   pump(waitMs)
   if ui.pressed: flingCaught = false      # (a new press: see `scrollCaught`)
+  # (Alt+Space is the window's menu: the system's own with its frame -- a
+  # title bar the app draws takes it in `captionBar`)
+  if ui.key == KeySpace and AltPressed in ui.mods and not ui.ownCaption:
+    ui.key = KeyNone
+  # (the 3.1 frame picked in the menu of the system's -- which Alt+Space
+  # opened, so that key is not the new frame's)
+  if userFrameChoice and frameMenuItemChosen(): chooseClassicFrame(not ui.ownFrame)
   if uiFont() != layoutFont:
     layoutFont = uiFont()                  # the font changed: sizes follow it
     fitMetrics()
@@ -2255,6 +2365,7 @@ proc beginFrame*(): bool =
     elif ui.dialogTop != 0: LayerDialog
     else: LayerBase
   ui.tabOrder.setLen(0)
+  ui.focusSeen = false
   ui.hot = 0
   ui.dialogTopNow = 0
   ui.curDialog = 0
@@ -2524,9 +2635,11 @@ proc endFrame*() =
       ui.focusMoved = ui.frameNo
       ui.spaceDown = false
       ui.redraw = true
-    elif at < 0 and not ui.touch and (autoFocus or ui.dialogTopNow != 0):
+    elif at < 0 and not ui.focusSeen and not ui.touch and
+         (autoFocus or ui.dialogTopNow != 0):
       # (a touch screen focuses nothing on its own: a text box with the
-      # focus would bring up the on-screen keyboard)
+      # focus would bring up the on-screen keyboard; a widget that has the
+      # focus and answered without being a stop of Tab keeps it)
       ui.focus = ui.tabOrder[0]
       ui.redraw = true
   # A press outside an open popup closes it.

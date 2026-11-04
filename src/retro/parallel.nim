@@ -4,6 +4,7 @@
 ## done. Image filters, compositing and resampling use it row by row
 ## (`parallelRows`).
 ##
+## .. code-block:: nim
 ##   parallelRows(img.h, y):
 ##     for x in 0 ..< img.w: dst[y * img.w + x] = f(src[y * img.w + x])
 ##

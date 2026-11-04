@@ -1,5 +1,59 @@
 # Changes
 
+## 0.20.0
+
+- **The window's frame is always the user's choice.** In every app, with
+  nothing to write: the Windows 3.1 frame's control menu has **Windows' Own
+  Frame** (elsewhere **Desktop's Own Frame**), and on Windows the system's
+  frame gets **Windows 3.1 Frame** in its system menu (Alt+Space, the title
+  bar's icon). The choice is kept for the app (`window.ini` in its data
+  folder) and wins over the frame it was built with. `chooseClassicFrame`,
+  `keptFrame`, `userFrameChoice`, `appIdent`; `storeAppearance` no longer
+  keeps the frame (a kept one is brought over once).
+- **`app` takes every option by name:** `theme`, `frame` (`wfAsBuilt`,
+  `wfSystem`, `wfClassic`), `userFrame`, `gpu`, `zoom`, `scale`, `font`,
+  `id`, `icon`, `look` (the look the user picks kept in those settings:
+  brought back at the start, kept as it changes). A misspelled option is a
+  compile error that lists them. `openApp`, `closeApp`, `keepLook`,
+  `noteLookChanged`, `lookChanged`.
+- **Faster, the same pixels:**
+  - Typing in a long `editArea` about 50 times faster (only the changed
+    lines are wrapped again).
+  - Charts on the GPU: 2.7 s to 28 ms a frame.
+  - The GPU keeps the frame in a texture and redraws only what changed
+    (hovering, typing); `RETRO_GPU_KEEP=0` turns it off.
+  - About 60 % fewer allocations a frame; text measured without copies;
+    shapes' buffers reused.
+  - A fast wheel (a notch every frame) scrolls at once instead of stalling.
+- **Fixed, found with AddressSanitizer, UBSan and LeakSanitizer, the
+  fuzzers and Wine:**
+  - X11: every app crashed on exit (libXrandr was unloaded too early);
+    fonts left open at exit; closing twice is safe.
+  - Leaks in PNG reading, the funnel chart's labels and damaged zip
+    entries (Nim 2.2.6 compiler issues, worked around).
+  - Unaligned reads in deflate and the selection outline.
+  - At 150-300 %: list columns, the message box's icon and width, the
+    tree's boxes and icons now scale.
+  - The Gray theme's back tabs readable; kanban initials fit their badge.
+  - Alt+Space and Ctrl+Space no longer press the focused button (Alt+Space
+    closed an app whose Quit button had the focus); Alt+Space opens
+    Windows' system menu again.
+  - A focused widget that is not a stop of Tab (a list taking the keys
+    itself) keeps the focus.
+  - A banner's buttons wrap instead of running out of the strip; its text
+    starts after its icon at any scale.
+  - `$RETRO_SCALE` wins over a kept size; `$RETRO_GPU` takes `auto`,
+    `gpu`, `cpu` (and `1`, `0`).
+- **New:** `readOnly` for `edit` and `editArea` (selected and copied, not
+  changed); `peekId` (a widget's id without counting a use). uirelays: an
+  item of the app's in the system frame's menu (`setFrameMenuItem`,
+  `frameMenuItemChosen`; Windows).
+- Tests: `test_widgetfixes`, `test_hardening`, `test_x11close`;
+  `test_frame` and `test_scroll` cover the above.
+- The examples are 0.20.0; the gallery keeps its look, its Drawing tab grows
+  with the UI's scale, and its tabs' Alt letters no longer clash with the
+  menus.
+
 ## 0.19.0
 
 - **Retro Mail 1.0.3:**

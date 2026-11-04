@@ -669,8 +669,13 @@ proc isAscii(s: string): bool =
 
 proc em(id: FaceId): float32 {.inline.} = float32(face(id).unitsPerEm)
 
+template parsed(id: FaceId) =
+  ## (face `id` parsed, its tables filled: without taking a reference to
+  ## it -- `face` hands out one, counted, on every call)
+  if faces[id] == nil: discard face(id)
+
 proc asciiWidth(s: string; base: FaceId): float32 =
-  discard face(base)
+  parsed(base)
   let kern = addr asciiKern[base]
   var prev = -1
   for c in s:
@@ -772,6 +777,17 @@ proc setRtlInterface*(on: bool) =
     runCache[id].clear()
     rtlCache[id].clear()
 
+proc shapeCached*(s: string; base = fSans; rtl = -1): ptr Run =
+  ## `shape`, the run kept in the cache itself rather than a copy of it --
+  ## for reading at once (its width, its glyphs): it stays valid only until
+  ## the next string is shaped. `rtl` 1 or -1 (0 is never kept: see `shape`).
+  let cache = if rtl == 1: addr rtlCache[base] else: addr runCache[base]
+  if cache[].len > 4000: cache[].clear()
+  cache[].withValue(s, r):
+    return r
+  cache[][s] = build(s, base, rtl)
+  addr cache[][s]
+
 proc shape*(s: string; base = fSans; rtl = -1): Run =
   ## The glyphs of `s` (one line) in `base`'s style; `rtl` 1 makes it a
   ## right-to-left paragraph, 0 left-to-right, -1 (the default) follows
@@ -779,19 +795,15 @@ proc shape*(s: string; base = fSans; rtl = -1): Run =
   ## next time.
   if rtl == 0:
     return build(s, base, rtl)
-  let cache = if rtl == 1: addr rtlCache[base] else: addr runCache[base]
-  if cache[].len > 4000: cache[].clear()
-  cache[].withValue(s, r):
-    return r[]
-  result = build(s, base, rtl)
-  cache[][s] = result
+  shapeCached(s, base, rtl)[]
 
 proc widthEm*(s: string; base = fSans; rtl = -1): float32 =
   ## Width of `s` in ems.
   if s.len == 0: return 0
-  discard face(base)
+  parsed(base)
   if isAscii(s) and rtl != 1: asciiWidth(s, base)
-  else: shape(s, base, rtl).width
+  elif rtl == 0: build(s, base, rtl).width
+  else: shapeCached(s, base, rtl).width
 
 iterator asciiGlyphs*(s: openArray[char]; base: FaceId): PGlyph =
   ## The glyphs of a plain ASCII string, without building a run.
@@ -814,7 +826,7 @@ proc plainAscii*(s: openArray[char]): bool =
 
 proc hasGlyphs*(s: string; base = fSans): bool =
   ## Whether the built-in faces draw every character of `s`.
-  if isAscii(s): true else: not shape(s, base).missing
+  if isAscii(s): true else: not shapeCached(s, base).missing
 
 proc fontData*(id: FaceId): lent string =
   ## The bytes of the built-in TrueType file of face `id` (DejaVu Sans,

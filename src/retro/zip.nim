@@ -132,17 +132,22 @@ proc readEntry*(archive: string; e: ZipEntry): string =
   f.setFilePos(e.offset + 30 + skip)
   if e.packed > 0 and f.readBuffer(addr packed[0], e.packed) != e.packed:
     raise newException(ZipError, "the archive ends too soon: " & e.name)
+  # (made in a local, `result` given it once it is good: Nim 2.2 does not
+  # free a `result` the proc then raises past -- every damaged entry read
+  # leaked its content)
+  var data: string
   case e.compression
-  of 0: result = packed
+  of 0: data = move packed
   of 8:
     # no more than the directory says it holds (a "zip bomb" stops there)
-    try: result = inflate(packed.toBytes, maxOut = e.size).toStr
+    try: data = inflate(packed.toBytes, maxOut = e.size).toStr
     except InflateError as x: raise newException(ZipError, e.name & ": " & x.msg)
   else:
     raise newException(ZipError, e.name & ": compression method " &
                        $e.compression & " is not supported")
-  if crc32(result.toBytes) != e.crc:
+  if crc32(data.toBytes) != e.crc:
     raise newException(ZipError, e.name & ": checksum does not match")
+  result = move data
 
 proc safeTarget*(dest, name: string): string =
   ## Where entry `name` goes under `dest`; refuses names that would

@@ -2685,7 +2685,10 @@ proc selBounds*(d: Doc): Rect =
       # (eight bytes at a time over what is not selected)
       var x = 0
       while x < w:
-        if x + 8 <= w and cast[ptr uint64](addr sp[row + x])[] == 0:
+        # (copied, not read through a uint64 pointer: unaligned there)
+        var word {.noinit.}: uint64
+        if x + 8 <= w: copyMem(addr word, addr sp[row + x], 8)
+        if x + 8 <= w and word == 0:
           x += 8
           continue
         if sp[row + x] != 0:

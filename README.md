@@ -100,7 +100,7 @@ You need **Nim 2.0 or newer** and **a C compiler**:
 Then:
 
 ```sh
-nimble install https://github.com/USER/retro   # the library and its tools
+nimble install retro          # the library and its tools (or the repository's URL)
 retrokit doctor                                # checks what this machine has
 retrokit new myapp --kind:business             # a ready app: hello, form, business, files, charts
 cd myapp && nimble run
@@ -180,12 +180,23 @@ nim c -d:retroFrame=classic app.nim   # by hand (system: the default)
 RETRO_FRAME=system ./app              # when it starts: the system's frame after all
 ```
 
-In the app, `setClassicFrame(on)` changes it while it runs and
-`classicFrame()` says which one is on; `appearanceSettings` offers it as
-**Window**, and `storeAppearance` keeps the choice. Windows and X11 have it
-(macOS too, not yet tried on a Mac); Wayland and the phones keep their own.
-A window manager's own keys stay its own: openbox, say, opens its window
-menu for Alt+Space before the app sees it.
+**The user can always switch.** In every app, with nothing to write: the
+3.1 frame's control menu has **Windows' Own Frame** (elsewhere **Desktop's
+Own Frame**), and on Windows the system's frame gets **Windows 3.1 Frame**
+in its system menu (the title bar's icon, Alt+Space). The choice is kept
+for the app (`window.ini` in its data folder) and wins over the frame it was
+built with at the next start; `appearanceSettings` offers it too, as
+**Window**. On X11 and macOS with the system's frame, the window manager
+owns that menu: offer `appearanceSettings` there.
+
+**For the developer:** `app`'s `frame` (`wfAsBuilt`, `wfSystem`,
+`wfClassic`) is the frame the window opens with, `userFrame = false` takes
+the user's choice away; `setClassicFrame(on)` changes it while the app runs,
+`chooseClassicFrame(on)` changes it as the user would (and keeps it),
+`classicFrame()` says which one is on. Windows and X11 have it (macOS too,
+not yet tried on a Mac); Wayland and the phones keep their own. A window
+manager's own keys stay its own: openbox, say, opens its window menu for
+Alt+Space before the app sees it.
 
 ## Your first app
 
@@ -229,6 +240,29 @@ pictures only grows. The toolkit warns at compile time without it, and
 draws itself and returns what happened: `button` is `true` when it is
 clicked, and `edit name` edits `name` in place and returns `true` when it
 changes.
+
+`app` takes options by name after the size, all optional:
+
+```nim
+const ledgerIcon = staticRead("ledger.png")
+
+app "Ledger", 900, 600,
+    theme = Dark,                    # the colors (builtinThemes, or your own Theme)
+    frame = wfClassic,               # wfAsBuilt (default), wfSystem, wfClassic
+    userFrame = true,                # the user may switch it (kept per app)
+    gpu = gmAuto,                    # gmAuto, gmGpu, gmCpu
+    scale = 125,                     # the size of everything, in percent
+    font = ufW98,                    # the UI's font
+    zoom = 0,                        # whole-pixel magnification (0: the display's)
+    id = "ledger",                   # the app's name for what the toolkit keeps
+    icon = ledgerIcon,               # the window's picture (a PNG's bytes)
+    look = "ledger":                 # keep the look the user picks (appearanceSettings)
+  label "Hello"
+```
+
+A misspelled option is a compile error that lists them all.
+$RETRO_FRAME, $RETRO_GPU, $RETRO_SCALE, $RETRO_THEME, $RETRO_SIZE and
+$RETRO_ZOOM win over the options when the app starts (tests, screenshots).
 
 ## How it works
 
@@ -1497,7 +1531,7 @@ printing, and the reflection calls of `retro/native`.
 
 ```sh
 pkg install nim clang ndk-sysroot openssl-tool git
-nimble install https://github.com/USER/retro
+nimble install retro
 retroapk ledger.nim --name:Ledger --install    # the installer asks to confirm
 ```
 

@@ -71,6 +71,21 @@ block notchesAddUp:
   v = 0
   run(1)
 
+block notchEveryFrame:
+  # a fast wheel (a notch every frame) moves at once, every frame -- it
+  # does not wait for the notches to stop
+  var seen: seq[int]
+  for i in 0 ..< 6:
+    wheel(-1)
+    run(1)
+    seen.add v
+  doAssert seen[0] > 0 and seen[^1] > seen[2] and seen[2] > seen[0],
+    "it moves while the notches come: " & $seen
+  settle()
+  doAssert v == 6 * 45, $v
+  v = 0
+  run(1)
+
 block keysGlide:
   key(KeyPageDown)
   run(1)

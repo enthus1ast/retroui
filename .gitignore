@@ -36,3 +36,14 @@ tools/winicon
 *.swp
 .DS_Store
 docs/api/
+
+# the tools nimble builds in place (nimble install)
+/retroapk
+/retroios
+/retrokit
+
+# the fuzzers built in place
+tests/fuzz/fuzz
+tests/fuzz/fuzzui
+tests/fuzz/fuzz_*
+!tests/fuzz/fuzz_*.nim

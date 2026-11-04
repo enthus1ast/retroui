@@ -361,13 +361,19 @@ proc computeEdges(v: var PhotoView; d: Doc) =
   let hp = cast[ptr UncheckedArray[seq[(int32, int32)]]](addr hRuns[0])
   let vp = cast[ptr UncheckedArray[seq[int32]]](addr vCols[0])
   template inRow(y, x: int): bool = (y >= 0 and y < h and sp[y * w + x] >= 128)
+  template word8(i: int): uint64 =
+    # (eight bytes from any offset: copied, as a uint64 pointer there
+    # would be unaligned -- undefined behaviour in C)
+    var v: uint64
+    copyMem(addr v, addr sp[i], 8)
+    v
   proc work(a, b: int) {.closure.} =
     for y in a ..< b:
       var runs: seq[(int32, int32)]
       var x = 0
       while x < w:
         if y > 0 and y < h and x + 8 <= w and
-           cast[ptr uint64](addr sp[y * w + x])[] == cast[ptr uint64](addr sp[(y - 1) * w + x])[]:
+           word8(y * w + x) == word8((y - 1) * w + x):
           x += 8
           continue
         if inRow(y, x) != inRow(y - 1, x):
@@ -383,7 +389,7 @@ proc computeEdges(v: var PhotoView; d: Doc) =
         let row = y * w
         while x < w:
           if x + 8 <= w:
-            let word = cast[ptr uint64](addr sp[row + x])[]
+            let word = word8(row + x)
             if (word == 0 and not prev) or (word == 0xFFFFFFFFFFFFFFFF'u64 and prev):
               x += 8
               continue

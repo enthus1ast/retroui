@@ -1240,12 +1240,18 @@ proc extractFilenameOf(p: string): string =
   while i >= 0 and p[i] notin {'/', '\\'}: dec i
   p[i + 1 .. ^1]
 
+proc appearanceRows(): bool
+
 proc appearanceSettings*(): bool {.discardable.} =
   ## Settings rows for how every app looks: the color scheme, the size of
   ## everything, the size of the text, the size of controls (for a mouse
   ## or fingers), the window's frame (on desktops: the system's or Windows
   ## 3.1's) and the font. True when something changed (store them with
-  ## `storeAppearance`).
+  ## `storeAppearance`; `app`'s `look` keeps them by itself).
+  result = appearanceRows()
+  if result: noteLookChanged()
+
+proc appearanceRows(): bool =
   var t = max(0, themeIndex())
   var names: seq[string]
   for th in builtinThemes: names.add th.name
@@ -1270,7 +1276,7 @@ proc appearanceSettings*(): bool {.discardable.} =
     let own = if platformName() == "windows": "Windows' own frame"
               else: "The desktop's own frame"
     if settingCombo("Window", [own, "Windows 3.1 frame"], fr):
-      setClassicFrame(fr == 1)
+      chooseClassicFrame(fr == 1)       # (kept for the app's next start)
       result = true
   var gm = ord(gpuMode())
   if settingCombo("Drawing", ["Automatic (the GPU when there is a real one)", "With the GPU",
@@ -1438,14 +1444,29 @@ proc banner*(msg: string; kind = bkInfo; actions: openArray[string] = [];
     of bkWarning: (retroOr(pxWarning, nfWarning), color(200, 140, 0))
     of bkError: (retroOr(pxError, nfExclamation), color(200, 40, 40))
   let w = available()
+  # (the text starts after the icon, however wide the icon is drawn)
+  let tx = max(dp(34), dp(12) + textWidth(glyph) + dp(6))
   var bw = 0
   for a in actions: bw += buttonWidth(a) + Gap
   let xw = if closable: CtrlH else: 0
   let narrow = bw > w div 2
-  let textW = w - dp(40) - xw - (if narrow: 0 else: bw)
+  let textW = w - tx - dp(6) - xw - (if narrow: 0 else: bw)
   let lines = wrapLines(tr(msg), max(dp(60), textW))
+  # narrow: the buttons under the text, in as many rows as they need (a
+  # button wider than the strip gets a row of its own)
+  var rows: seq[seq[int]]
+  if narrow:
+    let room = max(dp(60), w - tx - dp(8))
+    var x = 0
+    for i, a in actions:
+      let bwi = buttonWidth(a) + Gap
+      if rows.len == 0 or (x + bwi > room and x > 0):
+        rows.add @[]
+        x = 0
+      rows[^1].add i
+      x += bwi
   let h = max(CtrlH + dp(12), lines.len * FontH + dp(16)) +
-          (if narrow and actions.len > 0: CtrlH + dp(8) else: 0)
+          rows.len * (CtrlH + dp(6)) + (if rows.len > 0: dp(2) else: 0)
   let r = place(0, h, fill = true)
   ui.lastId = 0
   ui.lastRect = r
@@ -1455,7 +1476,7 @@ proc banner*(msg: string; kind = bkInfo; actions: openArray[string] = [];
   text(r.x + dp(12), r.y + dp(8), glyph, accent)
   var y = r.y + dp(8)
   for line in lines:
-    text(r.x + dp(34), y, line, th.text)
+    text(r.x + tx, y, line, th.text)
     y += FontH
   if closable:
     let xr = rect(r.x + r.w - xw, r.y + dp(4), xw, CtrlH)
@@ -1468,14 +1489,23 @@ proc banner*(msg: string; kind = bkInfo; actions: openArray[string] = [];
       focusDots(inset(xr, dp(4)))
       if keyHit(KeyEnter) or keyHit(KeyEsc): hit.clicked = true
     if hit.clicked: result = 0
-  if actions.len > 0:
-    let ay = if narrow: r.y + r.h - CtrlH - dp(6) else: r.y + (r.h - CtrlH) div 2
-    let ax = if narrow: r.x + dp(34) else: r.x + r.w - xw - bw
-    pushFrame(rect(ax, ay, bw, 0))
+  if actions.len > 0 and not narrow:
+    pushFrame(rect(r.x + r.w - xw - bw, r.y + (r.h - CtrlH) div 2, bw, 0))
     row:
       for i, a in actions:
         if button(a): result = i + 1
     discard popFrame()
+  elif actions.len > 0:
+    var ay = r.y + r.h - rows.len * (CtrlH + dp(6))
+    for line in rows:
+      var lw = 0
+      for i in line: lw += buttonWidth(actions[i]) + Gap
+      pushFrame(rect(r.x + tx, ay, min(lw, r.w - tx - dp(6)), 0))
+      row:
+        for i in line:
+          if button(actions[i], w = min(buttonWidth(actions[i]), r.w - tx - dp(6))): result = i + 1
+      discard popFrame()
+      ay += CtrlH + dp(6)
   ui.lastId = 0
   ui.lastRect = r
 

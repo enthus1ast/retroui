@@ -104,6 +104,24 @@ proc coverage*(r: Raster): seq[uint8] =
     result[i] = uint8(min(1'f32, abs(acc)) * 255 + 0.5)
 
 
+proc coverageInto*(r: Raster; dst: var seq[uint8]) =
+  ## `coverage`, written into `dst` (made `w` x `h` long; its memory kept:
+  ## for many shapes one after another).
+  dst.setLen(r.w * r.h)
+  var acc = 0'f32
+  for i in 0 ..< r.w * r.h:
+    acc += r.acc[i]
+    dst[i] = uint8(min(1'f32, abs(acc)) * 255 + 0.5)
+
+proc reset*(r: var Raster; w, h: int) =
+  ## `w` x `h` and empty again, as `newRaster` makes it, keeping the memory
+  ## it has when that is enough.
+  r.w = w
+  r.h = h
+  let n = w * h + w + 3
+  if r.acc.len < n: r.acc.setLen(n)
+  if n > 0: zeroMem(addr r.acc[0], n * sizeof(float32))
+
 proc clear*(r: var Raster) =
   ## Empty again (to draw other outlines in it).
   if r.acc.len > 0: zeroMem(addr r.acc[0], r.acc.len * sizeof(float32))

@@ -12,7 +12,7 @@
 ##   let q = quantize(bmp.px, 64, dither = true)          # palette + indexes
 ##   writeFile("photo.gif", encodeGif(bmp.w, bmp.h, q))
 
-import std/[math, algorithm, strutils]
+import std/[math, algorithm]
 import gfx, codec, busy
 
 type

@@ -308,7 +308,9 @@ proc radioDisc*(x, y, d: int; selected, down, enabled: bool) =
 proc spaceKey*(id: Id; hit: var Hit) =
   ## Space presses a focused button and releases it as a click, as in 3.1.
   if hit.focused and canInput():
-    if ui.key == KeySpace and not ui.keyUsed:
+    # (Space alone: Alt+Space is the window's menu, Ctrl+Space the app's)
+    if ui.key == KeySpace and not ui.keyUsed and
+       ui.mods * {AltPressed, CtrlPressed, GuiPressed} == {}:
       ui.keyUsed = true
       ui.active = id
       ui.spaceDown = true
@@ -378,6 +380,20 @@ proc label*(s: string; bold = false; color = Color(); enabled = true; literal = 
   ## a 3.1 static text does. In another language (`setUiLanguage`) the
   ## whole text is looked up before it wraps. `literal`: shown as it is --
   ## a file's name: not translated, its '&' kept.
+  if '\n' notin s and (literal or uiLanguageCode() in ["", "en"]):
+    # (one line, nothing to look up: when it fits, drawn as below, without
+    # the text split into lines and copied every frame)
+    let w1 = if literal: textWidth(s, bold) else: labelWidth(s, bold)
+    let room1 = cellRoom()
+    if not (w1 > room1 and room1 > dp(40)):
+      let r = place(max(1, min(w1, max(room1, w1))), FontH)
+      ui.lastId = 0
+      ui.lastRect = r
+      if enabled and not literal and '&' in s and mnemonicHit(s): focusNext()
+      let c = if not enabled: th.gray elif color.a == 0: th.text else: color
+      if literal: text(r.x, r.y, s, c, bold)
+      else: drawLabel(r.x, r.y, s, c, bold)
+      return
   var shown = s
   if not literal and uiLanguageCode() notin ["", "en"]:
     let plain = s.replace("&&", "\1").replace("&", "").replace("\1", "&")
@@ -811,17 +827,21 @@ type VLine = tuple[a, b: int; soft: bool]
   ## A line as shown in a multi-line text box: bytes `a ..< b` of the
   ## text; `soft` when it was wrapped (the next one goes on at `b`).
 
-var wrapCache: Table[Id, tuple[h: Hash; w: int; lines: seq[VLine]]]
+var wrapCache: Table[Id, tuple[text: string; w: int; look: Hash; lines: seq[VLine]]]
+  ## (the text kept as it was wrapped: a change is found by comparing, and
+  ## only the lines of the text it touched are wrapped again)
 
-proc visualLines(s: string; w: int): seq[VLine] =
-  ## The lines of `s` as shown: one per line of the text, or (`w` > 0)
-  ## word-wrapped to `w` pixels -- after a space where there is one, else
-  ## where the line is full.
-  var a = 0
+proc wrapInto(s: string; w: int; first, last: int; res: var seq[VLine]) =
+  ## The lines as shown (`visualLines`) of the text's lines from the one
+  ## starting at byte `first` to the one holding byte `last`, added to `res`.
+  # (each character measured once: its width alone is what wrapping adds up)
+  var asciiW: array[128, int32]           # width + 1; 0: not measured yet
+  var otherW: Table[int, int32]
+  var a = first
   while true:
     let e = lineEnd(s, a)
     if w <= 0:
-      result.add (a, e, false)
+      res.add (a, e, false)
     else:
       var segA = a
       var i = a
@@ -829,10 +849,24 @@ proc visualLines(s: string; w: int): seq[VLine] =
       var lastBreak = -1
       while i < e:
         let j = runeAfter(s, i)
-        let cw = textWidth(s[i ..< j])
+        var cw: int
+        if j == i + 1 and ord(s[i]) < 128:
+          let k = ord(s[i])
+          if asciiW[k] == 0: asciiW[k] = int32(textWidth(s[i ..< j])) + 1
+          cw = int(asciiW[k]) - 1
+        elif j - i <= 4:
+          var key = 0
+          for p in i ..< j: key = (key shl 8) or ord(s[p])
+          otherW.withValue(key, v):
+            cw = int(v[])
+          do:
+            cw = textWidth(s[i ..< j])
+            otherW[key] = int32(cw)
+        else:
+          cw = textWidth(s[i ..< j])
         if x + cw > w and i > segA and s[i] != ' ':
           let cut = if lastBreak > segA: lastBreak else: i
-          result.add (segA, cut, true)
+          res.add (segA, cut, true)
           segA = cut
           i = cut
           x = 0
@@ -841,18 +875,78 @@ proc visualLines(s: string; w: int): seq[VLine] =
           x += cw
           if s[i] == ' ': lastBreak = j
           i = j
-      result.add (segA, e, false)
-    if e >= s.len: break
+      res.add (segA, e, false)
+    if e >= s.len or e >= last: break
     a = e + 1
 
+proc visualLines(s: string; w: int): seq[VLine] =
+  ## The lines of `s` as shown: one per line of the text, or (`w` > 0)
+  ## word-wrapped to `w` pixels -- after a space where there is one, else
+  ## where the line is full.
+  wrapInto(s, w, 0, s.len, result)
+
+proc wrapLook(): Hash =
+  ## (what the characters' widths depend on: the font, its size, the scale)
+  !$(hash(textSize()) !& ord(uiFont()) !& pxScale !& ord(hdText()) !& FontH !&
+     textWidth("Wide words wrap: 0123456789, mm ii"))
+
+proc samePrefix(a, b: string): int =
+  ## How many bytes `a` and `b` start with alike.
+  let m = min(a.len, b.len)
+  const Chunk = 256
+  while result + Chunk <= m and equalMem(unsafeAddr a[result], unsafeAddr b[result], Chunk):
+    result += Chunk
+  while result < m and a[result] == b[result]: inc result
+
+proc sameSuffix(a, b: string; most: int): int =
+  ## How many bytes `a` and `b` end with alike (`most` at most).
+  const Chunk = 256
+  while result + Chunk <= most and
+        equalMem(unsafeAddr a[a.len - result - Chunk], unsafeAddr b[b.len - result - Chunk], Chunk):
+    result += Chunk
+  while result < most and a[a.len - 1 - result] == b[b.len - 1 - result]: inc result
+
 proc linesOf(id: Id; s: string; w: int): seq[VLine] =
-  ## `visualLines`, remembered while the text and the width stay.
-  let h = hash(s)
+  ## `visualLines`, remembered while the text, the width and the font stay;
+  ## when the text changed, only the lines of it the change touched are
+  ## wrapped again (typing in a long text costs what its line costs).
+  let look = wrapLook()
   wrapCache.withValue(id, c):
-    if c.h == h and c.w == w: return c.lines
+    if c.w == w and c.look == look:
+      if c.text == s: return c.lines
+      let o = c.text.len
+      let n = s.len
+      let p = samePrefix(c.text, s)
+      let q = sameSuffix(c.text, s, min(o, n) - p)
+      # the text's lines from the one the change starts in to the one it
+      # ends in are wrapped again; those before stay, those after move
+      var hs = p
+      while hs > 0 and s[hs - 1] != '\n': dec hs
+      let heOld = lineEnd(c.text, o - q)
+      let heNew = lineEnd(s, n - q)
+      template firstFrom(lo0: int; past: untyped): int =
+        # (the first shown line starting past where it is said: they are in order)
+        var lo = lo0
+        var hi = c.lines.len
+        while lo < hi:
+          let m = (lo + hi) shr 1
+          let a {.inject.} = c.lines[m].a
+          if past: hi = m else: lo = m + 1
+        lo
+      let k0 = firstFrom(0, a >= hs)
+      let k1 = firstFrom(k0, a > heOld)
+      var lines = newSeqOfCap[VLine](c.lines.len + 8)
+      for k in 0 ..< k0: lines.add c.lines[k]
+      wrapInto(s, w, hs, heNew, lines)
+      let d = n - o
+      for k in k1 ..< c.lines.len:
+        lines.add (c.lines[k].a + d, c.lines[k].b + d, c.lines[k].soft)
+      c.text = s
+      c.lines = lines
+      return lines
   result = visualLines(s, w)
   if wrapCache.len > 64: wrapCache.clear()
-  wrapCache[id] = (h, w, result)
+  wrapCache[id] = (s, w, look, result)
 
 proc lineOf(vl: seq[VLine]; i: int): int =
   ## The shown line the caret at byte `i` is on.
@@ -910,11 +1004,12 @@ var tapFocus: Id
 
 proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
              allowed: set[char] = {}; right = false; frameless = false;
-             wrap = false): bool =
+             wrap = false; readOnly = false): bool =
   ## A text box at `r` (for widgets made of one: spin, number fields...).
   ## `allowed` limits the characters typed, `right` aligns the text right,
   ## `frameless` leaves out the border (the widget around draws one),
-  ## `wrap` (several lines) wraps long lines at the words.
+  ## `wrap` (several lines) wraps long lines at the words, `readOnly`: the
+  ## text is selected, copied and scrolled through, not changed.
   ## Its menu (a right click, a long press): Cut, Copy, Paste, Delete,
   ## Select all.
   var st = state(id)
@@ -1013,13 +1108,14 @@ proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
       moved = true
       ui.keyUsed = true
     template replaceSel(t: string) =
-      let a = min(st.caret, st.anchor)
-      let b = max(st.caret, st.anchor)
-      s = s[0 ..< a] & t & s[b .. ^1]
-      st.caret = a + t.len
-      st.anchor = st.caret
-      changed = true
-      moved = true
+      if not readOnly:
+        let a = min(st.caret, st.anchor)
+        let b = max(st.caret, st.anchor)
+        s = s[0 ..< a] & t & s[b .. ^1]
+        st.caret = a + t.len
+        st.anchor = st.caret
+        changed = true
+        moved = true
     proc clean(t: string): string =
       for c in t:
         if c == '\r': continue
@@ -1074,7 +1170,7 @@ proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
         if ctrl and a0 != b0 and not pass: putClipboardText(s[a0 ..< b0])
         elif shift: replaceSel(clean(getClipboardText()))
       of KeyEnter:
-        if multi:
+        if multi and not readOnly:
           ui.keyUsed = true
           replaceSel("\n")
       of KeyA:
@@ -1175,19 +1271,19 @@ proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
       st.caret = a0 + t.len
       st.anchor = st.caret
       changed = true
-    if menuItem("Cu&t", "Ctrl+X", enabled = some and not pass and enabled):
+    if menuItem("Cu&t", "Ctrl+X", enabled = some and not pass and enabled and not readOnly):
       putClipboardText(s[a0 ..< b0])
       put("")
     if menuItem("&Copy", "Ctrl+C", enabled = some and not pass):
       putClipboardText(s[a0 ..< b0])
-    if menuItem("&Paste", "Ctrl+V", enabled = enabled):
+    if menuItem("&Paste", "Ctrl+V", enabled = enabled and not readOnly):
       var t = ""
       for c in getClipboardText():
         if c == '\r' or (c == '\n' and not multi): continue
         if allowed != {} and c notin allowed: continue
         t.add c
       put(t)
-    if menuItem("&Delete", "Del", enabled = some and enabled): put("")
+    if menuItem("&Delete", "Del", enabled = some and enabled and not readOnly): put("")
     menuSeparator()
     if menuItem("Select &all", "Ctrl+A", enabled = s.len > 0):
       st.anchor = 0
@@ -1197,38 +1293,43 @@ proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
   changed
 
 proc edit*(s: var string; w = 0; password = false;
-           enabled = true): bool {.discardable.} =
+           enabled = true; readOnly = false): bool {.discardable.} =
   ## A one-line text box bound to `s`; true when the text changed.
+  ## `readOnly`: selected and copied, not changed.
   let r = place(if w > 0: w else: 0, EditH, fill = w <= 0)
-  editAt(idOf(s, "edit"), s, r, false, password, enabled)
+  editAt(idOf(s, "edit"), s, r, false, password, enabled, readOnly = readOnly)
 
 proc editArea*(s: var string; lines = 6; w = 0;
-               enabled = true; wrap = true): bool {.discardable.} =
+               enabled = true; wrap = true; readOnly = false): bool {.discardable.} =
   ## A multi-line text box with a scroll bar. `lines` < 0 fills the
   ## height left in the window. Long lines wrap at the words (`wrap`
-  ## false: they scroll sideways).
+  ## false: they scroll sideways). `readOnly`: the text can be selected,
+  ## copied and scrolled through, not changed (a log, a message's source).
   let h = if lines < 0: remainingH() else: lines * FontH + 6
   let r = place(if w > 0: w else: 0, h, fill = w <= 0)
-  editAt(idOf(s, "area"), s, r, true, false, enabled, wrap = wrap)
+  editAt(idOf(s, "area"), s, r, true, false, enabled, wrap = wrap, readOnly = readOnly)
 
 # ---- lists ------------------------------------------------------------------
 
 proc drawItem(x, y, w: int; s: string; c: Color; tabs: openArray[int]) =
-  ## An item; '\t' moves to the next tab stop.
+  ## An item; '\t' moves to the next tab stop. (The stops grow with the
+  ## UI's size, as the text does, and a column's text stops short of the
+  ## next: at 150% the columns ran into each other.)
   if '\t' notin s:
     text(x, y, s, c)
     return
-  var col = 0
   var cx = x
-  for part in s.split('\t'):
-    text(cx, y, part, c)
-    inc col
-    cx = x + (if col - 1 < tabs.len: tabs[col - 1] else: col * 90)
+  let parts = s.split('\t')
+  for k, part in parts:
+    let next = x + dp(if k < tabs.len: tabs[k] else: (k + 1) * 90)
+    text(cx, y, (if k < parts.high: ellipsize(part, next - cx - dp(4)) else: part), c)
+    cx = next
 
 proc listbox*(items: openArray[string]; sel: var int; rows = 6; w = 0;
               tabs: openArray[int] = []; enabled = true): bool {.discardable.} =
   ## A list bound to the selected index `sel`; true when it changed.
-  ## Items may hold '\t' columns aligned on `tabs` (pixels).
+  ## Items may hold '\t' columns aligned on `tabs` (pixels at 100%: they
+  ## grow with the UI's size).
   let h = if rows < 0: remainingH() else: rows * ItemH + 2
   let r = place(if w > 0: w else: 0, h, fill = w <= 0)
   let id = idOf(sel, "list")
@@ -1742,7 +1843,24 @@ proc paletteTabFace*(r: Rect; front, hover: bool): Color =
     hline(r.x + 1, r.y, r.w - 2, th.frame)
     vline(r.x, r.y + 1, r.h - 2, th.frame)
     vline(r.x + r.w - 1, r.y + 1, r.h - 2, th.frame)
-    contrastInk(back, th.window, th.gray)
+    # (the light color a candidate too: in Gray the window's color is the
+    # panel's gray, and labels were gray on dark gray -- hard to read)
+    contrastInk(back, contrastInk(back, th.window, th.light), th.gray)
+
+proc plainLabel(l: string): string =
+  ## A label shown plain: "&&" an "&", a lone "&" left out (in one pass what
+  ## `.replace("&&", "\0").replace("&", "").replace("\0", "&")` gives).
+  if '&' notin l and '\0' notin l: return l
+  result = newStringOfCap(l.len)
+  var i = 0
+  while i < l.len:
+    if l[i] == '&':
+      if i + 1 < l.len and l[i + 1] == '&':
+        result.add '&'
+        inc i
+    elif l[i] == '\0': result.add '&'
+    else: result.add l[i]
+    inc i
 
 proc beginTabs*(sel: var int; labels: openArray[string]; sameHeight = false) =
   ## Tabs over a page (see `tabs`). When they do not fit, two arrow
@@ -1759,8 +1877,13 @@ proc beginTabs*(sel: var int; labels: openArray[string]; sameHeight = false) =
   if labels.len > 0: sel = clamp(sel, 0, labels.high)
   var ws = newSeq[int](labels.len)
   var total = 0
+  # (the palette's labels as shown, worked out once a frame)
+  var plain: seq[string]
+  if pal:
+    plain = newSeq[string](labels.len)
+    for i, l in labels: plain[i] = core.tr(plainLabel(l))
   for i, l in labels:
-    ws[i] = if pal: textWidth(core.tr(l.replace("&&", "\0").replace("&", "").replace("\0", "&")), pst) + dp(12)
+    ws[i] = if pal: textWidth(plain[i], pst) + dp(12)
             else: labelWidth(l, true) + dp(22)          # room for the bold (chosen) label
     total += ws[i]
   # the arrows, when the tabs are wider than the page
@@ -1864,7 +1987,7 @@ proc beginTabs*(sel: var int; labels: openArray[string]; sameHeight = false) =
         selX = x
         selW = tw
       let ink = paletteTabFace(tr, up, hovered(tr) and canInput() and not up)
-      let shown = core.tr(l.replace("&&", "\0").replace("&", "").replace("\0", "&"))
+      template shown: untyped = plain[i]
       let lw = textWidth(shown, pst)
       let lx = x + dp(6)                       # (as the docked panels': at the left)
       text(lx, tr.y + (tr.h - lineHeight(pst)) div 2, shown, ink, pst)
@@ -3221,15 +3344,17 @@ proc disc(x, y, d: int; c: Color) =
     hline(x + r - dx, y + j, 2 * dx, c)
 
 proc msgIcon*(kind: MsgIcon) =
-  ## A 32x32 message box icon.
-  let r = place(32, 32)
+  ## A 32x32 message box icon (at 100%: it grows with the UI's size).
+  let cell = place(dp(32), dp(32))
   if retroIcons and kind != miNone:
-    pixelIconAt(r, case kind
+    pixelIconAt(cell, case kind
       of miStop: pxError
       of miQuestion: pxQuestion
       of miWarning: pxWarning
       else: pxInfo)
     return
+  # (the drawn icons are 32 pixels: in the middle of the cell)
+  let r = rect(cell.x + (cell.w - 32) div 2, cell.y + (cell.h - 32) div 2, 32, 32)
   case kind
   of miNone: discard
   of miStop:
@@ -3258,16 +3383,18 @@ proc msgBox*(open: var bool; title, msg: string;
   ## A message box while `open`. Returns the number of the button clicked
   ## (1 = first) once, closing it; Esc counts as the last button.
   var tw = 0
-  for line in wrapLines(msg, 360): tw = max(tw, textWidth(line))
+  # (the sizes grow with the UI's: at 300% a message wrapped at 360
+  # pixels broke after every word or two, beside a tiny icon)
+  for line in wrapLines(msg, dp(360)): tw = max(tw, textWidth(line))
   let bw = buttons.len * dp(72) + (buttons.len - 1) * Gap
-  let inner = max(tw + (if icon == miNone: 0 else: 48), bw) + 8
+  let inner = max(tw + (if icon == miNone: 0 else: dp(48)), bw) + 8
   let w = min(inner + 2 * Pad + 10, ui.w - 16)
   let was = open
   if beginDialog(open, title, w):
     row:
       if icon != miNone: msgIcon(icon)
       col:
-        space(if msg.contains('\n') or tw > 300: 2 else: 9)
+        space(if msg.contains('\n') or tw > dp(300): dp(2) else: dp(9))
         paragraph(msg, min(tw + 2, available()))
     space(4)
     beginRow()
@@ -3508,6 +3635,11 @@ proc classicCaption() =
     menuSeparator()
     if menuItem("&Close", "Alt+F4"): requestClose()
     menuSeparator()
+    # (the user's choice of frame, kept for the app: `userFrameChoice`)
+    if userFrameChoice and
+       menuItem(if platformName() == "windows": "&Windows' Own Frame" else: "&Desktop's Own Frame"):
+      chooseClassicFrame(false)
+    if userFrameChoice: menuSeparator()
     if menuItem("&Larger", "Ctrl++", enabled = uiScale() < 300):
       setUiScale(scaleStep(1))
     if menuItem("Sm&aller", "Ctrl+-", enabled = uiScale() > 50):

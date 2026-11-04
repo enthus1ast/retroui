@@ -1,7 +1,7 @@
 ## Business controls for data-entry apps:
 ##
 ## - `maskedEdit`: a field typed into a mask ("(###) ####-####", "UU-####")
-## - `recordNav`: the record navigator of database forms (|< < 3 of 20 > >|,
+## - `recordNav`: the record navigator of database forms (``|< < 3 of 20 > >|``,
 ##   New, Delete, Save, Cancel)
 ## - `dualList`: two lists to move items between (Available / Chosen)
 ## - `dateRange`: from and to dates with presets (This month, Last year...)
@@ -541,7 +541,7 @@ var propBuf: Table[Id, string]          # the text being typed into a value
 proc propertyGrid*(props: var seq[Prop]; sel: var int; height = -1;
                    help = true; key = ""): int {.discardable.} =
   ## Properties as names and values in two columns, by `category` (a
-  ## category folds away with its [-] box), the chosen one edited in place:
+  ## category folds away with its ``[-]`` box), the chosen one edited in place:
   ## text and numbers typed, Yes / No flipped with a click or Space,
   ## choices dropped down (or flipped through with a double click), colors
   ## typed as #RRGGBB or picked, dates with their calendar. The `help` line
@@ -851,7 +851,7 @@ proc treeGrid*(cols: var seq[Column]; rows: var seq[TreeRow]; sel: var int;
                height = 10; w = 0; boldParents = true): TreeGridEvent {.discardable.} =
   ## A tree whose rows have columns (accounts with their balances, parts
   ## with their quantities): rows with deeper rows after them open and
-  ## close with their [+] box, a double click, Right / Left or Space;
+  ## close with their ``[+]`` box, a double click, Right / Left or Space;
   ## Up, Down, Page Up, Page Down, Home, End move; Enter (or a double click
   ## on a row without children) activates. Drag a header's edge to resize
   ## its column. `height` in rows (-1 fills). Parents are bold.

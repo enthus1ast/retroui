@@ -4,12 +4,17 @@
 ## how the bars move down under it, switching it at run time and keeping
 ## the choice in the settings.
 
-import std/os
+import std/[os, strutils]
 import retro
 import retro/uirelays/[input, screen, services]
 import harness
 
 fakeDriver()
+# (what the toolkit keeps for the app -- the frame the user chose -- in a
+# folder of the test's own)
+let keepHome = getTempDir() / "retro-test-frame-" & $getCurrentProcessId()
+putEnv("XDG_DATA_HOME", keepHome)
+removeDir(keepHome)
 
 # ---- a system that can do without its frame ----------------------------------------------------
 
@@ -36,10 +41,17 @@ proc fakeSetMaximized(on: bool) =
 proc fakeMinimize(): bool =
   inc minimized
   true
+var
+  menuLabel = ""                      # the app's item in the system's menu
+  menuPicked = false
 frameRelays = FrameRelays(setSystemFrame: fakeSetSystemFrame, dragWindow: fakeDrag,
                           setMaximized: fakeSetMaximized,
                           maximized: proc (): bool = maxed,
-                          active: proc (): bool = activeWin)
+                          active: proc (): bool = activeWin,
+                          menuItem: proc (label: string; checked: bool) = menuLabel = label,
+                          menuItemChosen: proc (): bool =
+                            result = menuPicked
+                            menuPicked = false)
 systemRelays.minimize = fakeMinimize
 let harnessCreate = windowRelays.createWindow
 windowRelays.createWindow = proc (l: var ScreenLayout; icon: pointer; iconLen: int) =
@@ -257,25 +269,57 @@ block runTime:
   doAssert px(40, 10) == Navy
 
 block settings:
-  # kept only when it is not what the app was built with; RETRO_FRAME, when
-  # set, wins over what was kept (and is not kept itself)
+  # the user's choice is kept by the toolkit for the app (its window.ini),
+  # not in the app's settings; a store of before is brought over once
+  doAssert appIdent == "frame" and menuLabel == "Windows 3.1 &Frame",
+    "the system's menu offers the 3.1 frame: " & menuLabel
   var s: Settings
-  storeAppearance(s)
-  doAssert not s.hasKey("look.frame"), "(RETRO_FRAME says)"
-  delEnv("RETRO_FRAME")
-  storeAppearance(s)
-  doAssert s.getOrDefault("look.frame") == "classic"
-  setClassicFrame(false)
-  storeAppearance(s)
-  doAssert not s.hasKey("look.frame"), "the default is not kept"
   s["look.frame"] = "classic"
-  restoreAppearance(s)
-  doAssert classicFrame()
-  putEnv("RETRO_FRAME", "system")
+  storeAppearance(s)
+  doAssert not s.hasKey("look.frame"), "the app's settings no longer keep it"
+  delEnv("RETRO_FRAME")
+  doAssert keptFrame() == ""
+  chooseClassicFrame(false)
+  run()
+  doAssert not classicFrame() and keptFrame() == "system"
+  doAssert readFile(keepHome / "frame" / "window.ini").strip == "frame=system"
+  # picked in the system's menu: the 3.1 frame, kept
+  menuPicked = true
+  run(2)
+  doAssert classicFrame() and keptFrame() == "classic", "the system menu's item"
+  # an old store's choice is not brought over once one is kept
   s["look.frame"] = "system"
   restoreAppearance(s)
-  doAssert classicFrame(), "RETRO_FRAME wins over what was kept"
+  doAssert classicFrame() and keptFrame() == "classic"
+  # RETRO_FRAME wins at the start, and is not kept
+  putEnv("RETRO_FRAME", "system")
+  restoreAppearance(s)
+  doAssert classicFrame() and keptFrame() == "classic"
   delEnv("RETRO_FRAME")
+
+block altSpace:
+  # Alt+Space opens the window's menu -- the 3.1 control menu, or the
+  # system's -- and never presses the focused button
+  var pressed = 0
+  let before = view
+  view = proc () =
+    if button("&Quit"): inc pressed
+  run(2)
+  key(KeyTab)
+  run(2)
+  setClassicFrame(false)
+  run(2)
+  key(KeySpace, {AltPressed})
+  run(3)
+  doAssert pressed == 0, "Alt+Space with the system's frame presses nothing"
+  setClassicFrame(true)
+  run(2)
+  key(KeySpace, {AltPressed})
+  run(3)
+  doAssert pressed == 0 and ui.popup != 0, "Alt+Space: the control menu"
+  key(KeyEsc)
+  run(2)
+  view = before
 
 block noFrameWhereItCannot:
   # a system that cannot do without its frame (Wayland, phones): asked
@@ -292,4 +336,5 @@ block noFrameWhereItCannot:
   run()
   doAssert classicFrame()
 
+removeDir(keepHome)
 echo "test_frame: ok"

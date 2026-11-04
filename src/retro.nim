@@ -75,21 +75,97 @@ import retro/[records, desktop, planning, view3d, mapview, htmlview, native, med
 export records, desktop, planning, view3d, mapview, htmlview, native, media,
        report, pdf, templates, canvas2d, morecontrols, dock, toolcustom
 
-template app*(title: string; w, h: int; body: untyped) =
-  ## Open a window (`w` x `h`; phones use the whole screen) and run `body`
-  ## once per frame until it is closed.
-  startApp(title, w, h)
-  while beginFrame():
-    captionBar()
-    body
-    endFrame()
+import std/macros
+
+var appLook = ""   # (the settings `app`'s `look` keeps the look in)
+
+proc keepLook*(name: string) =
+  ## Stores the look the user chose (`storeAppearance`) in the settings
+  ## `name`, its other keys kept.
+  var s = loadSettings(name)
+  storeAppearance(s)
+  saveSettings(name, s)
+
+proc openApp*(title: string; w, h: int; theme = ui.theme; frame = wfAsBuilt;
+              userFrame = true; gpu = gpuMode(); zoom = 0; scale = 0;
+              font = uiFont(); id = ""; icon = ""; look = "") =
+  ## `app`'s start: the window opened with `app`'s options (see `app`).
+  if id.len > 0: appIdent = id
+  userFrameChoice = userFrame
+  case frame
+  of wfSystem: setClassicFrame(false)
+  of wfClassic: setClassicFrame(true)
+  of wfAsBuilt: discard
+  if gpu != gpuMode(): setGpuMode(gpu)
+  if font != uiFont(): setUiFont(font)
+  if scale > 0: setUiScale(scale)
+  if icon.len > 0: windowIcon = windowIconFromPng(icon)
+  startApp(title, w, h, theme, zoom)
+  appLook = look
+  if look.len > 0:
+    restoreAppearance(loadSettings(look))
+    discard lookChanged()        # (what was brought back is no change)
+
+proc appFrameDone*() =
+  ## (after each of `app`'s frames: the look kept when the user changed it)
+  if appLook.len > 0 and lookChanged(): keepLook(appLook)
+
+proc closeApp*() =
+  ## `app`'s end: the look kept (`look`), the window closed.
+  if appLook.len > 0: keepLook(appLook)
   stopApp()
 
-template app*(title: string; w, h: int; theme: Theme; body: untyped) =
-  ## The same as `app`, drawn in `theme`.
-  startApp(title, w, h, theme)
-  while beginFrame():
-    captionBar()
-    body
-    endFrame()
-  stopApp()
+macro app*(args: varargs[untyped]): untyped =
+  ## Opens a window and runs the block once per frame until it is closed
+  ## (a phone's app takes the whole screen):
+  ##
+  ## .. code-block:: nim
+  ##   app "Hello", 320, 120:                 # title, width, height
+  ##     label "Hello"
+  ##   app "Hello", 320, 120, Dark:           # in a theme
+  ##     label "Hello"
+  ##   const ledgerIcon = staticRead("ledger.png")
+  ##   app "Ledger", 900, 600, frame = wfClassic, look = "ledger",
+  ##       icon = ledgerIcon:
+  ##     label "Hello"
+  ##
+  ## The options, by name, all optional:
+  ##
+  ## - `theme`: the colors (`builtinThemes`, or your own `Theme`)
+  ## - `frame`: the window's frame on desktops -- `wfAsBuilt` (what
+  ##   `-d:retroFrame` built in: the system's unless it says classic),
+  ##   `wfSystem`, `wfClassic` (Windows 3.1's, drawn by the app)
+  ## - `userFrame`: the user may switch the frame -- the 3.1 frame's
+  ##   control menu, Windows' system menu, `appearanceSettings` -- and the
+  ##   choice is kept (true, the default); false keeps the app's
+  ## - `gpu`: `gmAuto` (the GPU when it is a real one), `gmGpu`, `gmCpu`
+  ## - `zoom`: whole-pixel magnification (0: the display's own scale)
+  ## - `scale`: the size of everything in percent (0: as kept or 100)
+  ## - `font`: the UI's font (`UiFont`)
+  ## - `id`: the app's name for what the toolkit keeps for it (the frame the
+  ##   user chose, the fault log): the title without its version when ""
+  ## - `icon`: the window's picture, a PNG's bytes (a `const` of `staticRead`)
+  ## - `look`: the settings to keep the look in (`appearanceSettings`'s
+  ##   colors, sizes, font...): brought back at the start, kept as it changes
+  ##
+  ## $RETRO_FRAME, $RETRO_GPU, $RETRO_SCALE, $RETRO_THEME, $RETRO_SIZE and
+  ## $RETRO_ZOOM win over them, for tests and screenshots.
+  if args.len < 4 or args[^1].kind notin {nnkStmtList, nnkStmtListExpr}:
+    error("app: a title, a width, a height, options by name, then the block " &
+          "(app \"Hello\", 320, 120: ...)", args)
+  let body = args[^1]
+  var start = newCall(bindSym"openApp")
+  for i in 0 ..< args.len - 1: start.add args[i]
+  let beginF = bindSym"beginFrame"
+  let caption = bindSym"captionBar"
+  let endF = bindSym"endFrame"
+  let done = bindSym"appFrameDone"
+  let close = bindSym"closeApp"
+  result = quote do:
+    `start`
+    while `beginF`():
+      `caption`()
+      `body`
+      `endF`()
+      `done`()
+    `close`()

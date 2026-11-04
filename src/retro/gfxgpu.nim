@@ -90,6 +90,20 @@ var
   scratchPx: seq[uint32]
   tempTextures: seq[GLuint]    ## made for one frame (shapes too big for the atlas)
   gpuEpochN: int               ## goes up whenever all made on the GPU is forgotten (`gpuEpoch`)
+  # The frame kept between frames, in a texture: when little changed, only
+  # the tiles whose drawing changed are drawn again into it (as the CPU
+  # does), then all of it is put on the screen -- a caret's blink or the
+  # mouse over a button costs what they cover, not a whole frame. A frame
+  # that changed much (scrolled, resized) is drawn whole straight onto the
+  # screen, as where the GPU cannot keep one.
+  keptFbo, keptTex: GLuint     ## the kept frame (0: none)
+  keptW, keptH: int
+  keptValid: bool              ## it holds the frame on the screen (but `overlayNow`'s)
+  intoKept: bool               ## this frame is drawn into it (else onto the screen)
+  blitProg, blitVbo: GLuint    ## puts it on the screen
+  blitTried: bool
+  screenFb: GLint              ## the screen's framebuffer (not 0 everywhere: iOS)
+  screenStale: bool            ## the screen shows more than the frame (`overlayNow`)
 
 proc gpuDebug(msg: string) =
   if getEnv("RETRO_GPU_DEBUG") == "1": stderr.writeLine("[gpu] " & msg)
@@ -225,6 +239,16 @@ proc dropGpuState() =
   tempTextures.setLen(0)
   lastVerts.setLen(0)
   lastBatches.setLen(0)
+  keptFbo = 0
+  keptTex = 0
+  keptW = 0
+  keptH = 0
+  keptValid = false
+  intoKept = false
+  blitProg = 0
+  blitVbo = 0
+  blitTried = false
+  screenStale = false
 
 proc freeGpuState() =
   ## Everything made on the GPU given back (the context stays).
@@ -237,6 +261,10 @@ proc freeGpuState() =
     if a.tex != 0: gl.deleteTextures(1, addr a.tex)
   if vbo != 0: gl.deleteBuffers(1, addr vbo)
   if prog != 0: gl.deleteProgram(prog)
+  if keptFbo != 0 and gl.deleteFramebuffers != nil: gl.deleteFramebuffers(1, addr keptFbo)
+  if keptTex != 0: gl.deleteTextures(1, addr keptTex)
+  if blitVbo != 0: gl.deleteBuffers(1, addr blitVbo)
+  if blitProg != 0: gl.deleteProgram(blitProg)
   dropGpuState()
 
 # ---- drawing ------------------------------------------------------------------------------------
@@ -262,8 +290,10 @@ proc flushDraw() =
       gl.texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, b.filter)
       gl.texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, b.filter)
     gl.drawArrays(GL_TRIANGLES, GLint(b.first), GLsizei(b.count))
-  for b in batches: lastBatches.add (b.first + lastVerts.len, b.count, b.tex, b.filter)
-  lastVerts.add verts
+  if not intoKept:
+    # (drawn onto the screen: `overlayNow` draws this again under what it shows)
+    for b in batches: lastBatches.add (b.first + lastVerts.len, b.count, b.tex, b.filter)
+    lastVerts.add verts
   verts.setLen(0)
   batches.setLen(0)
 
@@ -523,7 +553,7 @@ proc gpuPath(c: Cmd; screen: Rect) =
   let al = c.color shr 24
   # (a see-through rectangle, as `fill` makes them: a rectangle)
   if c.b == 10:
-    let p = pathArena
+    template p: untyped = pathArena          # (not a copy of the whole arena per shape)
     let a = c.a.int
     let s = float32(pxScale)
     let xs = [p[a] * s, p[a + 2] * s, p[a + 4] * s, p[a + 6] * s]
@@ -533,8 +563,18 @@ proc gpuPath(c: Cmd; screen: Rect) =
       quad(min(xs[0], xs[1]), min(ys[0], ys[2]), max(xs[0], xs[1]), max(ys[0], ys[2]), 0, 0, 0, 0,
            c.color and 0xFFFFFF'u32, if al == 0: 255'u8 else: uint8(al), ModeSolid, clip)
       return
+  # (the shape's mask is what it covers of `cl` at this scale: one already in
+  # the atlas is drawn as it is, not rasterized again every frame)
+  var key = c.h
+  mixRect(key, cl)
+  mix(key, uint64(pxScale))
+  key = (4'u64 shl 56) xor (key shr 8)
+  maskAtlas.map.withValue(key, e):
+    maskAtlas.atlasQuad(e[], float32(cl.x - 1), float32(cl.y), float32(e.w), float32(e.h),
+                        c.color and 0xFFFFFF'u32, 255, clip)
+    return
   let m = pathMask(c, cl)
-  maskQuad((4'u64 shl 56) xor (c.h shr 8), unsafeAddr m, cl.x - 1, cl.y, c.color and 0xFFFFFF'u32, clip)
+  maskQuad(key, unsafeAddr m, cl.x - 1, cl.y, c.color and 0xFFFFFF'u32, clip)
 
 proc gpuDots(c: Cmd; clip: Rect) =
   let s = pxScale
@@ -874,33 +914,216 @@ proc endGpuFrame(): bool =
     if gpuFramesOk == 30 and gpuGuardPath.len > 0:
       try: removeFile(gpuGuardPath) except CatchableError: discard
 
-proc gpuPresent(force: bool): bool =
-  ## The frame drawn with OpenGL and shown.
+const BlitVertex = """
+attribute vec2 aPos;
+varying vec2 vUv;
+void main() {
+  gl_Position = vec4(aPos * 2.0 - 1.0, 0.0, 1.0);
+  vUv = aPos;
+}
+"""
+
+const BlitFragment = """
+uniform sampler2D uFrame;
+varying vec2 vUv;
+void main() {
+  gl_FragColor = vec4(texture2D(uFrame, vUv).rgb, 1.0);
+}
+"""
+
+proc makeBlit(): bool =
+  ## The program that puts the kept frame on the screen. It must have 32-bit
+  ## floats (to land on every pixel of a big screen exactly), and the GPU
+  ## framebuffers to draw into a texture: else no frame is kept.
+  blitTried = true
+  if getEnv("RETRO_GPU_KEEP") == "0": return false
+  if gl.genFramebuffers == nil or gl.bindFramebuffer == nil or gl.framebufferTexture2D == nil or
+     gl.checkFramebufferStatus == nil or gl.deleteFramebuffers == nil or
+     gl.disableVertexAttribArray == nil: return false
+  let vs = compile(GL_VERTEX_SHADER, BlitVertex)
+  let fs = compile(GL_FRAGMENT_SHADER, BlitFragment, needHigh = true)
+  if vs == 0 or fs == 0:
+    if vs != 0: gl.deleteShader(vs)
+    if fs != 0: gl.deleteShader(fs)
+    return false
+  let p = gl.createProgram()
+  gl.attachShader(p, vs)
+  gl.attachShader(p, fs)
+  gl.bindAttribLocation(p, 0, "aPos")
+  gl.linkProgram(p)
+  gl.deleteShader(vs)
+  gl.deleteShader(fs)
+  var ok: GLint
+  gl.getProgramiv(p, GL_LINK_STATUS, addr ok)
+  if ok == 0:
+    gl.deleteProgram(p)
+    return false
+  gl.useProgram(p)
+  gl.uniform1i(gl.getUniformLocation(p, "uFrame"), 2)
+  gl.useProgram(prog)
+  var corners = [0'f32, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1]
+  gl.genBuffers(1, addr blitVbo)
+  gl.bindBuffer(GL_ARRAY_BUFFER, blitVbo)
+  gl.bufferData(GL_ARRAY_BUFFER, sizeof(corners), addr corners[0], GL_STREAM_DRAW)
+  blitProg = p
+  gpuDebug("the frame is kept on the GPU: only what changes is drawn again")
+  true
+
+proc keepFrame(): bool =
+  ## The kept frame, at the screen's size (made anew when that changed: then
+  ## all of it is drawn into it); false where the GPU cannot keep one.
+  if blitProg == 0: return false
+  if keptFbo != 0 and keptW == fbW and keptH == fbH: return true
+  if keptFbo != 0: gl.deleteFramebuffers(1, addr keptFbo)
+  if keptTex != 0: gl.deleteTextures(1, addr keptTex)
+  keptFbo = 0
+  keptTex = 0
+  if fbW > maxTex or fbH > maxTex: return false
+  gl.activeTexture(GL_TEXTURE0 + 2)
+  keptTex = newTexture(fbW, fbH, GL_RGBA)
+  gl.bindTexture(GL_TEXTURE_2D, 0)
+  gl.genFramebuffers(1, addr keptFbo)
+  gl.bindFramebuffer(GL_FRAMEBUFFER, keptFbo)
+  gl.framebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, keptTex, 0)
+  let ok = gl.checkFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
+  gl.bindFramebuffer(GL_FRAMEBUFFER, GLuint(screenFb))
+  if not ok:
+    gpuDebug("no framebuffer for the kept frame: every frame is drawn whole")
+    gl.deleteFramebuffers(1, addr keptFbo)
+    gl.deleteTextures(1, addr keptTex)
+    keptFbo = 0
+    keptTex = 0
+    gl.deleteProgram(blitProg)
+    blitProg = 0
+    return false
+  keptW = fbW
+  keptH = fbH
+  keptValid = false
+  true
+
+proc blitKept() =
+  ## The kept frame onto the screen's framebuffer (bound now), all of it.
+  gl.disable(GL_SCISSOR_TEST)
+  gl.disable(GL_BLEND)
+  gl.colorMask(1, 1, 1, 1)
+  gl.useProgram(blitProg)
+  gl.activeTexture(GL_TEXTURE0 + 2)
+  gl.bindTexture(GL_TEXTURE_2D, keptTex)
+  gl.bindBuffer(GL_ARRAY_BUFFER, blitVbo)
+  for i in 1'u32 .. 3'u32: gl.disableVertexAttribArray(i)
+  gl.vertexAttribPointer(0, 2, GL_FLOAT, 0, 8, nil)
+  gl.enableVertexAttribArray(0)
+  gl.drawArrays(GL_TRIANGLES, 0, 6)
+  # (not left on a unit while the next frame is drawn into it)
+  gl.bindTexture(GL_TEXTURE_2D, 0)
+  gl.useProgram(prog)
+  gl.enable(GL_BLEND)
+  gl.colorMask(1, 1, 1, 0)
+
+proc gpuKeepAlive(c: Cmd) =
+  ## (a picture outside what is drawn again is still on the screen: its
+  ## texture is kept as if it had been drawn)
+  case c.kind
+  of ckBitmap:
+    texCache.withValue(cast[pointer](frameBitmaps[c.a]), e): e.used = gpuFrame
+  of ckTex:
+    let key = uint64(imgArena[c.a]) or (uint64(imgArena[c.a + 1]) shl 32)
+    texCache.withValue(cast[pointer](key), e): e.used = gpuFrame
+  else: discard
+
+proc gpuPresent(force: bool; shown: var bool): bool =
+  ## The frame drawn with OpenGL and shown (`shown`: the screen got a new
+  ## one); false when the context was lost. Where the GPU keeps the frame
+  ## and little changed, only the tiles whose drawing changed are drawn
+  ## again into it (as on the CPU) and it is put on the screen; else all of
+  ## the frame is drawn, straight onto the screen.
+  shown = false
   if not beginGpuFrame(): return false
+  if gl.genFramebuffers != nil and gl.bindFramebuffer != nil:
+    var bound: GLint
+    gl.getIntegerv(GL_FRAMEBUFFER_BINDING, addr bound)
+    if keptFbo == 0 or bound != GLint(keptFbo): screenFb = bound
+  if not blitTried: discard makeBlit()
+  let canKeep = blitProg != 0 and fbW <= maxTex and fbH <= maxTex
+  var full = force
+  var damage = rect(0, 0, fbW, fbH)
+  var drawn = true                  # (else the kept frame only put back)
+  intoKept = false
+  if canKeep:
+    let runs = tileRuns(full)
+    if not full:
+      if runs.len > 0:
+        damage = runs[0]
+        for r in runs: damage = union(damage, r)
+      if runs.len == 0 and not screenStale:
+        # (nothing on the screen changed: nothing drawn, nothing sent)
+        for b in frameBitmaps: b.dirty = rect(0, 0, 0, 0)
+        for t in 0 ..< tilesX * tilesY: shownTiles[t] = tileHash[t]
+        return true
+      elif runs.len == 0:
+        # (what `overlayNow` put over the frame taken away)
+        if keepFrame() and keptValid: drawn = false
+        else: full = true
+      elif damage.w * damage.h * 2 < fbW * fbH and keepFrame():
+        # little changed: into the kept frame (all of it, when it does not
+        # hold the frame on the screen)
+        intoKept = true
+        if not keptValid: full = true
+      else: full = true
+  else: full = true
   lastVerts.setLen(0)
   lastBatches.setLen(0)
-  gl.clearColor(float32((clearColor shr 16) and 255) / 255, float32((clearColor shr 8) and 255) / 255,
-                float32(clearColor and 255) / 255, 1)
-  gl.colorMask(1, 1, 1, 1)
-  gl.clear(GL_COLOR_BUFFER_BIT)
-  gl.colorMask(1, 1, 1, 0)
   inc frameNo
   prepGlyphs.setLen(0)
   prepCps.setLen(0)
   prepSpans.setLen(0)
   frameMasks.setLen(0)
-  for l in 0 ..< MaxLayers:
-    for c in layers[l]: gpuCmd(c)
+  if drawn:
+    if intoKept: gl.bindFramebuffer(GL_FRAMEBUFFER, keptFbo)
+    let part = not full
+    if part:
+      # (only what changed: the GPU touches no pixel outside it, and what
+      # lies wholly outside is not even sent)
+      gl.enable(GL_SCISSOR_TEST)
+      gl.scissor(GLint(damage.x), GLint(fbH - damage.y - damage.h), GLsizei(damage.w),
+                 GLsizei(damage.h))
+    gl.clearColor(float32((clearColor shr 16) and 255) / 255, float32((clearColor shr 8) and 255) / 255,
+                  float32(clearColor and 255) / 255, 1)
+    gl.colorMask(1, 1, 1, 1)
+    gl.clear(GL_COLOR_BUFFER_BIT)
+    gl.colorMask(1, 1, 1, 0)
+    for l in 0 ..< MaxLayers:
+      for c in layers[l]:
+        if not part or intersects(devBox(c), damage): gpuCmd(c)
+        else: gpuKeepAlive(c)
+    flushDraw()
+    if part: gl.disable(GL_SCISSOR_TEST)
+    if intoKept: gl.bindFramebuffer(GL_FRAMEBUFFER, GLuint(screenFb))
+  if intoKept or not drawn: blitKept()
   for b in frameBitmaps: b.dirty = rect(0, 0, 0, 0)
   if not endGpuFrame():
     gpuDebug("swap failed: back to the CPU")
     gpuOn = false
     return false
+  if canKeep:
+    for t in 0 ..< tilesX * tilesY: shownTiles[t] = tileHash[t]
+  if drawn: keptValid = intoKept
+  intoKept = false
+  screenStale = false
+  shown = true
   true
 
 proc gpuOverlay(r: Rect) =
   ## (`overlayNow`) The last frame again, what was just recorded over it.
   if not beginGpuFrame(): return
+  if keptValid and keptFbo != 0 and keptW == fbW and keptH == fbH:
+    # (the kept frame on the screen, what was recorded over it; the next
+    # frame puts the kept one back)
+    blitKept()
+    for c in layers[0]: gpuCmd(c)
+    discard endGpuFrame()
+    screenStale = true
+    return
   let keepV = lastVerts
   let keepB = lastBatches
   verts = keepV
@@ -976,7 +1199,7 @@ proc startGpu(): bool =
   ## OpenGL tried (once): the context, the functions, the program, a test.
   gpuTried = true
   if gpuWanted == gmCpu or gpuRelays.startGpu == nil or gpuRelays.gpuProc == nil: return false
-  let forced = getEnv("RETRO_GPU") == "1"
+  let forced = getEnv("RETRO_GPU").toLowerAscii in ["1", "gpu"]
   if gpuWanted == gmAuto and not forced and not hasGpuDevice():
     gpuNoDevice = true
     gpuDebug("no graphics device: drawing on the CPU (OpenGL not loaded)")

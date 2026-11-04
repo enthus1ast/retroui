@@ -336,6 +336,18 @@ block damagedFilesAreRefusedNotCrashing:
   doAssert zlibDecompress(bomb).len == 1_000_000
   doAssertRaises(InflateError): discard zlibDecompress(bomb, maxOut = 1000)
 
+block deflateMatchesAtAnyOffset:
+  # (matches compared eight bytes at a time from any byte offset -- once
+  # read through a uint64 pointer, unaligned: undefined behaviour that
+  # UBSan reported; now copied)
+  var r = initRand(5)
+  for level in [1, 4, 6, 9]:
+    for n in [0, 1, 7, 9, 300, 70_000]:
+      var data = newSeq[byte](n)
+      for i in 0 ..< n:
+        data[i] = if i mod 37 < 20: byte(i mod 7) else: byte(r.rand(255))
+      doAssert zlibDecompress(zlibCompressLevel(data, level)) == data
+
 block zipCannotWriteOutsideItsFolder:
   for evil in ["../evil.txt", "/tmp/evil.txt", "a/../../evil.txt", "C:\\evil.txt"]:
     var z = newZipWriter()

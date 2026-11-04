@@ -902,7 +902,9 @@ proc setScheme(i: int) =
   scheme = i
   ui.theme = [Classic, Gray, Dark][i]
 
-app "Control Gallery", 760, 540:
+# (`look`: the colors, sizes and font chosen in View, Appearance kept for
+# the next start; the frame the user picks is kept by the toolkit itself)
+app "Control Gallery", 760, 540, look = "retro-gallery":
   if closeRequested():
     cancelClose()
     showConfirm = true
@@ -970,9 +972,11 @@ app "Control Gallery", 760, 540:
       status = "Went to " & ["Home", "Search", "Alerts", "Profile"][navSel]
     if fab(nfPlus, "New item"): toast("New item", glyph = nfPlus)
 
-  tabs(tab, ["&Controls", "&Lists", "&Business", "Char&ts", "&Drawing", "&Scrolling",
-             "&More", "Mar&kdown", "&Apps", "F&iles", "&Records", "&Windows", "&Planning",
-             "Map && &3D", "Ca&nvas", "&HTML", "R&eports", "S&ystem"]):
+  # (Alt + a letter: a letter of its own for each tab; the menus' letters --
+  # F, E, V, I, W, H -- and the buttons' of the pages are left to them)
+  tabs(tab, ["&Controls", "&Lists", "&Business", "Char&ts", "Drawin&g", "&Scrolling",
+             "&More", "Mar&kdown", "&Apps", "Files", "&Records", "Windows", "&Planning",
+             "Map && &3D", "Ca&nvas", "HTML", "Reports", "S&ystem"]):
     case tab
     of 14: canvasTab()
     of 15: htmlTab()
@@ -993,7 +997,7 @@ app "Control Gallery", 760, 540:
             discard button("Disabled", enabled = false)
             if button("&Delete..."): showDelete = true
           row:
-            if button("&Run", w = 72): running = not running
+            if button("R&un", w = 72): running = not running
             if button("Reset", w = 72):
               progress = 0.0
               running = false
@@ -1118,25 +1122,29 @@ app "Control Gallery", 760, 540:
     of 4:
       adaptive(420):
         group "Canvas":
-          let r = canvas(0, 200)
+          # (sizes through `dp`: the drawing grows with the UI's scale)
+          let r = canvas(0, dp(200))
           fill(r, ui.theme.field)
           box(r, ui.theme.frame)
           if showGrid:
-            for x in countup(r.x + 10, r.x + r.w - 2, 10):
+            for x in countup(r.x + dp(10), r.x + r.w - 2, max(2, dp(10))):
               vline(x, r.y + 1, r.h - 2, ui.theme.face)
-            for y in countup(r.y + 10, r.y + r.h - 2, 10):
+            for y in countup(r.y + dp(10), r.y + r.h - 2, max(2, dp(10))):
               hline(r.x + 1, y, r.w - 2, ui.theme.face)
           for i in 0 ..< 8:
-            let w = 20 + i * 12
-            fill(r.x + 16 + i * 4, r.y + 16 + i * 20, w, 14, palette[i + 8])
-          text(r.x + r.w - 140, r.y + 20, "Draw anything:", ui.theme.fieldText)
-          text(r.x + r.w - 140, r.y + 36, "fill, box, lines,", ui.theme.fieldText)
-          text(r.x + r.w - 140, r.y + 52, "text and icons.", ui.theme.fieldText, true)
-          text(r.x + r.w - 140, r.y + 72, "Big", palette[colorSel], true, 3)
+            let w = dp(20 + i * 12)
+            fill(r.x + dp(16 + i * 4), r.y + dp(16 + i * 20), w, dp(14), palette[i + 8])
+          let tx = max(r.x + dp(150), r.x + r.w - textWidth("fill, box, lines,") - dp(24))
+          var ty = r.y + dp(20)
+          for (t, bold) in [("Draw anything:", false), ("fill, box, lines,", false),
+                            ("text and icons.", true)]:
+            text(tx, ty, t, ui.theme.fieldText, bold)
+            ty += lineHeight()
+          text(tx, ty + dp(4), "Big", palette[colorSel], true, 3)
         group "Palette":
           for i, c in palette:
             if i mod 4 == 0: beginRow()
-            let r = canvas(32, 24)
+            let r = canvas(dp(32), dp(24))
             fill(r, c)
             box(r, ui.theme.frame)
             if i == colorSel: box(inset(r, 2), if i == 0: palette[15] else: palette[0])

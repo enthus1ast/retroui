@@ -979,8 +979,11 @@ proc text*(x, y: int; s: string; c: Color; st: TextStyle) =
   if hasPixIcons(s):
     iconText(x, y, s, c, st)
     return
-  let w = textWidth(s, st)
   let h = lineHeight(st)
+  # (a line above or below the clip draws nothing: not measured, not kept --
+  # the rows of a long page out of view)
+  if y >= curClip.y + curClip.h or y + h <= curClip.y: return
+  let w = textWidth(s, st)
   if intersect(rect(x, y, w, h), curClip).w == 0: return
   let a = arena.len
   arena.add s
@@ -1015,12 +1018,20 @@ proc endPath(a: int; c: Color) =
     return
   var x0, y0 = 1e9'f32
   var x1, y1 = -1e9'f32
+  # (the points hashed in the same pass, when `add` does not move them: a
+  # mirrored frame's are hashed after)
+  let fused = mirrorW <= 0
+  var ph = 0x84222325'u64
+  let hi = pathArena.high
   var i = a
   while i < pathArena.len:
     let x = pathArena[i]
     if x == x:                       # not the NaN that ends a contour
       x0 = min(x0, x); x1 = max(x1, x)
       y0 = min(y0, pathArena[i+1]); y1 = max(y1, pathArena[i+1])
+    if fused:
+      ph = (ph xor (uint64(cast[uint32](x)) xor
+            (uint64(cast[uint32](pathArena[min(i + 1, hi)])) shl 32))) * 0x100000001B3'u64
     i += 2
   let bb = rect(int(floor(x0)), int(floor(y0)), int(ceil(x1)) - int(floor(x0)) + 1,
                 int(ceil(y1)) - int(floor(y0)) + 1)
@@ -1031,11 +1042,12 @@ proc endPath(a: int; c: Color) =
   let al = if c.a == 0 or c.a == 255: 0'u32 else: uint32(c.a)
   add Cmd(kind: ckPath, color: pack(c) or (al shl 24), r: bb, clip: curClip, a: a.int32,
           b: n.int32)
-  var ph = 0x84222325'u64
-  for k in countup(a, pathArena.high, 2):
-    ph = (ph xor (uint64(cast[uint32](pathArena[k])) xor
-          (uint64(cast[uint32](pathArena[min(k + 1, pathArena.high)])) shl 32))) *
-         0x100000001B3'u64
+  if not fused:
+    ph = 0x84222325'u64
+    for k in countup(a, pathArena.high, 2):
+      ph = (ph xor (uint64(cast[uint32](pathArena[k])) xor
+            (uint64(cast[uint32](pathArena[min(k + 1, pathArena.high)])) shl 32))) *
+           0x100000001B3'u64
   mixLast(ph)
 
 proc pt(x, y: float) {.inline.} =
@@ -1049,8 +1061,13 @@ proc closeContour() {.inline.} =
 proc polygon*(pts: openArray[(float, float)]; c: Color) =
   ## A filled polygon (any shape; where it crosses itself, it is filled).
   let a = beginPath()
-  for (x, y) in pts: pt(x, y)
-  closeContour()
+  # (the arena made long enough once, the points written in)
+  pathArena.setLen(a + 2 * pts.len + 2)
+  for i in 0 ..< pts.len:
+    pathArena[a + 2 * i] = float32(pts[i][0])
+    pathArena[a + 2 * i + 1] = float32(pts[i][1])
+  pathArena[a + 2 * pts.len] = NaN
+  pathArena[a + 2 * pts.len + 1] = NaN
   endPath(a, c)
 
 proc fillContours*(contours: openArray[seq[(float, float)]]; c: Color; ox = 0.0; oy = 0.0;
@@ -1066,12 +1083,28 @@ proc fillContours*(contours: openArray[seq[(float, float)]]; c: Color; ox = 0.0;
     closeContour()
   endPath(a, c)
 
+var unitCircle: array[2, array[161, seq[(float, float)]]]
+  ## the cosines and sines of a circle's `n` steps (one way round and the
+  ## other), worked out once: discs are drawn in great numbers (a chart's
+  ## points) every frame
+
 proc circlePoints(cx, cy, r: float; reverse = false) =
   let n = clamp(int(r * float(pxScale) * 0.9) + 8, 8, 160)
+  let rv = ord(reverse)
+  if unitCircle[rv][n].len != n:
+    var steps = newSeq[(float, float)](n)
+    for i in 0 ..< n:
+      let t = (if reverse: -1.0 else: 1.0) * 2 * PI * float(i) / float(n)
+      steps[i] = (cos(t), sin(t))
+    unitCircle[rv][n] = steps
+  let o = pathArena.len
+  pathArena.setLen(o + 2 * n + 2)
+  let steps = addr unitCircle[rv][n]
   for i in 0 ..< n:
-    let t = (if reverse: -1.0 else: 1.0) * 2 * PI * float(i) / float(n)
-    pt(cx + r * cos(t), cy + r * sin(t))
-  closeContour()
+    pathArena[o + 2 * i] = float32(cx + r * steps[i][0])
+    pathArena[o + 2 * i + 1] = float32(cy + r * steps[i][1])
+  pathArena[o + 2 * n] = NaN
+  pathArena[o + 2 * n + 1] = NaN
 
 proc disc*(cx, cy, r: float; c: Color) =
   ## A filled circle centered at `cx`, `cy`.
@@ -1645,8 +1678,9 @@ proc prepVText(c: var Cmd) =
   if not st.rtl and plainAscii(arena.toOpenArray(c.a, c.a + c.b - 1)):
     for g in asciiGlyphs(arena.toOpenArray(c.a, c.a + c.b - 1), f): one(g)
   else:
-    let run = shape(arena[c.a ..< c.a + c.b], f, if st.rtl: 1 else: -1)
-    for g in run.glyphs: one(g)
+    # (the cached run read where it is: nothing in `one` shapes text)
+    let run = shapeCached(arena[c.a ..< c.a + c.b], f, if st.rtl: 1 else: -1)
+    for i in 0 ..< run.glyphs.len: one(run.glyphs[i])
   prepSpans.add (int32(a), int32(prepGlyphs.len - a), int32(base), emDev)
   c.mag = int32(prepSpans.len)
 
@@ -1691,12 +1725,13 @@ proc rasterVText(c: Cmd) =
     prepVText(cc)
     blitVText(cc)
 
-proc pathMask(c: Cmd; clip: Rect): Mask =
+proc pathMaskInto(c: Cmd; clip: Rect; r: var Raster; m: var Mask) =
   ## Path command `c`'s coverage in device rectangle `clip` (its left edge
-  ## a pixel left of `clip`'s), the color's alpha in it.
+  ## a pixel left of `clip`'s), the color's alpha in it: into `m`, drawn
+  ## with `r` (both keep their memory for the next shape).
   let s = float32(pxScale)
   let w = clip.w + 2
-  var r = newRaster(w, clip.h)
+  r.reset(w, clip.h)
   let ox = float32(clip.x - 1)
   let oy = float32(clip.y)
   var i = c.a.int
@@ -1720,17 +1755,37 @@ proc pathMask(c: Cmd; clip: Rect): Mask =
       py = dy
     i += 2
   if started: r.edge(px, py, fx, fy)
-  result = Mask(w: w, h: clip.h, left: 0, top: 0, a: r.coverage())
+  m.w = w
+  m.h = clip.h
+  m.left = 0
+  m.top = 0
+  r.coverageInto(m.a)
   let al = c.color shr 24
   if al != 0:
     # see-through: the coverage times the alpha
-    for v in result.a.mitems: v = uint8(uint32(v) * al div 255)
+    for v in m.a.mitems: v = uint8(uint32(v) * al div 255)
+
+proc pathMask(c: Cmd; clip: Rect): Mask =
+  ## Path command `c`'s coverage in device rectangle `clip` (`pathMaskInto`).
+  var r: Raster
+  pathMaskInto(c, clip, r, result)
+
+var
+  pathRaster {.threadvar.}: Raster
+  pathCover {.threadvar.}: Mask
+    ## (each drawing thread's, for one shape after another: a chart's
+    ## thousands are not each given memory of their own)
 
 proc rasterPath(c: Cmd) =
   let clip = intersect(devClip(c.clip), devClip(c.r))
   if clip.w <= 0 or clip.h <= 0: return
-  let m = pathMask(c, clip)
-  blendMask(m, clip.x - 1, clip.y, c.color and 0xFFFFFF'u32, clip, false)
+  if (clip.w + 2) * clip.h > 1 shl 18:
+    # (a big one -- an overlay's -- not kept)
+    let m = pathMask(c, clip)
+    blendMask(m, clip.x - 1, clip.y, c.color and 0xFFFFFF'u32, clip, false)
+    return
+  pathMaskInto(c, clip, pathRaster, pathCover)
+  blendMask(pathCover, clip.x - 1, clip.y, c.color and 0xFFFFFF'u32, clip, false)
 
 proc rasterDots(c: Cmd) =
   let clip = devClip(c.clip)
@@ -1841,6 +1896,8 @@ proc rasterPixIcon(c: Cmd) =
       rfill(ox + i * f, oy + j * f, (e - i) * f, f, p and 0xFFFFFF'u32, clip)
       i = e
 
+var bitmapCols {.threadvar.}: seq[int32]
+
 proc rasterBitmap(c: Cmd) =
   let bmp = unsafeAddr frameBitmaps[c.a]      # (no reference counted: any thread)
   template b: untyped = bmp[]
@@ -1857,8 +1914,10 @@ proc rasterBitmap(c: Cmd) =
     for y in cl.y ..< cl.y + cl.h:
       copyMem(addr fp0[y * fbW + cl.x], unsafeAddr b.px[(y - dy) * b.w + (cl.x - dx)], cl.w * 4)
     return
-  # the source column of each screen column, worked out once
-  var xs = newSeq[int32](cl.w)
+  # the source column of each screen column, worked out once (in the
+  # drawing thread's own table)
+  bitmapCols.setLen(cl.w)
+  template xs: untyped = bitmapCols
   for i in 0 ..< cl.w: xs[i] = int32((cl.x + i - dx) * b.w div dw)
   let fp = fbPtr()
   let bp = cast[ptr UncheckedArray[uint32]](unsafeAddr b.px[0])
@@ -1992,21 +2051,28 @@ proc rasterCmd(c: Cmd): bool =
     if run == nil: return true     # (drawn by the system, over the frame)
     rasterSysRun(c, run[])
 
-proc drawRegion(d: Rect): bool =
-  ## Rasterizes the device rectangle `d`; true if a system-font text is there.
+var
+  bandCmds: seq[seq[uint32]]
+    ## per row of tiles, the commands that reach into it (layer shl 28 or
+    ## index), in the order they are drawn: a band looks only at its own
+  bandWanted: seq[bool]           ## (the rows of tiles drawn this frame)
+
+proc drawRegion(d: Rect; band: int): bool =
+  ## Rasterizes the device rectangle `d` (in row of tiles `band`); true if
+  ## a system-font text is there.
   bandClip = d
   let p = fbPtr()
   let cc = clearColor
   for y in d.y ..< d.y + d.h:
     let row = y * fbW
     for x in d.x ..< d.x + d.w: p[row + x] = cc
-  for l in 0 ..< MaxLayers:
-    for c in layers[l]:
-      let b = cmdBox(c)
-      if b.w <= 0 or b.h <= 0 or (b.y + b.h) * pxScale <= d.y or b.y * pxScale >= d.y + d.h or
-         (b.x + b.w) * pxScale <= d.x or b.x * pxScale >= d.x + d.w:
-        continue
-      if rasterCmd(c): result = true
+  for k in bandCmds[band]:
+    let c = addr layers[int(k shr 28)][int(k and 0xFFFFFFF'u32)]
+    let b = cmdBox(c[])
+    if b.w <= 0 or b.h <= 0 or (b.y + b.h) * pxScale <= d.y or b.y * pxScale >= d.y + d.h or
+       (b.x + b.w) * pxScale <= d.x or b.x * pxScale >= d.x + d.w:
+      continue
+    if rasterCmd(c[]): result = true
   bandClip = rect(0, 0, fbW, fbH)
 
 proc send(d: Rect) =
@@ -2038,6 +2104,80 @@ proc forgetShown(dr: Rect) =
   for ty in max(0, dr.y div BandH) .. min(tilesY - 1, (dr.y + dr.h - 1) div BandH):
     for tx in max(0, dr.x div TileW) .. min(tilesX - 1, (dr.x + dr.w - 1) div TileW):
       shownTiles[ty * tilesX + tx] = 0
+
+proc devBox(c: Cmd): Rect {.inline.} =
+  let b = cmdBox(c)
+  rect(b.x * pxScale, b.y * pxScale, b.w * pxScale, b.h * pxScale)
+
+template eachTile(d: Rect; t: untyped; body: untyped) =
+  ## The tiles device rectangle `d` touches.
+  if d.w > 0 and d.h > 0:
+    let tx0 = max(0, d.x div TileW)
+    let tx1 = min(tilesX - 1, (d.x + d.w - 1) div TileW)
+    for ty in max(0, d.y div BandH) .. min(tilesY - 1, (d.y + d.h - 1) div BandH):
+      for tx in tx0 .. tx1:
+        let t = ty * tilesX + tx
+        body
+
+proc tileRuns(force: var bool): seq[Rect] =
+  ## The tiles whose drawing changed since the screen got them (all of them
+  ## when `force`, or when the grid is made anew for another size: then
+  ## `force` is set), in runs along each row of tiles, whole rows together.
+  ## Their hashes are left in `tileHash`, for `shownTiles` once shown. (The
+  ## CPU draws only these tiles; the GPU, where it keeps the frame, too.)
+  bandClip = rect(0, 0, fbW, fbH)
+  let nx = (fbW + TileW - 1) div TileW
+  let ny = (fbH + BandH - 1) div BandH
+  if nx != tilesX or ny != tilesY:
+    tilesX = nx
+    tilesY = ny
+    shownTiles = newSeq[uint64](nx * ny)
+    tileSalt = newSeq[uint64](nx * ny)
+    force = true
+  let n = nx * ny
+  # pictures that changed in part: only the tiles under that part differ
+  # (kept in the tiles' salt, so the next frame does not draw them again)
+  for l in 0 ..< MaxLayers:
+    for c in layers[l]:
+      if c.kind != ckBitmap: continue
+      let b = frameBitmaps[c.a]
+      if b.dirty.w <= 0 or b.stamp == b.whole: continue
+      let s = pxScale
+      let dx = c.r.x * s
+      let dy = c.r.y * s
+      let dw = c.r.w * s
+      let dh = c.r.h * s
+      let x0 = dx + b.dirty.x * dw div b.w - 1
+      let x1 = dx + ((b.dirty.x + b.dirty.w) * dw + b.w - 1) div b.w + 1
+      let y0 = dy + b.dirty.y * dh div b.h - 1
+      let y1 = dy + ((b.dirty.y + b.dirty.h) * dh + b.h - 1) div b.h + 1
+      let d = intersect(intersect(rect(x0, y0, x1 - x0, y1 - y0), devBox(c)), bandClip)
+      eachTile(d, t):
+        mix(tileSalt[t], b.stamp)
+  tileHash.setLen(n)
+  for t in 0 ..< n: tileHash[t] = (clearColor.uint64 * 31 + t.uint64) xor tileSalt[t]
+  for l in 0 ..< MaxLayers:
+    for c in layers[l]:
+      let hh = c.h xor (uint64(l) shl 61)
+      eachTile(intersect(devBox(c), bandClip), t):
+        mix(tileHash[t], hh)
+  # the tiles to draw, in runs along each row of tiles; whole rows together
+  for ty in 0 ..< ny:
+    var tx = 0
+    while tx < nx:
+      let t = ty * nx + tx
+      if force or tileHash[t] != shownTiles[t]:
+        var e = tx
+        while e < nx and (force or tileHash[ty * nx + e] != shownTiles[ty * nx + e]): inc e
+        let r = rect(tx * TileW, ty * BandH, min(fbW, e * TileW) - tx * TileW,
+                     min(fbH, (ty + 1) * BandH) - ty * BandH)
+        if result.len > 0 and r.x == 0 and r.w == fbW and result[^1].x == 0 and
+           result[^1].w == fbW and result[^1].y + result[^1].h == r.y:
+          result[^1].h += r.h
+        else:
+          result.add r
+        tx = e
+      else: inc tx
 
 include gfxgpu
 
@@ -2094,20 +2234,6 @@ proc overlayNow*(r: Rect; body: proc ()) =
     frameHash = sHash
     screenRect = sScreen
 
-proc devBox(c: Cmd): Rect {.inline.} =
-  let b = cmdBox(c)
-  rect(b.x * pxScale, b.y * pxScale, b.w * pxScale, b.h * pxScale)
-
-template eachTile(d: Rect; t: untyped; body: untyped) =
-  ## The tiles device rectangle `d` touches.
-  if d.w > 0 and d.h > 0:
-    let tx0 = max(0, d.x div TileW)
-    let tx1 = min(tilesX - 1, (d.x + d.w - 1) div TileW)
-    for ty in max(0, d.y div BandH) .. min(tilesY - 1, (d.y + d.h - 1) div BandH):
-      for tx in tx0 .. tx1:
-        let t = ty * tilesX + tx
-        body
-
 proc present*(devW, devH: int; force: bool): bool =
   ## Rasterize and show the frame. Nothing happens -- not even a driver
   ## call -- when the frame is the one already on screen; otherwise only
@@ -2127,9 +2253,10 @@ proc present*(devW, devH: int; force: bool): bool =
   if gpuOn:
     if gpuRelays.gpuReady != nil and not gpuRelays.gpuReady():
       return false                  # (no surface now: in the background)
-    if gpuPresent(force):
+    var shown = false
+    if gpuPresent(force, shown):
       shownHash = frameHash
-      return true
+      return shown
     # (the context was lost: the CPU draws from now on)
     stopGpu()
   if fb.len != fbW * fbH:
@@ -2137,61 +2264,11 @@ proc present*(devW, devH: int; force: bool): bool =
     fb.setLen(fbW * fbH)
     tilesX = 0
     force = true
-  bandClip = rect(0, 0, fbW, fbH)
-  let nx = (fbW + TileW - 1) div TileW
-  let ny = (fbH + BandH - 1) div BandH
-  if nx != tilesX or ny != tilesY:
-    tilesX = nx
-    tilesY = ny
-    shownTiles = newSeq[uint64](nx * ny)
-    tileSalt = newSeq[uint64](nx * ny)
-    force = true
+  let runs = tileRuns(force)
+  let nx = tilesX
+  let ny = tilesY
   let n = nx * ny
-  # pictures that changed in part: only the tiles under that part differ
-  # (kept in the tiles' salt, so the next frame does not draw them again)
-  for l in 0 ..< MaxLayers:
-    for c in layers[l]:
-      if c.kind != ckBitmap: continue
-      let b = frameBitmaps[c.a]
-      if b.dirty.w <= 0 or b.stamp == b.whole: continue
-      let s = pxScale
-      let dx = c.r.x * s
-      let dy = c.r.y * s
-      let dw = c.r.w * s
-      let dh = c.r.h * s
-      let x0 = dx + b.dirty.x * dw div b.w - 1
-      let x1 = dx + ((b.dirty.x + b.dirty.w) * dw + b.w - 1) div b.w + 1
-      let y0 = dy + b.dirty.y * dh div b.h - 1
-      let y1 = dy + ((b.dirty.y + b.dirty.h) * dh + b.h - 1) div b.h + 1
-      let d = intersect(intersect(rect(x0, y0, x1 - x0, y1 - y0), devBox(c)), bandClip)
-      eachTile(d, t):
-        mix(tileSalt[t], b.stamp)
   for b in frameBitmaps: b.dirty = rect(0, 0, 0, 0)
-  tileHash.setLen(n)
-  for t in 0 ..< n: tileHash[t] = (clearColor.uint64 * 31 + t.uint64) xor tileSalt[t]
-  for l in 0 ..< MaxLayers:
-    for c in layers[l]:
-      let hh = c.h xor (uint64(l) shl 61)
-      eachTile(intersect(devBox(c), bandClip), t):
-        mix(tileHash[t], hh)
-  # the tiles to draw, in runs along each row of tiles; whole rows together
-  var runs: seq[Rect]
-  for ty in 0 ..< ny:
-    var tx = 0
-    while tx < nx:
-      let t = ty * nx + tx
-      if force or tileHash[t] != shownTiles[t]:
-        var e = tx
-        while e < nx and (force or tileHash[ty * nx + e] != shownTiles[ty * nx + e]): inc e
-        let r = rect(tx * TileW, ty * BandH, min(fbW, e * TileW) - tx * TileW,
-                     min(fbH, (ty + 1) * BandH) - ty * BandH)
-        if runs.len > 0 and r.x == 0 and r.w == fbW and runs[^1].x == 0 and runs[^1].w == fbW and
-           runs[^1].y + runs[^1].h == r.y:
-          runs[^1].h += r.h
-        else:
-          runs.add r
-        tx = e
-      else: inc tx
   # texts made ready on this thread (shaping and the glyph cache are not
   # shared), then the tiles drawn on all the cores, then sent
   inc frameNo
@@ -2221,14 +2298,30 @@ proc present*(devW, devH: int; force: bool): bool =
       let h = min(BandH, r.y + r.h - y)
       items.add rect(r.x, y, r.w, h)
       y += h
+  # the commands that reach into each row of tiles drawn, in order (a band
+  # then goes through its own, not through every command of the frame)
+  if items.len > 0:
+    if bandCmds.len < ny: bandCmds.setLen(ny)
+    if bandWanted.len < ny: bandWanted.setLen(ny)
+    for ty in 0 ..< ny: bandWanted[ty] = false
+    for it in items:
+      bandWanted[it.y div BandH] = true
+      bandCmds[it.y div BandH].setLen(0)
+    for l in 0 ..< MaxLayers:
+      for i in 0 ..< layers[l].len:
+        let b = cmdBox(layers[l][i])
+        if b.w <= 0 or b.h <= 0: continue
+        for ty in max(0, floorDiv(b.y * pxScale, BandH)) ..
+                  min(ny - 1, floorDiv((b.y + b.h) * pxScale - 1, BandH)):
+          if bandWanted[ty]: bandCmds[ty].add (uint32(l) shl 28) or uint32(i)
   var sys = newSeq[bool](items.len)
   if items.len >= 2 and threadCount() > 1:
     inParallel = true
     parallelFor(items.len, proc (lo, hi: int) =
-      for i in lo ..< hi: sys[i] = drawRegion(items[i]), keepAlive = false)
+      for i in lo ..< hi: sys[i] = drawRegion(items[i], items[i].y div BandH), keepAlive = false)
     inParallel = false
   else:
-    for i in 0 ..< items.len: sys[i] = drawRegion(items[i])
+    for i in 0 ..< items.len: sys[i] = drawRegion(items[i], items[i].y div BandH)
   var hasSys = false
   for v in sys: hasSys = hasSys or v
   for r in runs: send(r)

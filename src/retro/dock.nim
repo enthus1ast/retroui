@@ -19,6 +19,7 @@
 ##   the dock sizes the whole side panel (its first open column -- all of
 ##   them collapsed to icons: dragged out, the main one opens again).
 ##
+## .. code-block:: nim
 ##   var dk = newDock()
 ##   discard dk.addColumn()
 ##   discard dk.addGroup(0, [dockPanel("color", "Color", nfPalette), dockPanel("swatches", "Swatches", nfThLarge)])
@@ -28,7 +29,7 @@
 ##     discard dockPanels(dk, "ws", proc (key: string) = panelBody(key), proc (key: string) = panelMenu(key))
 ##     endMdi()
 
-import std/[json, strutils]
+import std/json
 import gfx, core, widgets, desktop
 import uirelays/input
 
