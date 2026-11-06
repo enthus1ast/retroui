@@ -179,9 +179,12 @@ nim c -r -d:release -d:useMalloc app.nim
 In Termux, Nim builds for Android, so the kit decides by what is built:
 an APK's library (`--app:lib`, what `retroapk` makes) gets Android's own
 driver; a program run from the shell gets the X11 driver, its files and
-services as on Linux, and draws on the CPU. With no window manager on
-Termux:X11 the window has no title bar and sits at the top left;
-`RETRO_SIZE=1200x800` makes it bigger, `RETRO_TOUCH=1` finger-sized.
+services as on Linux, and draws on the CPU. It is as big as the tablet's
+density says (Android's own, as an APK would be: 200 % on a 320 dpi
+screen); `RETRO_SCALE=150` makes it smaller or bigger, Ctrl + and Ctrl -
+too. With no window manager on Termux:X11 the window has no title bar and
+sits at the top left; `RETRO_SIZE=1200x800` gives it another size,
+`RETRO_TOUCH=1` finger-sized controls.
 
 ### How the compiler is chosen
 

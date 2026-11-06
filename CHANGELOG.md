@@ -1,5 +1,15 @@
 # Changes
 
+## 0.20.4
+
+- **Termux:X11 at the screen's size.** An X server on Android draws on the
+  device's own pixels and says 96 dpi, so apps came up tiny on a 2K or
+  2.8K tablet. In Termux the X11 driver now takes Android's own density
+  (`ro.sf.lcd_density`, 160 a plain screen's: 320 is 200 %), after
+  `Xft.dpi`, `GDK_SCALE` and `QT_SCALE_FACTOR`; `RETRO_SCALE=150` (or Ctrl
+  + / -) sets it by hand.
+- Retro Gallery and the small examples are 0.20.4.
+
 ## 0.20.3
 
 - **Apps run in Termux, on Termux:X11.** In Termux, Nim builds for
