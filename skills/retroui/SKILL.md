@@ -251,6 +251,10 @@ OS in BUILDING.md.
 
 ## 11. Common mistakes
 
+- A `col` in a plain `row` takes all the room left, so what comes after it
+  (a combo, tool buttons) is squeezed to nothing: give the row its widths,
+  `row([40, -1, 0])` (a picture, the text, then the control at its own
+  width). Two panels in a plain `row` are the same: `row([-1, 130])`.
 - Keeping state in a local inside the frame block (it resets every frame).
 - The same control drawn twice in a loop without `withId` (they share state).
 - Blocking work (big files, network) in the frame code: the window freezes.

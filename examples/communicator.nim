@@ -89,6 +89,7 @@ var
   find = ""
   selected = ""
   friendsWin = MdiWindow(title: "Friends", r: rect(8, 8, 270, 440), open: true, glyph: pxUser, grip: true)
+  friendsSized = false             ## (the Friends window's first size: at the interface's size)
   qrPic: Bitmap
   services: Table[string, string]  ## "upload", "rooms" -> the service's address
   myPhoto: Bitmap
@@ -226,14 +227,15 @@ proc picture(name: string; pic: Bitmap; size: int) =
 proc talkWith(jid: string; room = false; open = true): Talk =
   for t in talks:
     if t.jid == jid: return t
-  # (beside the friends, a step lower than the one before; inside the area)
+  # (beside the friends, a step lower than the one before, at the
+  # interface's size; inside the area)
   let area = mdiAreaRect()
   let k = talks.len mod 6
-  var r = rect(290 + k * 24, 16 + k * 24, 440, 400)
+  var r = rect(friendsWin.r.x + friendsWin.r.w + dp(12) + k * dp(24), dp(16) + k * dp(24), dp(440), dp(400))
   if area.w > 0:
-    r.w = max(280, min(r.w, area.w - r.x - 8))
-    if r.x + r.w > area.w: r.x = max(8, area.w - r.w - 8)
-    r.h = max(220, min(r.h, area.h - r.y - 8))
+    r.w = max(dp(280), min(r.w, area.w - r.x - dp(8)))
+    if r.x + r.w > area.w: r.x = max(dp(8), area.w - r.w - dp(8))
+    r.h = max(dp(220), min(r.h, area.h - r.y - dp(40)))     # (its title bar too)
   result = Talk(jid: jid, room: room, stick: true,
                 win: MdiWindow(title: (if room: jid else: nameOf(jid)), open: open, grip: true,
                                glyph: (if room: nfComments else: nfComment), r: r))
@@ -675,13 +677,13 @@ proc setMyPresence() =
   keep()
 
 proc friendsList() =
-  row:
+  # (the name takes what the picture and the state leave: a long address
+  # must not push the state off the window)
+  row([40, -1, 0]):
     picture(localOf(address), myPhoto, dp(40))
-    space(4)
     col:
       label(localOf(address), bold = true)
       label(bareJid(address), color = idle)
-    spring()
     if combo(States, myState, w = dp(100)): setMyPresence()
   if edit(myNote): noteAt = epochTime()
   if myNote != noteSent and epochTime() - noteAt > 1.2 and xmppRunning(): setMyPresence()
@@ -732,21 +734,20 @@ proc friendsList() =
 
 proc conversation(t: Talk) =
   let b = buddies.getOrDefault(t.jid)
-  row:
+  # (who it is takes what the picture and the buttons leave: a long name
+  # or a room's address must not push the buttons off the window)
+  row(if t.room: @[36, -1, 0] else: @[36, -1, 0, 0]):
     if t.room:
       icon(nfComments, brand, 1.4)
-      space(4)
       col:
         label(t.jid, bold = true)
         label(if t.subject.len > 0: t.subject else: $t.occupants.len & " here", color = idle)
     else:
       picture(nameOf(t.jid), (if b != nil: b.photo else: nil), dp(36))
-      space(4)
       col:
         label(nameOf(t.jid), bold = true)
         let sh = if b != nil: b.showOf else: "unavailable"
         label(if b != nil and b.status.len > 0: b.status else: stateName(sh), color = stateColor(sh))
-    spring()
     if toolButton(nfPaperclip, "Send a file"):
       sendTo = t
       sendPath = getHomeDir()
@@ -756,8 +757,8 @@ proc conversation(t: Talk) =
       askVcard(t.jid)
       showInfo = true
   let listH = max(dp(80), remainingH() - EditH - CtrlH - 3 * Gap - lineHeight())
-  row:
-    beginPanel(listH, key = "talk" & t.jid)
+  proc transcript(t: Talk; h: int) =
+    beginPanel(h, key = "talk" & t.jid)
     for i, l in t.lines:
       withId(i):
         if l.system:
@@ -779,10 +780,18 @@ proc conversation(t: Talk) =
       revealInPanel(bottom, glide = false)
       t.stick = false
     endPanel()
-    if t.room:
-      beginPanel(listH, key = "who" & t.jid)
-      for o in t.occupants: label(o, literal = true)
-      endPanel()
+  if t.room:
+    # (the talk, and beside it who is in the room)
+    row([-1, 130]):
+      col:
+        transcript(t, listH)
+      col:
+        label("In the room", bold = true)
+        beginPanel(max(dp(40), listH - lineHeight() - Gap), key = "who" & t.jid)
+        for o in t.occupants: label(o, literal = true)
+        endPanel()
+  else:
+    transcript(t, listH)
   label(if b != nil and b.typing.len > 0: nameOf(t.jid) & " is " & b.typing & "..." else: " ", color = idle)
   row([-1, 70]):
     if edit(t.draft):
@@ -982,6 +991,12 @@ proc mainScreen() =
       mdiWindowMenu()
     menu "&Help":
       if menuItem("&About Retro Communicator..."): showAbout = true
+  if not friendsSized:
+    let area = mdiAreaRect()
+    if area.w > 0:
+      friendsSized = true
+      friendsWin.r = rect(dp(8), dp(8), max(dp(200), min(dp(280), area.w - dp(16))),
+                          max(dp(240), min(dp(460), area.h - dp(48))))   # (its title bar too)
   mdiArea(-1 - lineHeight() - dp(8)):
     mdiWindow(friendsWin):
       friendsList()

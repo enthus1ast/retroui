@@ -1,5 +1,19 @@
 # Changes
 
+## 0.21.1
+
+- **Retro Communicator's windows complete on tablets:** a room's window
+  shows the talk and who is in the room side by side, with the message
+  box and Send under them (the list went below the talk and pushed them off
+  the window); the Friends window's state chooser (Available, Away, Busy,
+  Invisible) and a talk's Send a file and Info buttons keep their room
+  beside a long name or address instead of slipping off the side. The
+  windows open at the interface's size (larger on a tablet), inside the
+  area.
+- The skill's common mistakes: a `col` in a plain `row` takes all the room
+  left -- give the row its widths.
+- Retro Gallery and the small examples are 0.21.1.
+
 ## 0.21.0
 
 - **`retroui/xmpp`: chat on XMPP (Jabber).** An account on any public
