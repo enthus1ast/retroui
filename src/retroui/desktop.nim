@@ -66,6 +66,8 @@ type
                              ## it): its control menu's "Always on Top", the pin in its title
                              ## bar, or the Window menu -- not while it is maximized (it fills
                              ## the area then: the pin waits, grayed, until it is restored)
+    noPin*: bool             ## no pin in its title bar (a window that is never kept on top:
+                             ## Program Manager's groups, as 3.1 had them)
   MdiCommand = enum mcNone, mcCascade, mcTile, mcArrange, mcActivate, mcClose, mcPin
   MdiState = object
     z: seq[uint]                          # windows, back to front
@@ -82,6 +84,7 @@ type
     pinned: seq[uint]                     # the windows always on top of the others
     maxed: seq[uint]                      # the windows maximized (their pin waits)
     docked: seq[uint]                     # the windows docked behind the others
+    unpinned: seq[uint]                   # the windows never kept on top (`noPin`)
     chosen: uint                          # a docked window clicked last (the active one)
   MdiFrame = object
     key: uint
@@ -235,6 +238,10 @@ proc beginMdiWindow*(w: var MdiWindow): bool =
   elif key in m.docked:
     m.docked.delete(m.docked.find(key))
     if m.chosen == key: m.chosen = 0
+  if w.noPin != (key in m.unpinned):
+    if w.noPin: m.unpinned.add key
+    else: m.unpinned.delete(m.unpinned.find(key))
+  if w.noPin: w.pinned = false
   # always on top: kept over the other documents (asked for by the Window
   # menu last frame, or set by the program)
   if m.cmd == mcPin and m.cmdKey == key and not w.maximized: w.pinned = not w.pinned
@@ -468,7 +475,8 @@ proc beginMdiWindow*(w: var MdiWindow): bool =
   let bs = barH
   let maxBox = rect(title.x + title.w - bs, title.y, bs, barH)
   let minBox = rect(maxBox.x - bs, title.y, bs, barH)
-  let pinBox = rect(minBox.x - bs - dp(2), title.y, bs, barH)
+  let pinBox = if w.noPin: rect(minBox.x, title.y, 0, barH)
+               else: rect(minBox.x - bs - dp(2), title.y, bs, barH)
   # moving by the title bar (up to its buttons: the pin's press is the pin's), sizing by the edges
   if not w.maximized:
     let drag = rect(sysBox.x + sysBox.w, title.y, pinBox.x - sysBox.x - sysBox.w, barH)
@@ -540,14 +548,15 @@ proc beginMdiWindow*(w: var MdiWindow): bool =
   let mx2 = rect(title.x + title.w - bs, title.y, bs, barH)
   let mn2 = rect(mx2.x - bs, title.y, bs, barH)
   # (the pin: always on top -- shown pressed while it is)
-  let pinR = rect(mn2.x - bs - dp(2), title.y, bs, barH)
+  let pinR = if w.noPin: rect(mn2.x, title.y, 0, barH)
+             else: rect(mn2.x - bs - dp(2), title.y, bs, barH)
   let wt = tr(w.title)
   let tw = textWidth(wt, true)
   let room = pinR.x - sys.x - sys.w - dp(8)
   let shownTitle = if tw > room: ellipsize(wt, room, style(bold = true)) else: wt
   text(sys.x + sys.w + max(dp(4), (room - textWidth(shownTitle, true)) div 2 + dp(4)),
        title.y + (barH - FontH) div 2, shownTitle, tfg, true)
-  block:
+  if not w.noPin:
     # (maximized: the pin waits, grayed -- a window that fills the area is not
     # kept over the others)
     let can = not w.maximized
@@ -592,9 +601,10 @@ proc beginMdiWindow*(w: var MdiWindow): bool =
     if menuItem("Mi&nimize"): w.minimized = true
     if menuItem("Ma&ximize", enabled = not w.maximized): w.maximized = true
     menuSeparator()
-    if menuItem("Always on &Top", checked = w.pinned and not w.maximized, enabled = not w.maximized):
-      w.pinned = not w.pinned
-      ui.redraw = true
+    if not w.noPin:
+      if menuItem("Always on &Top", checked = w.pinned and not w.maximized, enabled = not w.maximized):
+        w.pinned = not w.pinned
+        ui.redraw = true
     menuSeparator()
     if menuItem("&Close", "Ctrl+F4"): w.open = false
     if menuItem("Nex&t", "Ctrl+F6"):
@@ -829,7 +839,7 @@ proc mdiWindowMenu*(key = "") =
   if menuItem("&Cascade", "Shift+F5"): mdiCascade(key)
   if menuItem("&Tile", "Shift+F4"): mdiTile(key)
   let top = m.mdiTop
-  if top != 0 and top notin m.docked:
+  if top != 0 and top notin m.docked and top notin m.unpinned:
     # (not for a maximized window: it fills the area)
     if menuItem("Always on T&op", checked = top in m.pinned, enabled = top notin m.maxed):
       mdiCommand(key, mcPin, top)

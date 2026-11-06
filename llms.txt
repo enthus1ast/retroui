@@ -17,3 +17,4 @@
 ## Examples
 
 - [examples/](https://github.com/foxoman/retroui/tree/main/examples): Gallery (every control), Retro Photo, Retro Files, Retro Mail, Retro Board, HR Book, Notepad, Ledger, Charts, Invoice
+- [Retro Desktop](https://github.com/foxoman/retrodesktop): a Windows 3.1 desktop and window manager for Termux:X11 and Linux, made with the kit (the X11 driver's `x11EventHook`)

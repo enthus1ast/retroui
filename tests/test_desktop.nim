@@ -163,6 +163,16 @@ block mdi:
   tap(pinX, pinY)
   run(2)
   doAssert not w2.pinned, "clicked again: off"
+  # a window with no pin (noPin, Program Manager's groups): the place of the
+  # pin is the title bar's, and it is never kept on top
+  w2.noPin = true
+  w2.pinned = true
+  run(2)
+  doAssert not w2.pinned, "a window with no pin is not kept on top"
+  tap(pinX, pinY)
+  run(2)
+  doAssert not w2.pinned, "no pin to click"
+  w2.noPin = false
 
 # ---- find and replace ---------------------------------------------------------------------------
 

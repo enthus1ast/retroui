@@ -9,7 +9,7 @@ name: Release
 #   Android  an APK (arm64)
 #   macOS    the .app, zipped
 #
-# It runs when a version tag is pushed (git push origin v0.20.5: the release
+# It runs when a version tag is pushed (git push origin v0.20.6: the release
 # of that tag), or by hand: Actions > Release > Run workflow, with a tag to
 # release and, if you like, only some of the apps. The other examples are
 # built only when asked, from a clone (RETRO_APP=ledger nimble exe...); a
@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "The release's tag (v0.20.5); empty: build only, no release"
+        description: "The release's tag (v0.20.6); empty: build only, no release"
         required: false
         default: ""
       apps:

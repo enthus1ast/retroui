@@ -182,8 +182,15 @@ tablet, as an Android app does; it is as big as the tablet's density says
 (200 % on a 320 dpi screen; `RETRO_SCALE=150`, or Ctrl + and Ctrl -, for
 another size; `RETRO_TOUCH=1` for finger-sized controls). For windows you
 can move and size, run a window manager on Termux:X11 first (`pkg install
-openbox`, then `openbox &`, or a whole desktop such as xfce4): the app then
-opens as an ordinary window.
+openbox`, then `openbox &`, a whole desktop such as xfce4, or
+[Retro Desktop](https://github.com/foxoman/retrodesktop), the 3.1 desktop I
+made with the kit): the app then opens as an ordinary window, and Termux:X11
+is not brought to the front again (the desktop is there already).
+
+A program can be the window manager itself: the X11 driver hands each event
+to `x11EventHook` (in `retroui/uirelays/drivers/x11_driver`) before it looks
+at it, and gives its connection and window (`x11Display`, `x11Window`);
+`x11Wake` runs a frame. Retro Desktop is made that way.
 
 In Termux, Nim builds for Android, so the kit decides by what is built:
 an APK's library (`--app:lib`, what `retroapk` makes) gets Android's own

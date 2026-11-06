@@ -71,7 +71,9 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
   for what Android's libc and system are either way (bionic's malloc,
   /system/fonts, /storage).
 - **uirelays** (`src/retroui/uirelays`): generic, in upstream's style, no
-  Retro names or app logic. It is the same code as the `uirelays` branch:
+  Retro names or app logic (the X11 driver's `x11EventHook`, `x11Display`,
+  `x11Window`, `x11Wake` are generic too: what any program that manages
+  windows needs; Retro Desktop is one). It is the same code as the `uirelays` branch:
   after changing it, `sh tools/uirelays.sh push "message"`; `sh
   tools/uirelays.sh merge` brings upstream's new commits (nim-lang/uirelays
   master) into the branch, then `pull`. It stays inside the package (no

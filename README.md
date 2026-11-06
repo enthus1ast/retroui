@@ -822,7 +822,9 @@ scroll bars.
   a navy title bar when in front and a white one behind), move by their
   title bars, size by their edges, minimize to icons, maximize (also with
   a double click on the title), and come to the front with a click; Ctrl+F6 goes to the next
-  one and Ctrl+F4 closes; their content scrolls when it is taller.
+  one and Ctrl+F4 closes; their content scrolls when it is taller. A pin
+  in the title bar keeps one on top; `noPin = true` leaves it out (a
+  window that is never kept on top, as Program Manager's groups).
 - **Find and replace:** `findBar(state)` (Enter / F3 next, Shift+F3
   previous, Esc closes; Match case, Whole word, Replace, Replace all) with
   `findIn` and `replaceAllIn` for the text.

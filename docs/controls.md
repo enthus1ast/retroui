@@ -3776,7 +3776,7 @@ The bar's buttons as a setting.
 
 ### mdiArea, mdiWindow, mdiWindowMenu
 
-Windows in the window, as in Program Manager: the 3.1 frame, moved by their title bars, sized by their edges, minimized to icons, maximized, Ctrl+F6 to the next. Keep each `MdiWindow` in a global. `mdiWindowMenu` fills a Window menu: Cascade, Tile and the windows.
+Windows in the window, as in Program Manager: the 3.1 frame, moved by their title bars, sized by their edges, minimized to icons, maximized, Ctrl+F6 to the next. Keep each `MdiWindow` in a global. `mdiWindowMenu` fills a Window menu: Cascade, Tile and the windows. The pin in a title bar keeps that window on top; `MdiWindow(noPin: true)` has none (Program Manager's groups, as 3.1 had them).
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|

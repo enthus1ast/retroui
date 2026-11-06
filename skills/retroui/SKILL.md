@@ -108,7 +108,7 @@ to bottom, `group "Title":`, `card`, `form(labelWidth): field("&Name:"): edit x`
 `spring()` (pushes the rest to the far side), `space(n)`, `adaptive(minW): ...`
 (columns that fold into one on a phone), `scrollPanel`/`panel(h)`/`pane`,
 `tabs`, `split`/`vsplit`, `sidePane`, `menubar: menu "&File": if menuItem("&Open", "Ctrl+O"): ...`,
-`toolbar:`, `statusbar(...)`, MDI windows (`mdiArea`, `mdiWindow`), docking (`retroui/dock`).
+`toolbar:`, `statusbar(...)`, MDI windows (`mdiArea`, `mdiWindow`; `noPin` for no pin in the title bar), docking (`retroui/dock`).
 Sizes are design pixels; the kit scales them to the screen (`dp(n)` for your own).
 
 Forms: `form(90): field("&Name:"): edit name` -- `90` is the caption
@@ -213,7 +213,10 @@ In Termux on Android, `nim c -r app.nim` runs the app on Termux:X11
 (`pkg install x11-repo termux-x11-nightly libx11`): it starts the X server
 when none runs, brings Termux:X11 to the front and fills its screen;
 `retroapk` makes the APK. (`uirelays/target`: `androidApp` is an APK,
-`androidShell` a program in Termux.)
+`androidShell` a program in Termux.) A program that manages other X11
+windows (a window manager, a desktop) gets every event first with
+`x11EventHook` (`retroui/uirelays/drivers/x11_driver`; `x11Display`,
+`x11Window`, `x11Wake`): see Retro Desktop, github.com/foxoman/retrodesktop.
 
 `retroapk` needs only clang with lld (or Zig); without either it fetches
 the NDK. Keep `~/.retro/android` (the signing key) for updates. Details per

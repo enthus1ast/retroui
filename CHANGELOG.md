@@ -1,5 +1,26 @@
 # Changes
 
+## 0.20.6
+
+- **A window manager on the app's own X connection.** The X11 driver hands
+  every event it takes off the queue to `x11EventHook` first (an `XEvent*`;
+  true: it was the hook's), and gives the connection and its window
+  (`x11Display`, `x11Window`); `x11Wake` runs a frame when the hook changed
+  something the window shows. With them a Retro Nim UI program can manage
+  other programs' windows -- I use them for
+  [Retro Desktop](https://github.com/foxoman/retrodesktop), a 3.1 desktop
+  for Termux and Linux.
+- **`_NET_WM_PID` and `WM_CLIENT_MACHINE`** on every X11 window: a task
+  list shows how much memory the program takes and can end one that hangs.
+- **Termux:X11 in front only when it has to be:** with a window manager on
+  the server (a desktop), a program started in Termux opens without
+  bringing the Termux:X11 app forward again (`am start` takes Android about
+  a second).
+- **`MdiWindow.noPin`:** a window in the window with no pin in its title bar
+  and no "Always on Top" in its menus -- Program Manager's groups, as 3.1
+  had them.
+- Retro Gallery and the small examples are 0.20.6.
+
 ## 0.20.5
 
 - **Termux:X11 by itself.** A program run in Termux starts Termux:X11's
