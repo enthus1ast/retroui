@@ -1,4 +1,4 @@
-## Tests of retro/http against a small HTTP server of their own (threads
+## Tests of retroui/http against a small HTTP server of their own (threads
 ## on std/net): the methods, headers both ways, a binary body of 1 MB,
 ## errors, redirects followed and not, a timeout, and requests from many
 ## threads at once. On Linux it runs twice: with libcurl, and with the
@@ -13,7 +13,7 @@
 ##   RETRO_TEST_SERVER=http://127.0.0.1:18080 WINEDEBUG=-all wine /tmp/test_http.exe
 
 import std/[net, os, strutils, times, typedthreads, nativesockets]
-import retro/http
+import retroui/http
 
 # ---- the server ------------------------------------------------------------------------
 

@@ -1,12 +1,13 @@
 ## The Windows 3.1 window frame on desktops (`setClassicFrame`), headless:
 ## where its parts are, what a press on each asks of the system (move, size,
-## maximize, minimize), the control menu, the colors of an inactive window,
-## how the bars move down under it, switching it at run time and keeping
-## the choice in the settings.
+## maximize, minimize), the parts a system's hit test is told
+## (`windowPartAt`), the control menu, the colors of an inactive window,
+## how the bars move down under it, switching it at run time, the item in
+## the system's menu and its check mark, and keeping the choice.
 
 import std/[os, strutils]
-import retro
-import retro/uirelays/[input, screen, services]
+import retroui
+import retroui/uirelays/[input, screen, services]
 import harness
 
 fakeDriver()
@@ -43,12 +44,15 @@ proc fakeMinimize(): bool =
   true
 var
   menuLabel = ""                      # the app's item in the system's menu
+  menuChecked = false                 # ... and its check mark
   menuPicked = false
 frameRelays = FrameRelays(setSystemFrame: fakeSetSystemFrame, dragWindow: fakeDrag,
                           setMaximized: fakeSetMaximized,
                           maximized: proc (): bool = maxed,
                           active: proc (): bool = activeWin,
-                          menuItem: proc (label: string; checked: bool) = menuLabel = label,
+                          menuItem: proc (label: string; checked: bool) =
+                            menuLabel = label
+                            menuChecked = checked,
                           menuItemChosen: proc (): bool =
                             result = menuPicked
                             menuPicked = false)
@@ -66,9 +70,12 @@ startApp("frame", 400, 300)
 doAssert classicFrame() and classicFrameWanted() and canClassicFrame()
 doAssert not systemFrame, "the window is made without the system's frame"
 # (the frame goes round the size asked for -- its title bar as the metrics
-# had it before the window, a pixel or so off what the font then makes it)
-doAssert asked.w == 400 + 2 * 5 and asked.h - 300 - 2 * 5 in MenuH + 1 .. MenuH + 2,
+# had it before the window, a pixel or so off -- either way -- what the font
+# then makes it)
+doAssert asked.w == 400 + 2 * 5 and asked.h - 300 - 2 * 5 in MenuH .. MenuH + 2,
   "the frame goes round the size asked for: " & $asked
+# (the system's menu has the 3.1 frame's item, checked: it is on)
+doAssert menuLabel == "Windows 3.1 &Frame" and menuChecked
 
 var closes = 0
 view = proc () =
@@ -136,6 +143,26 @@ block parts:
   ui.rtl = true
   doAssert systemPart(fpLeft) == wpRight and systemPart(fpBottomLeft) == wpBottomRight
   ui.rtl = false
+
+block hitTest:
+  # what the toolkit tells a system that asks where the frame is before a
+  # press comes (SDL's hit test): the title bar and the border, not its
+  # buttons nor the content
+  doAssert windowPartAt != nil
+  for (x, y, want) in [(320, 12, wpCaption), (2, 240, wpLeft), (W - 1, 240, wpRight),
+                       (320, 1, wpTop), (320, H - 1, wpBottom), (0, 0, wpTopLeft),
+                       (W - 2, H - 2, wpBottomRight), (10, 10, wpClient),
+                       (W - 10, 10, wpClient), (W - 10 - ch, 10, wpClient),
+                       (320, 240, wpClient)]:
+    doAssert windowPartAt(x, y) == want, $(x, y) & ": " & $windowPartAt(x, y)
+  # right to left: the same edges on the screen
+  ui.rtl = true
+  doAssert windowPartAt(2, 240) == wpLeft and windowPartAt(W - 2, H - 2) == wpBottomRight
+  ui.rtl = false
+  # a menu open: a press anywhere is the app's (it closes the menu)
+  ui.popup = Id(7)
+  doAssert windowPartAt(320, 12) == wpClient
+  ui.popup = Id(0)
 
 block moveAndSize:
   # the title bar moves the window, the border and its corners size it:
@@ -259,6 +286,8 @@ block runTime:
   setClassicFrame(false)
   run(2)
   doAssert systemFrame and not classicFrame()
+  doAssert not menuChecked, "the system menu's item follows it"
+  doAssert windowPartAt(320, 12) == wpClient, "no frame of the app's to hit"
   doAssert ui.frameBorder == 0 and ui.captionH == 0 and ui.barY == MenuH + 1
   doAssert framePartAt(2, 240) == fpNone
   doAssert px(100, 5) == White, "the menu bar at the top"
@@ -267,6 +296,7 @@ block runTime:
   run(2)
   doAssert not systemFrame and classicFrame() and ui.frameBorder == 5
   doAssert px(40, 10) == Navy
+  doAssert menuChecked
 
 block settings:
   # the user's choice is kept by the toolkit for the app (its window.ini),
@@ -287,6 +317,7 @@ block settings:
   menuPicked = true
   run(2)
   doAssert classicFrame() and keptFrame() == "classic", "the system menu's item"
+  doAssert menuChecked, "checked now"
   # an old store's choice is not brought over once one is kept
   s["look.frame"] = "system"
   restoreAppearance(s)
@@ -321,9 +352,21 @@ block altSpace:
   run(2)
   view = before
 
+block frameNotBack:
+  # a window that cannot have the system's frame back while it is open
+  # (Siwin on Windows) keeps the 3.1 one: never a window without a frame
+  doAssert classicFrame()
+  frameRelays.setSystemFrame = proc (on: bool): bool = not on
+  setClassicFrame(false)
+  run()
+  doAssert classicFrame() and ui.frameBorder == 5
+  frameRelays.setSystemFrame = fakeSetSystemFrame
+  setClassicFrame(true)
+  run()
+
 block noFrameWhereItCannot:
-  # a system that cannot do without its frame (Wayland, phones): asked
-  # for, the 3.1 frame is not drawn
+  # a system that cannot do without its frame (phones, a driver without
+  # frame relays): asked for, the 3.1 frame is not drawn
   let saved = frameRelays
   setClassicFrame(false)
   frameRelays = FrameRelays()

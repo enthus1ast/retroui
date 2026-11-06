@@ -6,8 +6,8 @@
 ## comes back into the window going on as the toolkit's.
 
 import std/[unicode, strutils]
-import retro
-import retro/uirelays/[input, services]
+import retroui
+import retroui/uirelays/[input, services]
 import harness
 
 fakeDriver()

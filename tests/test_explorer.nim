@@ -4,8 +4,8 @@
 ## the jobs a drop asks for, and undo -- headless, on the fake driver.
 
 import std/[os, times, strutils]
-import retro
-import retro/uirelays/input
+import retroui
+import retroui/uirelays/input
 import harness
 
 fakeDriver()

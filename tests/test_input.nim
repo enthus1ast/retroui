@@ -4,8 +4,8 @@
 ## -- headless, on the fake driver.
 
 import std/[strutils, sequtils]
-import retro
-import retro/uirelays/input
+import retroui
+import retroui/uirelays/[input, services]
 import harness
 
 fakeDriver()
@@ -845,7 +845,7 @@ block submenuReachedAcrossColumns:
   up(sub.x + 20, sub.y + 9)
   run(2)
   doAssert chosen == "Cascade", chosen
-  # resting on another row: after a moment, Arrange goes
+  # down the menu (not toward the submenu): Arrange goes at once
   key(KeyW, {AltPressed})
   run(3)
   move(r.x + 20, r.y + 9)
@@ -853,11 +853,106 @@ block submenuReachedAcrossColumns:
   doAssert ui.popupRect2Now.w > 0
   move(r.x + 20, r.y + 9 + 3 * 22)
   run()
-  doAssert ui.popupRect2Now.w > 0, "not at once"
+  doAssert ui.popupRect2Now.w == 0, "gone at once"
+  # toward it, then resting on another row on the way: Arrange goes after a moment
+  move(r.x + 20, r.y + 9)
+  run(2)
+  doAssert ui.popupRect2Now.w > 0
+  move(r.x + colW + 10, r.y + 9 + 8)
+  run()
+  doAssert ui.popupRect2Now.w > 0, "on its way: still open"
   run(40)
-  doAssert ui.popupRect2Now.w == 0, "gone after a moment"
+  doAssert ui.popupRect2Now.w == 0, "gone after a rest"
   key(KeyEsc)
   run(2)
   view = nil
+
+block sidewaysWheel:
+  # A sideways wheel (a tilted one, a touch pad, macOS's Shift + the wheel)
+  # is Shift + the wheel, as Windows and X11 send that: what scrolls
+  # sideways with Shift + the wheel scrolls with it, on every system
+  setSmoothScrolling(false)
+  var sx, sy = 0
+  let area = rect(10, 10, 200, 100)
+  view = proc () =
+    scrollWheel(idOf("side x"), sx, 1000, area, 10, sideways = true)
+    scrollWheel(idOf("side y"), sy, 1000, area, 10)
+  run(2)
+  move(50, 50)
+  queue.add Event(kind: MouseWheelEvent, x: 1, hasMods: true)           # right
+  run(2)
+  doAssert sx == 10 and sy == 0, $sx & " " & $sy
+  queue.add Event(kind: MouseWheelEvent, x: -1, hasMods: true)          # left
+  run(2)
+  doAssert sx == 0 and sy == 0, $sx & " " & $sy
+  # (Windows' and X11's Shift + the wheel down: to the right, the same)
+  queue.add Event(kind: MouseWheelEvent, y: -1, mods: {ShiftPressed}, hasMods: true)
+  run(2)
+  doAssert sx == 10 and sy == 0, $sx & " " & $sy
+  queue.add Event(kind: MouseWheelEvent, y: -1, hasMods: true)          # down
+  run(2)
+  doAssert sx == 10 and sy == 10, $sx & " " & $sy
+  # (the Shift was the wheel's: not held after it)
+  queue.add Event(kind: MouseWheelEvent, x: 2)
+  run(3)
+  doAssert sx == 30 and ShiftPressed notin ui.mods, $sx & " " & $ui.mods
+  # a diagonal swipe goes the way it goes most
+  queue.add Event(kind: MouseWheelEvent, x: 1, y: -3, hasMods: true)
+  run(2)
+  doAssert sx == 30 and sy == 40, $sx & " " & $sy
+  setSmoothScrolling(true)
+  view = nil
+
+block modifiersLetGo:
+  # Ctrl let go with nothing typed (a phone's keyboard tells with the key's
+  # release and with the pointer): not held for the wheel after Ctrl+C
+  view = proc () = label "Hello"
+  run(2)
+  queue.add Event(kind: KeyDownEvent, key: KeyC, mods: {CtrlPressed}, hasMods: true)
+  queue.add Event(kind: KeyUpEvent, key: KeyC, mods: {CtrlPressed}, hasMods: true)
+  run(2)
+  doAssert CtrlPressed in ui.mods
+  queue.add Event(kind: KeyUpEvent, key: KeyNone, mods: {}, hasMods: true)
+  run(2)
+  doAssert CtrlPressed notin ui.mods, $ui.mods
+  queue.add Event(kind: KeyDownEvent, key: KeyC, mods: {CtrlPressed}, hasMods: true)
+  run()
+  queue.add Event(kind: MouseMoveEvent, x: 30, y: 30, mods: {}, hasMods: true)
+  run(2)
+  doAssert ui.mods == {}, $ui.mods
+  view = nil
+
+block caretForTheInputMethod:
+  # the text box tells where its caret is, for an input method's candidates
+  var told: seq[(int, int, int, int)]
+  textCaretRelay = proc (x, y, w, h: int) = told.add (x, y, w, h)
+  var s = ""
+  var r: Rect
+  view = proc () =
+    edit(s)
+    r = ui.lastRect
+  run(2)
+  tap(r.x + 5, r.y + r.h div 2)
+  run(2)
+  doAssert told.len > 0, "focused: told"
+  let first = told[^1]
+  doAssert first[1] >= r.y and first[1] < r.y + r.h and first[3] > 0, $first & " " & $r
+  typeText("abc")
+  run(2)
+  doAssert told[^1][0] > first[0], "the caret moved right " & $told
+  let n = told.len
+  run(3)
+  doAssert told.len == n, "told again only when it moves"
+  textCaretRelay = nil
+  view = nil
+
+block shortcutWords:
+  # (Ctrl+S is Cmd+S on a Mac, where the drivers report Cmd as Ctrl)
+  when defined(macosx):
+    doAssert shortcutText("Ctrl+Shift+S") == "Cmd+Shift+S"
+    doAssert shortcutText("Alt+F4") == "Cmd+W"
+  else:
+    doAssert shortcutText("Ctrl+Shift+S") == "Ctrl+Shift+S"
+    doAssert modifierName(CtrlPressed) == "Ctrl"
 
 echo "input tests passed"

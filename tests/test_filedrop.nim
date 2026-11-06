@@ -3,8 +3,8 @@
 ## target (`fileDropTarget`) and what covers it, and the `text/uri-list`
 ## an X11 or Wayland file manager hands over.
 
-import retro
-import retro/uirelays/[input, services]
+import retroui
+import retroui/uirelays/[input, services]
 import harness
 
 fakeDriver()

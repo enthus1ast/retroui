@@ -1,8 +1,8 @@
-## Tests of the Neural Filters made without a network (retro/photoneural):
+## Tests of the Neural Filters made without a network (retroui/photoneural):
 ## each does what it says on pictures made for it.
 
 import std/[math]
-import retro/[gfx, jpeg, photo, photofx, photoneural]
+import retroui/[gfx, jpeg, photo, photofx, photoneural]
 
 proc scene(w, h: int): Img =
   ## A sky going lighter, green ground, a red "subject" in the middle.

@@ -1,7 +1,7 @@
 # (included by photo.nim) Pictures put together: File > Automate >
 # Photomerge, Merge to HDR Pro and Load Files into Stack; Edit > Auto-Align
 # Layers and Auto-Blend Layers; Edit > Sky Replacement. (The work is in
-# retro/photomerge.)
+# retroui/photomerge.)
 
 # ---- the pictures to put together ---------------------------------------------------------------------------
 

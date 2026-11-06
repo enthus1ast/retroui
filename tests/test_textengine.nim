@@ -1,8 +1,8 @@
-## Tests of styled text (retro/textengine): fonts, layout, editing, drawing,
+## Tests of styled text (retroui/textengine): fonts, layout, editing, drawing,
 ## warps, text on a path.
 
 import std/[math, unicode, json, strutils, os]
-import retro/[textengine, ttf, typeset, otshape]
+import retroui/[textengine, ttf, typeset, otshape]
 
 proc style(size = 40'f32): CharStyle =
   result = defaultStyle()
@@ -14,20 +14,30 @@ proc inked(px: seq[uint32]): int =
 
 block fonts:
   let fams = fontFamilies()
-  doAssert "DejaVu Sans" in fams and "DejaVu Sans Mono" in fams and "Retro Sans" in fams
-  doAssert fams.find("DejaVu Sans") < 3                # (the built-in ones first)
-  doAssert "Bold" in fontStyles("DejaVu Sans")
-  let f = fontFace("DejaVu Sans", "Book")
+  doAssert "FreeSans" in fams and "FreeSerif" in fams and "FreeMono" in fams
+  doAssert fams.find("FreeSans") < 3                   # (the built-in ones first)
+  doAssert "Bold" in fontStyles("FreeSans") and "Oblique" in fontStyles("FreeSans")
+  doAssert "Bold Italic" in fontStyles("FreeSerif")
+  let f = fontFace("FreeSans", "Regular")
   doAssert f.face != nil and not f.fauxBold and not f.fauxItalic
   let unknown = fontFace("No Such Family", "Regular")
   doAssert unknown.face != nil
-  let it = fontFace("Retro Sans", "Italic")            # (no italic: made slanted)
-  doAssert it.fauxItalic
-  let fb = fontFace("Retro Sans", "Bold")
-  doAssert not fb.fauxBold
+  # italics are the fonts' own, not slanted copies
+  let it = fontFace("FreeSans", "Oblique")
+  doAssert not it.fauxItalic and it.face.italic and it.face == face(fSansItalic)
+  let it2 = fontFace("FreeSerif", "Italic")
+  doAssert not it2.fauxItalic and it2.face == face(fSerifItalic)
+  let fb = fontFace("FreeMono", "Bold")
+  doAssert not fb.fauxBold and fb.face == face(fMonoBold)
+  # the kit's fonts of before, named in documents, are drawn in FreeFont
+  # (where they are not installed)
+  doAssert fontFace("Amiri", "Regular").face.family in ["Amiri", "FreeSerif"]
+  doAssert fontFace("Retro Sans", "Regular").face.family == "FreeSans"
+  doAssert fontFace("Kawkab Mono", "Bold").face.family == "FreeMono"
   # the names of a face
-  let dj = face(fSans)
-  doAssert dj.family == "DejaVu Sans"
+  let fs = face(fSans)
+  doAssert fs.family == "FreeSans"
+  doAssert defaultStyle().family == "FreeSans" and defaultStyle().style == "Regular"
 
 block layoutLine:
   var t = newText("Hello", style(), 10, 50)
@@ -35,7 +45,7 @@ block layoutLine:
   doAssert l.lines.len == 1
   doAssert l.glyphs.len == 5
   doAssert abs(l.lines[0].baseline - 50) < 0.01
-  doAssert abs(l.x0 - 10) < 0.01 and l.x1 > 100
+  doAssert abs(l.x0 - 10) < 0.01 and abs(l.x1 - (10 + widthEm("Hello", fSans) * 40)) < 0.5
   # the caret goes left to right, and the end is the right edge
   for i in 1 .. 5: doAssert l.caretX[i] > l.caretX[i - 1]
   doAssert abs(l.caretX[5] - l.x1) < 0.01
@@ -46,8 +56,11 @@ block layoutLine:
   tr.restyle(0, 0, proc (s: var CharStyle) = s.tracking = 100)
   let lt = layoutText(tr)
   doAssert abs((lt.x1 - lt.x0) - (l.x1 - l.x0) - 5 * 4) < 0.5
-  # kerning: "AV" closer than without it
-  var kv = newText("AVAV", style(), 0, 50)
+  # kerning: "AV" closer than without it (FreeSerif kerns it; FreeSans 0412
+  # does not)
+  var ks = style()
+  ks.family = "FreeSerif"
+  var kv = newText("AVAV", ks, 0, 50)
   let k1 = layoutText(kv)
   kv.restyle(0, 0, proc (s: var CharStyle) = s.noKerning = true)
   let k0 = layoutText(kv)
@@ -392,9 +405,9 @@ block columnsAndFlow:
   doAssert back.columns == 3 and abs(back.gutter - 30) < 1e-3
 
 block openType:
-  # Arabic in Amiri (bundled): set by the font's OpenType tables -- joined
-  # forms, the lam-alef ligature, its marks placed by the font
-  let st = CharStyle(family: "Amiri", style: "Regular", size: 40, color: 0xFF000000'u32, hScale: 1, vScale: 1)
+  # Arabic in FreeSerif (built in): set by the font's OpenType tables --
+  # joined forms, the lam-alef ligature, its marks placed by the font
+  let st = CharStyle(family: "FreeSerif", style: "Regular", size: 40, color: 0xFF000000'u32, hScale: 1, vScale: 1)
   let plainLay = layoutText(newText("لا", st))
   let af = plainLay.glyphs[0].face
   doAssert plainLay.glyphs.len in 1 .. 2

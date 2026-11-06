@@ -1,4 +1,4 @@
-## Tests of the rich text editor (`retro/richedit`): HTML in and out, plain
+## Tests of the rich text editor (`retroui/richedit`): HTML in and out, plain
 ## text, the commands, undo, the keys and the mouse -- headless, on the
 ## fake driver.
 ##
@@ -6,8 +6,8 @@
 
 import std/[strutils, sequtils, times, monotimes, random, os]
 from std/unicode import runes, toUTF8
-import retro, retro/richedit, retro/spell
-import retro/uirelays/input
+import retroui, retroui/richedit, retroui/spell
+import retroui/uirelays/input
 import harness
 
 fakeDriver()
@@ -651,7 +651,9 @@ block placeholderAndEmpty:
   var gray = 0
   for yy in y ..< y + FontH:
     for xx in x ..< x + textWidth("Write here"):
-      if px(xx, yy) == 0x808080: inc gray
+      # (gray text: its pixels gray, from the text's gray to the white)
+      let p = px(xx, yy)
+      if p != 0xFFFFFF and (p shr 16) == (p and 0xFF) and (p and 0xFF) >= 0x80: inc gray
   doAssert gray > 10, "the placeholder is drawn"
 
 block bigDocument:

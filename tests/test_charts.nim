@@ -1,9 +1,9 @@
-## The charts (retro/charts): numbers, axes, CSV tables, every kind of
+## The charts (retroui/charts): numbers, axes, CSV tables, every kind of
 ## chart with good and bad data, and the mouse, fingers and keys on them.
 
 import std/[math, os, strutils, times]
-import retro
-import retro/uirelays/input
+import retroui
+import retroui/uirelays/input
 import harness
 
 proc px(x, y: int): uint32 = pixels[y * W + x] and 0xFFFFFF'u32
@@ -73,6 +73,19 @@ block csv:
   writeFile(path, "k,v\na,1\nb,2\n")
   doAssert readCsv(path).column("v") == @[1.0, 2.0]
   removeFile(path)
+  # writing: quotes only where needed, and it reads back the same
+  doAssert csvField("plain") == "plain" and csvField("a,b") == "\"a,b\""
+  doAssert csvField("say \"hi\"") == "\"say \"\"hi\"\"\"" and csvField(" pad") == "\" pad\""
+  doAssert csvField("a;b") == "a;b" and csvField("a;b", ';') == "\"a;b\""
+  doAssert csvLine(["x", "1,5", ""]) == "x,\"1,5\","
+  let back = parseCsv(toCsv(t))
+  doAssert back.headers == t.headers and back.rows == t.rows, $back.rows
+  doAssert toCsv(t, header = false).startsWith("Jan,")
+  let semiBack = parseCsv(toCsv(semi, ';'), ';')
+  doAssert semiBack.rows == semi.rows
+  doAssert writeCsv(path, t) and readCsv(path).rows == t.rows
+  removeFile(path)
+  doAssert not writeCsv("/no/such/dir/x.csv", t)
 
 block sampleFiles:
   let dir = currentSourcePath().parentDir / "data" / "charts"

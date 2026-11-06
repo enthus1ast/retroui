@@ -2,7 +2,7 @@
 # layer holds kept, scaled and turned again without loss, its filters
 # changed later: Smart Filters), Warp, Puppet Warp, Perspective Warp (on
 # the image, with handles) and the Blur Gallery. (The work is in
-# retro/photowarp.)
+# retroui/photowarp.)
 
 # ---- Smart Objects ------------------------------------------------------------------------------------------
 

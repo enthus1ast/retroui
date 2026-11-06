@@ -123,7 +123,7 @@ proc fontRows(compact: bool) =
   let fp = fontProblem(s.family)
   if fp.len > 0:
     # (a font that is listed but drawn in another: said, not hidden)
-    paragraph("Drawn in DejaVu Sans: " & fp, color = color(176, 0, 0))
+    paragraph("Drawn in FreeSans: " & fp, color = color(176, 0, 0))
   cpSize = int(round(s.size))
   row:
     label "Size:"
@@ -339,7 +339,7 @@ proc paragraphBody() =
 proc typeMenuItems() =
   ## The menu of Character, Paragraph, Glyphs.
   if menuItem("Reset Character"):
-    typeStyle = CharStyle(family: "DejaVu Sans", style: "Book", size: 48, color: fg, hScale: 1, vScale: 1)
+    typeStyle = CharStyle(family: defaultFamily, style: "Regular", size: 48, color: fg, hScale: 1, vScale: 1)
   if menuItem("Reset Paragraph"): typePara = ParaStyle()
 
 proc typeTargetNote() =

@@ -8,8 +8,8 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, json]
-import retro
-import retro/report
+import retroui
+import retroui/report
 
 const invoiceTemplate = """
 <html><head><title>Invoice {{number}}</title></head><body>

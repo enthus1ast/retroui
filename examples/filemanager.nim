@@ -19,7 +19,7 @@
 ## windows of their own (MDI, as the 3.1 File Manager had them) instead of
 ## tabs, each one can be kept on top.
 ##
-## Almost all of it is the toolkit's (`retro/filewidgets`, `retro/files`):
+## Almost all of it is the toolkit's (`retroui/filewidgets`, `retroui/files`):
 ## this file is the app -- its menus, its commands and its viewer.
 ##
 ## One source for desktops, tablets and phones:
@@ -30,7 +30,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, strutils, times, algorithm, monotimes]
-import retro, retro/[pdfview, morepictures, lang_ar]
+import retroui, retroui/[pdfview, morepictures, lang_ar]
 import filemanager/lang_ar as filesLang
 
 const TermuxHome = "/data/data/com.termux/files/home"
@@ -38,7 +38,7 @@ const TermuxHome = "/data/data/com.termux/files/home"
 const
   AppTitle = "Retro Files"
   AppId = "RetroFiles"
-  AppVersion = "3.3.2"
+  AppVersion = "3.3.3"
 
 type
   ViewerKind = enum vkNone, vkText, vkMarkdown, vkImage, vkHex, vkZip, vkPdf, vkVideo, vkAudio
@@ -94,7 +94,7 @@ var
   inWindows* = false               # the folders in windows of their own (MDI), not tabs
   winGrip = 2                      # ... their size grip: 0 none, 1 small, 2 medium, 3 large
   thumbsOn = true
-  diskThumbs = true                # thumbnails kept on disk (retro/thumbcache)
+  diskThumbs = true                # thumbnails kept on disk (retroui/thumbcache)
   diskThumbMB = 96                 # ... at most
   language* = 0                    # 0 English, 1 Arabic (mirrored)
   confirmDelete = true
@@ -313,7 +313,7 @@ proc loadSettings(): string =
         of "theme": prefs["look.colors"] = v
         of "scale": prefs["look.size"] = v
         of "textscale": prefs["look.text"] = v
-        of "pixelfont": discard            # (the font is Retro Sans now; Settings has the choice)
+        of "pixelfont": discard            # (an old setting: the font is chosen in Settings)
         of "view": prefs["viewstep"] = (if v == "1": "3" else: "0")
         of "desc", "hidden", "tree", "preview", "thumbs", "confirm", "singletap":
           prefs[key] = $(v == "1")
@@ -1681,7 +1681,9 @@ proc helpDialogs() =
             tr("Copyright (c) 2026 Sultan Al Isaiee. MIT licence.")],
            tagline = tr("Your files, as in 1994"),
            iconPng = FilesIconPng, glyph = pxFolderOpen,
-           whatsNew = [tr("The menus by the keyboard: Alt (pressed and let go) or F10 opens them, the " &
+           whatsNew = [tr("3.3.3: the menus answer at once (a submenu waits only while the pointer heads for it); " &
+                            "the letters drawn as before, Sharp text a choice; the Windows 3.1 frame on every desktop"),
+                       tr("The menus by the keyboard: Alt (pressed and let go) or F10 opens them, the " &
                             "arrows go along and through them; a menu taller than the screen in even columns, submenus moved up to fit"),
                        tr("The folder tree: a right click (a long press) on a folder: open it in a new tab or " &
                             "window, new folder, paste into it, favorites, its path, terminal, sizes, properties; " &
@@ -1713,8 +1715,7 @@ proc helpDialogs() =
                        tr("Help > Report a Problem: a fault no longer closes the app"),
                        tr("Faster with very large folders")],
            credits = [RetroCredit & " -- " & RetroWebsite & " -- " & RetroEmail,
-                      tr("Fonts: Retro Sans, after lou's MS Sans Serif recreation (CC BY-SA 3.0); " &
-                         "GNU Unifont's Arabic (OFL); DejaVu (Bitstream Vera licence)."),
+                      tr(RetroFontCredit),
                       tr("Icons: Nerd Fonts symbols (MIT / OFL) and Retro's pixel icons.")])
   problemBox(AppTitle, AppVersion)
   discard msgBox(errorOpen, AppTitle, errorText, ["OK"], miStop)

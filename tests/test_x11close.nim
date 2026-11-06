@@ -7,8 +7,8 @@
 ## then pointed at unmapped code, and every app crashed as it closed.)
 
 import std/os
-import retro
-import retro/uirelays/screen
+import retroui
+import retroui/uirelays/screen
 
 when defined(linux) and not defined(android):
   if getEnv("DISPLAY").len == 0:

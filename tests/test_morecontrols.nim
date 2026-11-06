@@ -1,9 +1,9 @@
-## Tests of retro/morecontrols and the buttons with a picture: driven
+## Tests of retroui/morecontrols and the buttons with a picture: driven
 ## headlessly (the fake driver of harness.nim).
 
 import std/strutils
-import retro/uirelays/input
-import harness, retro
+import retroui/uirelays/input
+import harness, retroui
 
 fakeDriver()
 startApp("t", W, H)

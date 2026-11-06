@@ -1,10 +1,10 @@
-## Desktop parts of retro/desktop: windows inside the window (MDI), find
+## Desktop parts of retroui/desktop: windows inside the window (MDI), find
 ## and replace, shortcuts, the About box -- headless.
 
-import std/strutils
-import retro
-import retro/desktop
-import retro/uirelays/input
+import std/[strutils, os]
+import retroui
+import retroui/desktop
+import retroui/uirelays/[input, services]
 import harness
 
 fakeDriver()
@@ -219,6 +219,14 @@ block shortcuts:
   doAssert parseHotkey("Alt+F4") == (KeyF4, {AltPressed})
   doAssert parseHotkey("Ctrl+Nothing").key == KeyNone
   doAssert parseHotkey("").key == KeyNone and parseHotkey("+").key == KeyNone
+  # (Cmd is the shortcut key on every system: a Mac's Cmd+S is Ctrl+S here)
+  doAssert parseHotkey("Cmd+S") == (KeyS, {CtrlPressed})
+  doAssert parseHotkey("Win+E") == (KeyE, {GuiPressed})
+  when defined(macosx):
+    doAssert hotkeyText(KeyS, {CtrlPressed, ShiftPressed}) == "Cmd+Shift+S"
+  else:
+    doAssert hotkeyText(KeyE, {GuiPressed}) == "Win+E"
+    doAssert parseHotkey("Control+S") == (KeyS, {CtrlPressed})
   var hits = 0
   var keys = "Ctrl+S"
   var r: Rect
@@ -278,5 +286,33 @@ block about:
   key(KeyEsc)
   run(2)
   doAssert not open
+
+# ---- settings: a file of its own for each name, also on a phone --------------------------------------
+
+block settingsEachName:
+  # A phone's driver gives every name the app's one folder: the app's
+  # settings and its look's are each a file of their own there, the one
+  # they shared before read until written
+  let root = getTempDir() / "retro-settings-test"
+  removeDir(root)
+  createDir(root)
+  let desktopDataDir = systemRelays.dataDir
+  systemRelays.dataDir = proc (app: string): string = getTempDir() / "retro-settings-test"
+  writeFile(root / "settings.ini", "colors=3\nlook.size=125\n")
+  var app = loadSettings("Retro Test")
+  var look = loadSettings("retro-look")
+  doAssert app.get("colors") == "3" and look.get("look.size") == "125", "read from before"
+  app.put("colors", 5)
+  look.put("look.size", 150)
+  doAssert saveSettings("Retro Test", app) and saveSettings("retro-look", look)
+  doAssert loadSettings("Retro Test").get("colors") == "5"
+  doAssert loadSettings("retro-look").get("look.size") == "150"
+  doAssert loadSettings("retro-look").get("colors") == "3", "(the old keys came along)"
+  doAssert fileExists(root / "settings" / "Retro Test.ini") and
+           fileExists(root / "settings" / "retro-look.ini")
+  systemRelays.dataDir = desktopDataDir
+  removeDir(root)
+  # (a name as a folder's: what Windows cannot take is left out)
+  doAssert folderName("Gallery: 2") == (when defined(windows): "Gallery_ 2" else: "Gallery: 2")
 
 echo "desktop tests passed"

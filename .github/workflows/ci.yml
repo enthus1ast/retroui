@@ -31,7 +31,9 @@ jobs:
           NDK_INCLUDE=$ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include sh tests/android_mock/run.sh
 
   build:
-    # every example and tool compiles on the three desktops
+    # the tools compile on the three desktops; the examples too, but only
+    # when asked (Actions > CI > Run workflow): they are not part of the
+    # toolkit's own build
     strategy:
       fail-fast: false
       matrix:
@@ -43,7 +45,8 @@ jobs:
         with:
           nim-version: "2.2.6"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Examples
+      - name: Examples (only when run by hand)
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           mkdir -p build

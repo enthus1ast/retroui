@@ -5,8 +5,8 @@
 ## the fake driver.
 
 import std/[os, times, strutils, tables, sequtils]
-import retro, retro/pdfview
-import retro/uirelays/[input, services]
+import retroui, retroui/pdfview
+import retroui/uirelays/[input, services]
 import harness
 
 fakeDriver()

@@ -13,9 +13,9 @@
 ## Inputs that fail are saved as crash-report-*.txt in the current folder.
 
 import std/[os, random, strutils, times, monotimes, sets, json, math]
-import retro
-import retro/report
-import retro/uirelays/input
+import retroui
+import retroui/report
+import retroui/uirelays/input
 import ../harness
 
 let iters = if paramCount() >= 1: parseInt(paramStr(1)) else: 20000

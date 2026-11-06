@@ -1,8 +1,8 @@
-## Tests of retro/iccprofile: profiles read, made, converted and carried in
+## Tests of retroui/iccprofile: profiles read, made, converted and carried in
 ## files.
 
 import std/[unittest, math]
-import retro/[iccprofile, imaging, jpeg, gfx, imageformats]
+import retroui/[iccprofile, imaging, jpeg, gfx, imageformats]
 
 proc px3(r, g, b: int): uint32 = 0xFF000000'u32 or (uint32(r) shl 16) or (uint32(g) shl 8) or uint32(b)
 proc ch(p: uint32; s: int): int = int((p shr s) and 255)
@@ -65,7 +65,7 @@ suite "profiles":
     check iccFromJpeg(encodeJpeg(b, 90)) == "" and iccFromPng(encodePng(b)) == ""
 
 import std/os
-import retro/[photo, photofiles]
+import retroui/[photo, photofiles]
 
 suite "documents and profiles":
   test "opened: converted to sRGB, or kept":

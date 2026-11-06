@@ -24,7 +24,7 @@ if sys.argv[1] == '--refs':
         for fr in ImageSequence.Iterator(im):
             frames.append((zlib.crc32(fr.convert('RGBA').tobytes()) & 0xffffffff, fr.info.get('duration', 0)))
         fs = ', '.join('(0x%08x\'u32, %d)' % fr for fr in frames)
-        print('  ("%s", %d, %d, @[%s]),  # %s: written by retro/webp' % (os.path.basename(f), im.size[0], im.size[1], fs, data[12:16].decode('latin1').strip()))
+        print('  ("%s", %d, %d, @[%s]),  # %s: written by retroui/webp' % (os.path.basename(f), im.size[0], im.size[1], fs, data[12:16].decode('latin1').strip()))
     sys.exit(0)
 
 OUT = sys.argv[1]

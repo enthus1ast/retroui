@@ -5,7 +5,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, strutils, times]
-import retro
+import retroui
 
 var
   text = "Welcome to Retro Notepad.\n\nOpen a text file with File > Open, or type here.\n"

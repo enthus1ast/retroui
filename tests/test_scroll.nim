@@ -2,8 +2,8 @@
 ## and flicks, the scroll bar's thumb and arrows, rows scrolled part way,
 ## and all of it switched off.
 
-import harness, retro
-import retro/uirelays/[coords, input]
+import harness, retroui
+import retroui/uirelays/[coords, input]
 
 fakeDriver()
 startApp("scroll", W, H)

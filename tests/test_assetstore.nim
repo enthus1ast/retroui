@@ -1,11 +1,11 @@
-## Tests of the asset store (retro/assetstore): every source's request and
+## Tests of the asset store (retroui/assetstore): every source's request and
 ## answer (tests/data/assetstore: excerpts of real answers where they could
 ## be had, else shaped as the APIs document them), the library catalog,
-## texture zips, and the download pool (retro/assetfetch) on local files --
+## texture zips, and the download pool (retroui/assetfetch) on local files --
 ## plus GitHub when the network is there.
 
 import std/[os, strutils, times, osproc]
-import retro/[assetstore, core, zip]
+import retroui/[assetstore, core, zip]
 
 const data = currentSourcePath().parentDir / "data" / "assetstore"
 

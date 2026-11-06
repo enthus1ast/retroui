@@ -1,4 +1,4 @@
-## retro/report and retro/templates: documents laid out on pages (tables
+## retroui/report and retroui/templates: documents laid out on pages (tables
 ## that go on over pages with their header, rows never cut, groups kept
 ## together, titles kept with what follows, right-to-left Arabic, pictures,
 ## headers and footers), PDF and PNG out, Mustache templates, the HTML
@@ -6,9 +6,9 @@
 ## preview by mouse, keyboard and finger -- headless.
 
 import std/[os, strutils, json, times, sequtils, unicode]
-import retro
-import retro/report
-import retro/uirelays/input
+import retroui
+import retroui/report
+import retroui/uirelays/input
 import harness
 
 fakeDriver()
@@ -84,7 +84,7 @@ block rowTallerThanAPage:
   # its lines go on over the pages, with the header again; nothing is lost
   let d = newReport("tall")
   var t = newTable(["Note", "By"], widths = [-3.0, -1])
-  let words = (1 .. 1500).mapIt("w" & $it)
+  let words = (1 .. 3000).mapIt("w" & $it)
   t.addRow([words.join(" "), "Ali"])
   t.addRow(["after", "Sara"])
   d.table(t)

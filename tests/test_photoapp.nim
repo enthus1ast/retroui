@@ -3,7 +3,7 @@
 ## Image, Trim and the options bar.
 
 import std/[strutils, os, math, random]
-import retro/uirelays/input
+import retroui/uirelays/input
 import harness
 
 const photoUnderTest = true

@@ -1,4 +1,4 @@
-## Bringing old mail in and taking it out (retro/mailimport): Outlook Express
+## Bringing old mail in and taking it out (retroui/mailimport): Outlook Express
 ## 5/6 stores and Outlook Express 4 mailboxes made here as the formats lay
 ## them out (tests/data/mailimport keeps a copy: `-d:writeSamples` writes
 ## it), mbox round trips, .eml files, folders of all of them, and damaged
@@ -6,7 +6,7 @@
 ## mutations -- that must not crash or hang.
 
 import std/[os, strutils, times, random, monotimes, algorithm, tables]
-import retro/[mailimport, mime]
+import retroui/[mailimport, mime]
 
 const data = currentSourcePath().parentDir / "data" / "mailimport"
 let tmp = getTempDir() / "retro-mailimport-" & $getCurrentProcessId()

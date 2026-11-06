@@ -11,7 +11,7 @@
 ## Inputs that crash are saved as crash-*.bin in the current folder.
 
 import std/[os, random, strutils, tables, sets, times]
-import retro/[imaging, jpeg, codec, zip, markdown, gfx, textfile]
+import retroui/[imaging, jpeg, codec, zip, markdown, gfx, textfile]
 
 let here = paramStr(1)
 let iters = if paramCount() >= 2: parseInt(paramStr(2)) else: 20000

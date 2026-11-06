@@ -1,4 +1,4 @@
-## Tests of `retro/bigpicture`: very big pictures read a band at a time.
+## Tests of `retroui/bigpicture`: very big pictures read a band at a time.
 ##
 ## - Each kind it reads, made here at an odd size (with the kit's encoders;
 ##   an interlaced PNG and BMPs by hand): `readScaled` and `readRegion`
@@ -9,7 +9,7 @@
 ##   checked against the pattern; and, each read in a process of its own,
 ##   the memory that took at its peak (VmHWM): a small part of the 432 MB
 ##   the picture takes whole.
-## - Retro Photo's way in (`retro/photofiles`): a picture too big to edit
+## - Retro Photo's way in (`retroui/photofiles`): a picture too big to edit
 ##   whole refused plainly, opened as a smaller copy or as a part.
 ## - TIFF and TGA headers that claim more pixels than their data holds
 ##   refused before the memory is taken; valid ones read as before.
@@ -20,7 +20,7 @@
 {.passC: "-O2".}   # (the C optimized, in a debug build too: the big pictures made and read in seconds)
 
 import std/[os, osproc, strutils, random, times, monotimes]
-import retro/[gfx, imaging, jpeg, imageformats, codec, busy, bigpicture, photo, photofiles]
+import retroui/[gfx, imaging, jpeg, imageformats, codec, busy, bigpicture, photo, photofiles]
 
 const
   rounds {.intdefine.} = 200      ## damaged copies of each file (-d:rounds=2000: a longer run)

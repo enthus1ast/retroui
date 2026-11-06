@@ -4,9 +4,9 @@
 ## preview, picture cache, dialogs) -- headless, on the fake driver.
 
 import std/[os, strutils, times, unicode]
-import retro
-import retro/appicon
-import retro/uirelays/input
+import retroui
+import retroui/appicon
+import retroui/uirelays/input
 import harness
 
 fakeDriver()

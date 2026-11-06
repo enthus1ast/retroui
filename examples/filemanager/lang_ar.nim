@@ -1,7 +1,7 @@
 ## Arabic for Retro Files: the words of its menus, tool bar, dialogs and
 ## messages (the toolkit's own -- OK, Cancel, the file lists' -- are in
-## retro/lang_ar). Keys are the labels as the code has them, "&" taken out,
-## as retro/lang_ar's header says -- except the few texts the app looks up
+## retroui/lang_ar). Keys are the labels as the code has them, "&" taken out,
+## as retroui/lang_ar's header says -- except the few texts the app looks up
 ## itself with `tr(...)`: their key is the literal exactly as written, an
 ## "&" included ("Rena&me ").
 ##
@@ -307,10 +307,6 @@ check boxes on the rows, and Back goes back a folder.
   ("Help > Report a Problem: a fault no longer closes the app",
    "تعليمات > الإبلاغ عن مشكلة: لم يعد العطل يُغلق التطبيق"),
   ("Faster with very large folders", "أسرع مع المجلدات الكبيرة جدًا"),
-  ("Fonts: Retro Sans, after lou's MS Sans Serif recreation (CC BY-SA 3.0); " &
-   "GNU Unifont's Arabic (OFL); DejaVu (Bitstream Vera licence).",
-   "الخطوط: Retro Sans، المبني على إعادة إنشاء lou لخط MS Sans Serif (CC BY-SA 3.0)؛ " &
-   "والعربية من GNU Unifont (OFL)؛ وDejaVu (ترخيص Bitstream Vera)."),
   ("Icons: Nerd Fonts symbols (MIT / OFL) and Retro's pixel icons.",
    "الأيقونات: رموز Nerd Fonts (MIT / OFL) وأيقونات Retro البكسلية."),
   ("Something went wrong in Retro Files (the last time it ran, or now) -- it went on, " &
@@ -421,7 +417,7 @@ check boxes on the rows, and Back goes back a folder.
   ("Reading the folder...", "جارٍ قراءة المجلد..."),
   ("Cut: ", "قص: "),
   ("Copied: ", "منسوخ: "),
-  # (the nouns Retro Files counts with `countText`: see retro/lang_ar's " item")
+  # (the nouns Retro Files counts with `countText`: see retroui/lang_ar's " item")
   (" entry", " إدخال"),
   (" entries", " إدخالات"),
   (" found", " نتيجة"),

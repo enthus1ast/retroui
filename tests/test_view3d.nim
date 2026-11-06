@@ -3,9 +3,9 @@
 ## fingers, picking -- headless, on the fake driver.
 
 import std/[os, times, math, strutils]
-import retro
-import retro/view3d
-import retro/uirelays/input
+import retroui
+import retroui/view3d
+import retroui/uirelays/input
 import harness
 
 const dataDir = currentSourcePath().parentDir / "data" / "3d"

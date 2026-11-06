@@ -5,7 +5,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[json, strutils, os, times, hashes]
-import retro/[http, mime]
+import retroui/[http, mime]
 import api, store
 
 proc rawMessage*(acc: Account; token, remoteId: string): string =

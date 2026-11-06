@@ -1,4 +1,4 @@
-## Tests of `retro/edgetrace`: the edges of a picture linked into chains,
+## Tests of `retroui/edgetrace`: the edges of a picture linked into chains,
 ## for Retro Photo's tracing tool.
 ##
 ## - A filled circle: one chain, round, on the circle to a fraction of a
@@ -15,7 +15,7 @@
 ##   in the picture's pixels; how long it takes.
 
 import std/[math, random, times, strutils, algorithm]
-import retro/[gfx, edgetrace, photo, photopaint]
+import retroui/[gfx, edgetrace, photo, photopaint]
 
 proc dist(a, b: (float, float)): float = hypot(a[0] - b[0], a[1] - b[1])
 

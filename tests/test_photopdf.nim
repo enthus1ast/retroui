@@ -1,11 +1,11 @@
-## Tests of Photoshop PDF export (retro/photopdf): a document with pixels,
+## Tests of Photoshop PDF export (retroui/photopdf): a document with pixels,
 ## type and a shape becomes a PDF page -- type and shapes as outlines, the
 ## rest as a picture at the resolution asked; CMYK for a press with crop
 ## marks and bleed; several documents as a presentation. (When poppler's
 ## tools are there, they read the files back.)
 
 import std/[os, osproc, strutils]
-import retro/[gfx, photo, photopdf, photoimport, textengine, photoshapes, zip, pdfread, pdf, ttf]
+import retroui/[gfx, photo, photopdf, photoimport, textengine, photoshapes, zip, pdfread, pdf, ttf]
 
 let dir = getTempDir() / "retro-photopdf-test"
 removeDir(dir)

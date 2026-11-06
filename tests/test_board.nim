@@ -1,10 +1,10 @@
-## The whiteboard document (retro/board) and its freehand ink (retro/freehand):
+## The whiteboard document (retroui/board) and its freehand ink (retroui/freehand):
 ## shapes added, changed, undone and redone; arrows that hold on to shapes;
 ## hit-testing, snapping, groups; saved and read back; drawn as a picture
 ## and as SVG.
 
 import std/[unittest, strutils, math, os, json, base64, tables]
-import retro/[board, freehand, gfx, imaging, raster, textengine]
+import retroui/[board, freehand, gfx, imaging, raster, textengine]
 
 proc pixelAt(b: Bitmap; x, y: int): uint32 = b.px[y * b.w + x]
 
@@ -473,11 +473,13 @@ suite "memory":
     undoBudget = saved
 
 suite "fonts and shapes":
-  test "a hand font draws Arabic in the Arabic hand; the type faces in Amiri":
+  test "a hand font draws Arabic in the Arabic hand; the type faces in FreeSerif":
     let st = CharStyle(size: 24, hScale: 1, vScale: 1)
     let spans = fontSpans("Hi مرحبا", bfnHand, st)
     check spans.len == 2 and spans[0].style.family == "Caveat" and spans[1].style.family == "Aref Ruqaa"
-    check fontSpans("Hi مرحبا", bfnMono, st)[^1].style.family in ["Amiri", "DejaVu Sans Mono"]
+    check fontSpans("Hi مرحبا", bfnMono, st)[^1].style.family in ["FreeSerif", "FreeMono"]
+    check fontSpans("Hi مرحبا", bfnSans, st)[^1].style.family == "FreeSerif"
+    check fontSpans("Hi", bfnRetro, st)[0].style.family == "FreeSerif"
     check fontSpans("Hello", bfnMarker, st).len == 1
   test "every font draws":
     let b = newBoard()

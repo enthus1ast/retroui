@@ -1,6 +1,6 @@
 # Retro Photo -- included by photo.nim
 #
-# Today's today's editors features made offline (retro/photocc): Layer Cleanup,
+# Today's today's editors features made offline (retroui/photocc): Layer Cleanup,
 # Harmonize with a shadow, Artboards to Files.
 
 proc exportSlices(d: Doc) =

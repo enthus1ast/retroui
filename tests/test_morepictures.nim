@@ -1,4 +1,4 @@
-## Tests of `retro/morepictures`: each kind of file it teaches `loadPicture`
+## Tests of `retroui/morepictures`: each kind of file it teaches `loadPicture`
 ## made here -- with the kit's own encoders, or by hand (a Photoshop file
 ## with its thumbnail; raw files shaped as cameras write them: TIFF
 ## directories, SubIFDs, maker's notes of Nikon, Olympus and Pentax, a CR3's
@@ -7,11 +7,11 @@
 ## each file is damaged a few hundred ways (cut short, bytes changed) and
 ## read again: nil is fine, an exception or a crash is not.
 
-include retro/morepictures
+include retroui/morepictures
 import std/[random, times]
-import retro/[photohdr, parallel]    # (writeHdr; runAlone)
+import retroui/[photohdr, parallel]    # (writeHdr; runAlone)
 when desktop:
-  import retro/gifanim
+  import retroui/gifanim
 
 const
   rounds {.intdefine.} = 300      ## damaged copies of each file (-d:rounds=2000: a longer run)

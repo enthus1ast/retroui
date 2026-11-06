@@ -1,4 +1,4 @@
-## Tests of retro/rawformats: cameras' own raw files (NEF, ARW, CR2, CR3,
+## Tests of retroui/rawformats: cameras' own raw files (NEF, ARW, CR2, CR3,
 ## ORF, RW2, PEF, RAF) told apart, read number for number as LibRaw reads
 ## them, and developed as LibRaw develops them.
 ##
@@ -20,7 +20,7 @@
 ## here too.
 
 import std/[unittest, os, times, strutils, strformat, math]
-import retro/[rawformats, photodevelop]
+import retroui/[rawformats, photodevelop]
 
 
 proc w16(o: var string; v: int) = (o.add char(v and 255); o.add char((v shr 8) and 255))

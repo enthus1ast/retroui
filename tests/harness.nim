@@ -1,8 +1,8 @@
 ## A fake uirelays driver for headless tests: scripted input in, pixels
 ## kept in memory.
 
-import retro/uirelays/[coords, screen, input]
-import retro
+import retroui/uirelays/[coords, screen, input]
+import retroui
 
 const W* = 640
 const H* = 480

@@ -1,29 +1,691 @@
-# Controls
+# Retro Nim UI: the guide
 
-Every control of Retro Nim UI: what it does, how to call it, and how it looks in
-its states. The pictures are drawn by `tools/shots.nim` from the example code
-shown with each control (headless, with the built-in fonts), so they always
-match the toolkit. `nim c -r -d:release tools/shots.nim` makes them again.
+Every control of Retro Nim UI, with pictures: what it does, how it looks, an
+example, and its API. Start with [Getting started](#getting-started) and
+[Layout](#layout); then look up the controls you need. The pictures show
+each control as it is, on a touch screen and in a dark color scheme (some
+in more states too), and they are drawn from the very example beside them,
+so they always match the toolkit.
 
-Every control works with the mouse, the keyboard (Tab, arrows, Space, Enter,
-Esc, `&` mnemonics, the menu key) and fingers (tap, drag to scroll, long press
-for the menu). "Disabled" pictures pass `enabled = false`.
+Every control works with the mouse, the keyboard (Tab, the arrows, Space,
+Enter, Esc, `&` letters with Alt, the menu key) and fingers (a tap, a drag to
+scroll, a long press for the menu). The [README](../README.md) tells the rest:
+files, mail, the image editor, the system's own APIs, Android and iOS. The
+reference of every module is made by `nimble docs` into `docs/api/`.
 
-**Contents:** [Text](#text) · [Buttons](#buttons) · [Choices](#choices) · [Text input](#text-input) · [Numbers, dates, colors](#numbers-dates-colors) · [Lists](#lists) · [Progress and status](#progress-and-status) · [Containers](#containers) · [Menus and bars](#menus-and-bars) · [Dialogs](#dialogs) · [App parts](#app-parts) · [Files](#files) · [Charts](#charts) · [Planning and dashboards](#planning-and-dashboards) · [Maps and 3D](#maps-and-3d) · [HTML and Markdown](#html-and-markdown) · [Canvas and reports](#canvas-and-reports) · [Sound and video](#sound-and-video)
+-- Sultan Al Isaiee ([@foxoman](https://github.com/foxoman))
+
+## Contents
+
+- **[Getting started](#getting-started)**: [Install](#install) · [A first app](#a-first-app) · [How immediate mode works](#how-immediate-mode-works) · [The app's options](#the-apps-options) · [Building and running](#building-and-running)
+- **[Layout](#layout)**: [Rows and columns](#rows-and-columns) · [Widths in a row](#widths-in-a-row) · [spring and space](#spring-and-space) · [Groups, cards and separators](#groups-cards-and-separators) · [Forms and fields](#forms-and-fields) · [adaptive, and the window's size](#adaptive-and-the-windows-size) · [Scrolling: scrollPanel, panel, pane](#scrolling-scrollpanel-panel-pane) · [Tabs](#tabs) · [Splitters: split, vsplit](#splitters-split-vsplit) · [sidePane](#sidepane)
+- **[Text](#text)**: [label, paragraph, heading](#label-paragraph-heading) · [styledText, link, badge](#styledtext-link-badge) · [icon, iconLabel, image](#icon-iconlabel-image) · [tooltip](#tooltip)
+- **[Buttons](#buttons)**: [button](#button) · [Buttons with a picture](#buttons-with-a-picture) · [segmented](#segmented) · [menuButton, splitButton](#menubutton-splitbutton) · [buttonRow](#buttonrow) · [buttonAt](#buttonat)
+- **[Choices](#choices)**: [checkbox](#checkbox) · [radio](#radio) · [toggle (a switch)](#toggle-a-switch) · [chips](#chips) · [tagInput](#taginput) · [rating](#rating)
+- **[Text input](#text-input)**: [edit](#edit) · [editArea](#editarea) · [searchBox](#searchbox) · [autocomplete](#autocomplete) · [maskedEdit](#maskededit) · [comboEdit](#comboedit) · [hotkeyEdit](#hotkeyedit)
+- **[Numbers, dates, colors](#numbers-dates-colors)**: [spin, intEdit, numberEdit](#spin-intedit-numberedit) · [slider, progress](#slider-progress) · [rangeSlider](#rangeslider) · [popupSlider](#popupslider) · [knob](#knob) · [datePicker](#datepicker) · [calendar](#calendar) · [dateRange, presetRange](#daterange-presetrange) · [timePicker](#timepicker) · [colorPicker](#colorpicker) · [colorWell and the Color dialog](#colorwell-and-the-color-dialog)
+- **[Lists and data](#lists-and-data)**: [listbox](#listbox) · [combo](#combo) · [checkList](#checklist) · [fontCombo, fontStyleCombo](#fontcombo-fontstylecombo) · [grid](#grid) · [grid with cell kinds](#grid-with-cell-kinds) · [tree, branch, leaf](#tree-branch-leaf) · [treeGrid](#treegrid) · [iconView](#iconview) · [lineView](#lineview) · [dualList](#duallist) · [propertyGrid](#propertygrid) · [imageView](#imageview)
+- **[Progress and status](#progress-and-status)**: [progressRing, spinner, sparkline, usageBar](#progressring-spinner-sparkline-usagebar) · [banner](#banner) · [toast](#toast) · [showSnackbar, snackbar](#showsnackbar-snackbar) · [led, pill](#led-pill) · [timeline](#timeline) · [emptyState, busyState](#emptystate-busystate) · [statusbar](#statusbar) · [statusRow, statusSep](#statusrow-statussep)
+- **[Containers](#containers)**: [expander](#expander) · [accordionHeader](#accordionheader) · [tabStrip (document tabs)](#tabstrip-document-tabs)
+- **[Menus and bars](#menus-and-bars)**: [menubar, menu, menuItem, submenu](#menubar-menu-menuitem-submenu) · [contextMenu](#contextmenu) · [popupMenu, openPopupMenu](#popupmenu-openpopupmenu) · [breadcrumb](#breadcrumb) · [pager, stepper](#pager-stepper) · [recordNav](#recordnav) · [findBar, findIn, replaceAllIn](#findbar-findin-replaceallin)
+- **[Dialogs](#dialogs)**: [msgBox](#msgbox) · [inputBox](#inputbox) · [dialog](#dialog) · [progressBox](#progressbox) · [wizard, stepDone](#wizard-stepdone) · [aboutBox](#aboutbox) · [splashBox](#splashbox) · [problemBox, reportProblem](#problembox-reportproblem) · [fileDialog (3.1)](#filedialog-31)
+- **[App parts](#app-parts)**: [toolbar, toolButton, toolSeparator](#toolbar-toolbutton-toolseparator) · [barButton, setToolbarLook](#barbutton-settoolbarlook) · [customizeToolbar](#customizetoolbar) · [mdiArea, mdiWindow, mdiWindowMenu](#mdiarea-mdiwindow-mdiwindowmenu) · [dockPanels: docked panels](#dockpanels-docked-panels) · [paletteTabs](#palettetabs) · [keymapEditor, keymapPressed](#keymapeditor-keymappressed) · [settingToggle, settingChoice, settingSlider, settingCombo, settingButtons, settingLink](#settingtoggle-settingchoice-settingslider-settingcombo-settingbuttons-settinglink) · [appearanceSettings](#appearancesettings) · [avatar, factList](#avatar-factlist) · [bottomNav, fab](#bottomnav-fab) · [captionBar](#captionbar)
+- **[Files](#files)**: [fileList](#filelist) · [fileList: large icons](#filelist-large-icons) · [folderTree](#foldertree) · [placesView](#placesview) · [filePreview](#filepreview) · [pathBar](#pathbar) · [driveBar](#drivebar) · [filePicker](#filepicker) · [trashList](#trashlist) · [propertiesDialog](#propertiesdialog) · [runJobDialog](#runjobdialog) · [textFileView, hexFileView](#textfileview-hexfileview) · [pictureBox](#picturebox) · [storageDialog](#storagedialog)
+- **[Charts](#charts)**: [chart](#chart) · [A combo chart](#a-combo-chart) · [gauge](#gauge) · [barChart, lineChart, pieChart](#barchart-linechart-piechart) · [The 21 kinds of chart](#the-21-kinds-of-chart)
+- **[Planning and dashboards](#planning-and-dashboards)**: [kpiTile, statCard, kpiRow](#kpitile-statcard-kpirow) · [kanbanBoard](#kanbanboard) · [ganttView](#ganttview) · [agendaView](#agendaview) · [orgChart](#orgchart)
+- **[Maps and 3D](#maps-and-3d)**: [mapView](#mapview) · [view3d](#view3d) · [bars3d](#bars3d)
+- **[HTML, Markdown and rich text](#html-markdown-and-rich-text)**: [htmlView, htmlBlock](#htmlview-htmlblock) · [markdownView, markdown](#markdownview-markdown) · [richEdit, richToolbar](#richedit-richtoolbar)
+- **[Canvas and reports](#canvas-and-reports)**: [canvas: your own drawing](#canvas-your-own-drawing) · [canvas2d (the HTML5 Canvas 2D API)](#canvas2d-the-html5-canvas-2d-api) · [reportView (an HTML template: PDF, printing)](#reportview-an-html-template-pdf-printing) · [pdfView](#pdfview) · [QR codes](#qr-codes)
+- **[Sound and video](#sound-and-video)**: [animation (animated GIFs)](#animation-animated-gifs) · [videoView](#videoview) · [audioView](#audioview)
+- **[Looks](#looks)**: [Themes](#themes) · [Dark mode](#dark-mode) · [Size and text size](#size-and-text-size) · [Fonts](#fonts) · [The window's frame](#the-windows-frame)
+
+## Getting started
+
+### Install
+
+You need **Nim 2.0 or newer** and **a C compiler** (on Windows `choosenim`
+brings MinGW-w64; on macOS `xcode-select --install`; on Linux `gcc` or
+`clang` from your package manager; in Termux `pkg install nim clang`).
+Then:
+
+```sh
+nimble install retroui                  # the library and its tools
+retrokit doctor                       # checks what your machine has, and says how to fix it
+retrokit new myapp --kind:business    # a ready app: hello, form, business, files, charts
+cd myapp && nimble run
+```
+
+Nothing else to install: no GTK, Qt, SDL or browser engine. The fonts,
+icons, PDF writer and decoders are built in, and only what an app calls
+is linked.
+
+### A first app
+
+```nim
+import retroui
+
+var name = "World"
+var greeting = ""
+
+app "Hello", 320, 120:
+  row([50, -1]):
+    label "&Name:"
+    edit name
+  row:
+    if button("&Greet", isDefault = true):
+      greeting = "Hello, " & name & "!"
+    if button("E&xit"): quitApp()
+  label greeting
+```
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![A first app, normal](controls/hello-normal.png) | ![A first app, touch screen](controls/hello-touch-screen.png) | ![A first app, dark scheme](controls/hello-dark-scheme.png) |
+
+`app` opens the window and runs its block once per frame, until the window
+is closed. On a phone the app takes the whole screen.
+
+### How immediate mode works
+
+- **Controls are calls.** The UI is plain code that runs every frame. A
+  control draws itself where the layout puts it and returns what happened.
+  There are no widget objects to make, keep or free, and no callbacks.
+- **A click is a `true`.** `if button("OK"): save()` -- `button` returns
+  true in the frame it is clicked. `checkbox`, `edit`, `slider` and the
+  others return true when they changed something.
+- **Your variables hold the state.** `edit name` edits `name` in place;
+  `checkbox("&Bold", bold)` flips `bold`; `listbox(items, sel)` moves
+  `sel`. What your code draws is what the screen shows, so the screen is
+  never out of step with your data.
+- **Ids come by themselves.** A control is known by the variable it is
+  bound to, or by its label (two "OK" buttons in one frame are told apart
+  by their order). When a loop draws the same controls for each row, give
+  each row its own id: `withId(i): ...` (or `pushId(i)` ... `popId()`).
+  Some controls take a `key` for the same purpose.
+- **Frames only when needed.** A frame runs when input comes, when a timer
+  asks for one (`wakeIn(ms)`), or when work on another thread is done.
+  Between frames the app sleeps. An unchanged frame is not drawn at all.
+- **Mouse, keyboard and fingers.** Every control takes all three: Tab and
+  the arrows, Space and Enter, `&` letters with Alt; a tap, a drag to
+  scroll, a long press for the menu.
+
+### The app's options
+
+`app` takes options by name after the size, all optional:
+
+```nim
+const ledgerIcon = staticRead("ledger.png")
+
+app "Ledger", 900, 600,
+    theme = Dark,          # the colors (builtinThemes, or a Theme of your own)
+    frame = wfClassic,     # wfAsBuilt (the default), wfSystem, wfClassic (Windows 3.1's)
+    userFrame = true,      # the user may switch the frame (kept for the app)
+    gpu = gmAuto,          # gmAuto, gmGpu, gmCpu
+    scale = 125,           # the size of everything, in percent
+    font = ufSans,         # the UI's font: ufSans, ufSerif, ufMono
+    zoom = 0,              # whole-pixel magnification (0: the display's)
+    id = "ledger",         # the app's name for what the toolkit keeps for it
+    icon = ledgerIcon,     # the window's picture (a PNG's bytes)
+    look = "ledger":       # keep the look the user picks (appearanceSettings)
+  label "Hello"
+```
+
+A misspelled option is a compile error that lists them all. `RETRO_FRAME`,
+`RETRO_GPU`, `RETRO_SCALE`, `RETRO_THEME`, `RETRO_SIZE` and `RETRO_ZOOM`
+win over them when the app starts: handy for trying a phone's size on a
+desktop (`RETRO_SIZE=420x840 RETRO_TOUCH=1 ./myapp`).
+
+An app that runs its own frame loop calls `openApp` with the same options:
+
+```nim
+openApp("Hello", 320, 120, look = "hello")
+while beginFrame():
+  captionBar()
+  label "Hello"
+  endFrame()
+  appFrameDone()
+closeApp()
+```
+
+### Building and running
+
+```sh
+nim c -r -d:release -d:useMalloc hello.nim   # build and run
+retrokit run hello.nim                       # the same, in one word
+retrokit small hello.nim                     # the smallest build: optimized for size, stripped
+retroapk hello.nim --install                 # an Android APK (on a phone, in Termux)
+```
+
+Build with `-d:useMalloc` (or put `switch("define", "useMalloc")` in your
+`config.nims`): with it the memory a program lets go of goes back to the
+system. From a clone of the repository, `nimble gallery` runs every
+control in one window, and `nimble files`, `nimble ledger`, `nimble mail`
+the bigger examples.
+
+**Android, iOS, Windows from Linux, signing:** step by step in
+[BUILDING.md](../BUILDING.md). An APK needs no Java, Gradle or Android
+SDK, and no NDK when the computer has clang with lld, or zig.
+
+## Layout
+
+Controls go down the window, one under the other. `row` puts them side
+by side, `col` stacks them inside a row, and groups, cards, forms, tabs and
+splitters hold them. Sizes are **design pixels**: they grow with the
+screen's density and with the size the user picks, so the same numbers fit
+a phone, a laptop and a 4K screen. The window's content scrolls when it is
+taller or wider than the window, always with the standard scroll bars.
+
+### Rows and columns
+
+`row` puts controls side by side at their own widths; when the row is full they wrap. `col` makes a column inside a row.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![Rows and columns, normal](controls/rows-normal.png) | ![Rows and columns, touch screen](controls/rows-touch-screen.png) | ![Rows and columns, dark scheme](controls/rows-dark-scheme.png) |
+
+```nim
+var colA = true
+var colB = false
+
+row:
+  button "One"
+  button "Two"
+  button "Three"
+row:
+  col:
+    label "A column"
+    checkbox("in a row", colA)
+  col:
+    label "Another one"
+    checkbox("beside it", colB)
+```
+
+**API**
+
+```nim
+template row*(body: untyped)
+```
+
+Widgets side by side, each at its natural width (wrapping when full).
+
+```nim
+template row*(widths: openArray[int]; body: untyped)
+```
+
+Widgets side by side in columns: a width > 0 is fixed, -1 shares the
+rest, 0 is the widget's own width. More widgets than widths wrap.
+The widths are design pixels, scaled as everything is: write
+`row([80, -1])`, not `row([dp(80), -1])` (that scales twice: the
+columns too wide on a tablet or a phone); widths measured on the
+screen (a text's width) go to `rowPx`.
+
+```nim
+template col*(body: untyped)
+```
+
+Widgets stacked top to bottom (a column inside a row).
+
+```nim
+template col*(width: int; body: untyped)
+```
+
+A column `width` design pixels wide.
+
+```nim
+template rowPx*(widths: openArray[int]; body: untyped)
+```
+
+`row` with widths in logical pixels, as they are (measured on the
+screen: `textWidth`, `dp`): not scaled again.
+
+### Widths in a row
+
+`row([widths])` gives each control its width: a number is fixed, -1 shares the room left, -2 takes two shares, 0 is the control's own width.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![Widths in a row, normal](controls/rowwidths-normal.png) | ![Widths in a row, touch screen](controls/rowwidths-touch-screen.png) | ![Widths in a row, dark scheme](controls/rowwidths-dark-scheme.png) |
+
+```nim
+var firstName = "Sultan"
+var lastName = "Al Isaiee"
+var docPath = "Documents/Budget.csv"
+
+row([80, -1]):
+  label "Name:"
+  edit firstName
+row([80, -1, -2]):
+  label "Shares:"
+  edit firstName
+  edit lastName
+row([80, 0, -1]):
+  label "Own width:"
+  button "Browse..."
+  edit docPath
+```
+
+### spring and space
+
+`spring()` pushes what comes after it to the row's right end: the place for OK and Cancel. `space(px)` leaves room, down in a column or right in a row.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![spring and space, normal](controls/spring-normal.png) | ![spring and space, touch screen](controls/spring-touch-screen.png) | ![spring and space, dark scheme](controls/spring-dark-scheme.png) |
+
+```nim
+row:
+  label "Total: 120.000"
+  spring()
+  button("OK", isDefault = true)
+  button "Cancel"
+space(12)
+row:
+  button "Left"
+  space(40)
+  button "After a space"
+```
+
+**API**
+
+```nim
+proc spring*()
+```
+
+In a row: the widgets after it go to the row's right end.
+
+```nim
+proc space*(px = Gap)
+```
+
+Empty space: down in a column, right in a row.
+
+### Groups, cards and separators
+
+A group box frames controls that belong together, as a 3.1 dialog does. A card is a raised panel with a title: the tiles of a dashboard. `separator` draws an etched line.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![Groups, cards and separators, normal](controls/group-normal.png) | ![Groups, cards and separators, touch screen](controls/group-touch-screen.png) | ![Groups, cards and separators, dark scheme](controls/group-dark-scheme.png) |
+
+```nim
+row([-1, -1]):
+  group("Group box"):
+    label "In a 3.1 group box"
+  card("Card"):
+    label "A raised panel"
+separator()
+label "Under a separator"
+```
+
+**API**
+
+```nim
+template group*(title: string; body: untyped)
+```
+
+A group box: a frame with a title around `body`.
+
+```nim
+template card*(title: string; body: untyped)
+```
+
+A panel drawn as a 3.1 group box (its title set into the top line);
+in an `adaptive` row, cards make a dashboard that reflows from one
+column (phone) to several.
+
+```nim
+adaptive(260):
+  card "Sales": label "12,400"
+  card "Orders": label "318"
+```
+
+```nim
+proc separator*()
+```
+
+A horizontal etched line.
+
+### Forms and fields
+
+`form` lines up labels and their controls in two columns (0: the labels as wide as the longest). On a phone the label goes above its control.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![Forms and fields, normal](controls/form-normal.png) | ![Forms and fields, touch screen](controls/form-touch-screen.png) | ![Forms and fields, dark scheme](controls/form-dark-scheme.png) |
+
+```nim
+var customer = "Al Noor Trading"
+var invoiceAmount = 1234.5
+var paid = true
+
+form 0:
+  field "&Customer:":
+    edit customer
+  field "&Amount:":
+    numberEdit invoiceAmount
+  field "":
+    checkbox("&Paid", paid)
+```
+
+**API**
+
+```nim
+template form*(labelWidth: int; body: untyped)
+```
+
+`field` rows with a label column `labelWidth` design pixels wide, or,
+with 0, as wide as the widest caption.
+
+```nim
+template field*(caption: string; body: untyped)
+```
+
+A form row: `caption` in a label column, then the control(s). In a
+narrow space (a phone) the caption goes above the control instead.
+
+### adaptive, and the window's size
+
+`adaptive(minW)` makes as many equal columns as fit, each at least `minW` wide, and its cards flow through them. Three columns on a desktop, one on a phone, from the same code. `isCompact`, `sizeClass` and `responsive` tell the code how much room there is.
+
+| A desktop window | A phone |
+|---|---|
+| ![adaptive, and the window's size: A desktop window](controls/adaptive-a-desktop-window.png) | ![adaptive, and the window's size: A phone](controls/adaptive-a-phone.png) |
+
+```nim
+adaptive(140):
+  card("Sales"):
+    label "OMR 1,240"
+  card("Stock"):
+    label "312 items"
+  card("Orders"):
+    label "18 open"
+```
+
+**API**
+
+```nim
+template adaptive*(minW: int; body: untyped)
+```
+
+As many equal columns as fit, each at least `minW` design pixels
+wide; the widgets (groups, cards) of `body` flow through them and wrap.
+One column on a phone, three on a desktop -- with the same code.
+
+```nim
+proc responsive*[T](compact, medium, expanded: T): T
+```
+
+The value for the window's size class.
+
+```nim
+proc isCompact*(): bool
+```
+
+A phone in portrait, or a narrow window.
+
+```nim
+proc sizeClass*(): SizeClass
+```
+
+How much room the window has: phone, tablet, desktop.
+
+```nim
+proc columnsFor*(minW: int; maxCols = 6): int
+```
+
+How many columns at least `minW` design pixels wide fit in the space
+the layout is at.
+
+```nim
+proc dp*(v: int): int
+```
+
+`v` design pixels in logical pixels: sizes follow the screen's density
+and the user's UI size (`setUiScale`). 1 stays 1.
+
+### Scrolling: scrollPanel, panel, pane
+
+The window's page scrolls by itself. `scrollPanel(height)` scrolls a part of it, in a frame; `panel` is a framed white page down to the bottom (a page beside a tree, as in File Manager); `pane` scrolls on the dialog's face. `withId` gives the rows drawn by a loop ids of their own.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![Scrolling: scrollPanel, panel, pane, normal](controls/scroll-normal.png) | ![Scrolling: scrollPanel, panel, pane, touch screen](controls/scroll-touch-screen.png) | ![Scrolling: scrollPanel, panel, pane, dark scheme](controls/scroll-dark-scheme.png) |
+
+```nim
+var scrollChecks = newSeq[bool](20)
+
+label "Twenty rows in 100 pixels:"
+scrollPanel 100:
+  for i in 0 ..< scrollChecks.len:
+    withId(i):
+      checkbox("Item " & $(i + 1), scrollChecks[i])
+```
+
+**API**
+
+```nim
+template scrollPanel*(height: int; body: untyped)
+```
+
+A framed area of `height` pixels whose content scrolls (-1: down to
+the bottom).
+
+```nim
+template panel*(body: untyped)
+```
+
+A framed white area down to the bottom, its content `Pad` in from
+every edge, scrolling (with a scroll bar) only when it is taller: the
+page of an app beside a tree or a list, as in File Manager.
+
+```nim
+template panel*(height: int; body: untyped)
+```
+
+`panel` `height` pixels high.
+
+```nim
+template pane*(height: int; body: untyped)
+```
+
+An area `height` pixels high on the dialog's face (no frame) whose
+content scrolls when it is taller: the pages of a dialog that keeps its
+size (Preferences).
+
+```nim
+proc revealInPanel*(r: Rect; glide = true)
+```
+
+Inside a `panel` (or `pane`): scrolls it so that `r` (drawn this frame)
+comes to its top, or as near as it can: a message picked in a
+conversation, a heading jumped to. `glide` false: at once.
+
+```nim
+template withId*(key: typed; body: untyped)
+```
+
+Give the widgets in `body` their own id scope (e.g. per list row).
+
+```nim
+proc pushId*(key: string)
+```
+
+Widgets made until `popId` get ids of their own under `key` (rows of a
+list drawn with the same code; see `withId`).
+
+```nim
+proc pushId*(key: int)
+```
+
+`pushId` with a number (a row's index).
+
+### Tabs
+
+Pages of a dialog. `sel` is the page shown; Ctrl+Tab and the arrows move between them. `sameHeight` keeps the pages one height, so the dialog does not jump.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![Tabs, normal](controls/tabs-normal.png) | ![Tabs, touch screen](controls/tabs-touch-screen.png) | ![Tabs, dark scheme](controls/tabs-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![Tabs, keyboard focus](controls/tabs-keyboard-focus.png) |
+
+```nim
+var tabSel = 0
+
+tabs(tabSel, ["&General", "&Look", "&Advanced"], sameHeight = true):
+  label("The page of tab " & $(tabSel + 1))
+```
+
+**API**
+
+```nim
+template tabs*(sel: var int; labels: openArray[string]; body: untyped)
+```
+
+Tabs bound to `sel`; draw the page for `sel` in `body`.
+
+```nim
+template tabs*(sel: var int; labels: openArray[string]; sameHeight: bool;
+               body: untyped)
+```
+
+Tabs whose page keeps the height of the tallest one shown so far
+(property sheets, settings dialogs).
+
+```nim
+proc setTabLook*(look: TabLook)
+```
+
+Every `tabs` and `tabStrip` from now on in this look.
+
+### Splitters: split, vsplit
+
+Two panes with a bar between them to drag: side by side (`split`) or one above the other (`vsplit`). `pos` is where the bar is; keep it in your settings.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![Splitters: split, vsplit, normal](controls/split-normal.png) | ![Splitters: split, vsplit, touch screen](controls/split-touch-screen.png) | ![Splitters: split, vsplit, dark scheme](controls/split-dark-scheme.png) |
+
+```nim
+var split1 = 140
+var splitFruits = @["Apple", "Banana", "Cherry", "Dates", "Figs", "Grapes"]
+var splitFruit = 1
+
+split(split1, 100):
+  listbox(splitFruits, splitFruit, rows = -1)
+do:
+  paragraph("Drag the bar between the panes.")
+```
+
+**API**
+
+```nim
+template split*(pos: var int; height: int; left, right: untyped)
+```
+
+Two panes side by side; drag the bar between them (`pos` is its x).
+
+```nim
+split(listW, 300):
+  listbox items, sel, rows = -1
+do:
+  editArea text, lines = -1
+```
+
+```nim
+template vsplit*(pos: var int; height: int; upper, lower: untyped)
+```
+
+Two panes above each other; drag the bar between them.
+
+```nim
+proc splitBar*(): int
+```
+
+The thickness of the bar of `split` and `vsplit`.
+
+### sidePane
+
+Content with a details pane beside it when there is room, and under it on a phone held upright: the details pane of an explorer, the inspector of an editor.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![sidePane, normal](controls/sidepane-normal.png) | ![sidePane, touch screen](controls/sidepane-touch-screen.png) | ![sidePane, dark scheme](controls/sidepane-dark-scheme.png) |
+
+```nim
+var paneW = 150
+var paneH = 100
+var paneFruits = @["Apple", "Banana", "Cherry", "Dates"]
+var paneFruit = 0
+
+sidePane(true, paneW, paneH):
+  listbox(paneFruits, paneFruit, rows = -1)
+do:
+  factList({"Name": paneFruits[paneFruit], "Kind": "Fruit"})
+```
+
+**API**
+
+```nim
+template sidePane*(show: bool; paneW, paneH: var int; main, pane: untyped)
+```
+
+`main` with a `pane` beside it (`paneW` wide, in design pixels) when
+there is room, else under it (`paneH` tall): the details pane of an
+explorer, the inspector of an editor. Dragging the bar between them
+changes `paneW` or `paneH` (keep them in the app's settings).
+
+```nim
+sidePane(showDetails, detailsW, detailsH):
+  listbox items, sel, rows = -1
+do:
+  factList(details(items[sel]))
+```
+
+```nim
+proc paneBeside*(paneW: int; minMain = 320): bool
+```
+
+A pane `paneW` logical pixels wide fits beside content that needs
+`minMain` (not on phones held upright).
 
 ## Text
 
+Text, headings, links, icons and tips. Text is FreeSans unless the app
+chooses another font (see [Looks](#looks)); Arabic is joined and runs right
+to left everywhere.
+
 ### label, paragraph, heading
 
+Static text. A `&` before a letter underlines it, and Alt with that letter moves the focus to the control after the label.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![label, paragraph, heading, normal](controls/label-normal.png) | ![label, paragraph, heading, touch screen](controls/label-touch-screen.png) | ![label, paragraph, heading, dark scheme](controls/label-dark-scheme.png) |
+
 ```nim
-proc label*(s: string; bold = false; color = Color(); enabled = true)
+heading("Quarterly report", 2)
+label "&Name: (a label with a mnemonic)"
+paragraph("A paragraph wraps to the room it has, as 3.1\'s static text did.")
+```
+
+**API**
+
+```nim
+proc label*(s: string; bold = false; color = Color(); enabled = true; literal = false)
 ```
 
 Static text; '\n' starts a new line, '&' underlines the next letter
 (Alt + that letter moves the focus to the control after the label, as
 in a 3.1 dialog).
 Wider than the room it is in (a narrow dialog, a phone), it wraps, as
-a 3.1 static text does.
+a 3.1 static text does. In another language (`setUiLanguage`) the
+whole text is looked up before it wraps. `literal`: shown as it is --
+a file's name: not translated, its '&' kept.
 
 ```nim
 proc paragraph*(s: string; w = 0; color = Color())
@@ -37,19 +699,25 @@ proc heading*(s: string; level = 1; color = Color())
 
 A title in large bold text (level 1 largest .. 4).
 
-Example:
+### styledText, link, badge
 
-```nim
-heading("Quarterly report", 2)
-label "&Name: (a label with a mnemonic)"
-paragraph("A paragraph wraps to the room it has, as 3.1\'s static text did.")
-```
+Text in a style of its own (bold, italic, mono, underlined, larger), a link that is true when clicked, and a small count in a colored badge.
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
-| ![label Normal](controls/label-normal.png) | ![label Touch screen](controls/label-touch-screen.png) | ![label Dark scheme](controls/label-dark-scheme.png) |
+| ![styledText, link, badge, normal](controls/styledtext-normal.png) | ![styledText, link, badge, touch screen](controls/styledtext-touch-screen.png) | ![styledText, link, badge, dark scheme](controls/styledtext-dark-scheme.png) |
 
-### styledText, link, badge
+```nim
+styledText("Bold, italic and mono", style(bold = true))
+styledText("Italic, underlined", style(italic = true, underline = true))
+row:
+  if link("Open the website"):
+    discard
+  badge("3")
+  badge("NEW", color(0, 128, 0))
+```
+
+**API**
 
 ```nim
 proc styledText*(s: string; st: TextStyle; color = Color())
@@ -69,31 +737,24 @@ proc badge*(s: string; bg = color(200, 0, 0); fg = color(255, 255, 255))
 
 A small rounded count or status label ("3", "NEW").
 
-Example:
+### icon, iconLabel, image
 
-```nim
-styledText("Bold, italic and mono", style(bold = true))
-styledText("Italic, underlined", style(italic = true, underline = true))
-row:
-  if link("Open the website"):
-    discard
-  badge("3")
-  badge("NEW", color(0, 128, 0))
-```
+The 109 pixel icons of the 3.1 manner (`px...`) and the Nerd Fonts symbols (`nf...`) are text: `icon` draws one, `iconLabel` one with a label. `image` draws an `Icon` at its size.
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
-| ![styledtext Normal](controls/styledtext-normal.png) | ![styledtext Touch screen](controls/styledtext-touch-screen.png) | ![styledtext Dark scheme](controls/styledtext-dark-scheme.png) |
-
-### icon, iconLabel (pixel icons and Nerd icons)
+| ![icon, iconLabel, image, normal](controls/icons-normal.png) | ![icon, iconLabel, image, touch screen](controls/icons-touch-screen.png) | ![icon, iconLabel, image, dark scheme](controls/icons-dark-scheme.png) |
 
 ```nim
-proc icon*(rows: openArray[string]): Icon
+row:
+  for g in [pxFolder, pxComputer, pxTrashFull, pxWarning, pxPrint, pxSave]:
+    icon(g, size = 2.0)
+iconLabel(pxDocuments, "Documents")
+iconLabel(nfGithub, "Nerd Fonts icons too", iconColor = color(0, 0, 128))
+image(glyphIcon(nfFolderOpen, color(222, 170, 40), 32))
 ```
 
-Pixel art in the 16 VGA colors: k black, w white, s silver, g gray,
-r red, m maroon, y yellow, o olive, l lime, G green, c cyan, t teal,
-b blue, n navy, p pink, P purple; '.' is transparent.
+**API**
 
 ```nim
 proc icon*(glyph: string; color = Color(); size = 1.0): Rect {.discardable.}
@@ -109,23 +770,61 @@ proc iconLabel*(glyph, s: string; color = Color(); iconColor = Color();
 
 An icon followed by a label: `iconLabel(nfFolder, "Documents")`.
 
-Example:
-
 ```nim
-row:
-  for g in [pxFolder, pxComputer, pxTrashFull, pxWarning, pxPrint, pxSave]:
-    icon(g, size = 2.0)
-iconLabel(pxDocuments, "Documents")
-iconLabel(nfGithub, "Nerd Fonts icons too", iconColor = color(0, 0, 128))
+proc image*(ic: Icon)
 ```
+
+A picture at its own size.
+
+### tooltip
+
+A tip for the control drawn last, shown when the mouse rests on it. Fingers have no hover, so a touch screen shows none.
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
-| ![icons Normal](controls/icons-normal.png) | ![icons Touch screen](controls/icons-touch-screen.png) | ![icons Dark scheme](controls/icons-dark-scheme.png) |
+| ![tooltip, normal](controls/tooltip-normal.png) | ![tooltip, touch screen](controls/tooltip-touch-screen.png) | ![tooltip, dark scheme](controls/tooltip-dark-scheme.png) |
+
+```nim
+if button("&Save"):
+  discard
+tooltip "Save the document (Ctrl+S)"
+```
+
+**API**
+
+```nim
+proc tooltip*(text: string)
+```
+
+Show `text` when the mouse rests on the widget drawn last (never after
+a finger was lifted there).
 
 ## Buttons
 
 ### button
+
+A push button: true in the frame it is clicked. `isDefault` gives it the 3.1 default ring, and Enter clicks it.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![button, normal](controls/button-normal.png) | ![button, touch screen](controls/button-touch-screen.png) | ![button, dark scheme](controls/button-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Mouse over | Pressed | Disabled |
+|---|---|---|---|
+| ![button, keyboard focus](controls/button-keyboard-focus.png) | ![button, mouse over](controls/button-mouse-over.png) | ![button, pressed](controls/button-pressed.png) | ![button, disabled](controls/button-disabled.png) |
+
+```nim
+var okClicks = 0
+
+row:
+  if button("&OK", isDefault = true):
+    inc okClicks
+  button("Cancel")
+```
+
+**API**
 
 ```nim
 proc button*(label: string; isDefault = false; enabled = true;
@@ -150,66 +849,51 @@ proc button*(label: string; glyph: string; look = blTextBeside; isDefault = fals
 `button` with a glyph of the icon font as its picture (`pxSave`,
 `nfCopy`...).
 
-Example:
+### Buttons with a picture
+
+A button with an icon shows it four ways: the text beside it, below it, the icon only (the text becomes its tooltip), or the text only. `glyphPic` makes a Nerd Fonts symbol the picture.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![Buttons with a picture, normal](controls/picbuttons-normal.png) | ![Buttons with a picture, touch screen](controls/picbuttons-touch-screen.png) | ![Buttons with a picture, dark scheme](controls/picbuttons-dark-scheme.png) |
 
 ```nim
 row:
-  if button("&OK", isDefault = true):
-    inc okClicks
-  button("Cancel")
+  button("Open", pxOpen, blTextBeside)
+  button("Print", pxPrint, blTextBelow)
+  button("Save", glyphPic(nfContentSave), blIconOnly)
+  button("Text only", pxSave, blTextOnly)
 ```
 
-| Normal | Keyboard focus | Mouse over | Pressed | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|---|---|
-| ![button Normal](controls/button-normal.png) | ![button Keyboard focus](controls/button-keyboard-focus.png) | ![button Mouse over](controls/button-mouse-over.png) | ![button Pressed](controls/button-pressed.png) | ![button Disabled](controls/button-disabled.png) | ![button Touch screen](controls/button-touch-screen.png) | ![button Dark scheme](controls/button-dark-scheme.png) |
-
-### toolbar, toolButton, toolSeparator
+**API**
 
 ```nim
-template toolbar*(body: untyped)
+proc glyphPic*(glyph: string; size = 1.25): ButtonPic
 ```
 
-A bar of tool buttons below the menu bar.
-
-```nim
-proc toolButton*(ic: Icon; tip = ""; down = false;
-                 enabled = true): bool {.discardable.}
-```
-
-A tool bar button with a 16x16 icon. `down` shows it pressed in.
-
-```nim
-proc toolButton*(caption: string; tip = ""; down = false; bold = false;
-                 enabled = true; size = 1.0): bool {.discardable.}
-```
-
-A tool bar button showing a short text, or an icon of the icon font
-(`toolButton(nfCopy, "Copy", size = 1.3)`).
-
-```nim
-proc toolSeparator*()
-```
-
-A gap between groups of tool buttons.
-
-Example:
-
-```nim
-toolbar:
-  toolButton(pxNew, "New")
-  toolButton(pxOpen, "Open")
-  toolButton(pxSave, "Save")
-  toolSeparator()
-  toolButton(pxCut, "Cut")
-  toolButton(pxCopy, "Copy")
-  toolButton(pxPaste, "Paste", down = true)
-```
-
-| Normal | Mouse over | Pressed | Touch screen | Dark scheme |
-|---|---|---|---|---|
-| ![toolbar Normal](controls/toolbar-normal.png) | ![toolbar Mouse over](controls/toolbar-mouse-over.png) | ![toolbar Pressed](controls/toolbar-pressed.png) | ![toolbar Touch screen](controls/toolbar-touch-screen.png) | ![toolbar Dark scheme](controls/toolbar-dark-scheme.png) |
+An icon-font glyph as a button's picture (`glyphPic(nfCopy)`).
 
 ### segmented
+
+A row of joined buttons of which one is down: Day, Week, Month.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![segmented, normal](controls/segmented-normal.png) | ![segmented, touch screen](controls/segmented-touch-screen.png) | ![segmented, dark scheme](controls/segmented-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Pressed | Disabled |
+|---|---|---|
+| ![segmented, keyboard focus](controls/segmented-keyboard-focus.png) | ![segmented, pressed](controls/segmented-pressed.png) | ![segmented, disabled](controls/segmented-disabled.png) |
+
+```nim
+var view2 = 1
+
+segmented(["Day", "Week", "Month"], view2)
+```
+
+**API**
 
 ```nim
 proc segmented*(options: openArray[string]; sel: var int; w = 0;
@@ -220,19 +904,137 @@ Buttons joined in a row, one of them pressed in: a choice of a few.
 A click or a tap picks one; Left, Right, Home and End move the choice;
 Alt + a letter picks that one.
 
-Example:
+### menuButton, splitButton
+
+A button that drops a menu (`menuButton`: the index chosen, else -1), and a button with two parts (`splitButton`): the left one does the usual thing, the arrow offers the others.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![menuButton, splitButton, normal](controls/menubutton-normal.png) | ![menuButton, splitButton, touch screen](controls/menubutton-touch-screen.png) | ![menuButton, splitButton, dark scheme](controls/menubutton-dark-scheme.png) |
 
 ```nim
-segmented(["Day", "Week", "Month"], view2)
+row:
+  let pick = menuButton("&Export", ["PNG", "JPEG", "-", "PDF"])
+  if pick >= 0:
+    discard
+  let sb = splitButton("&Save", ["Save As...", "Save a Copy..."])
+  if sb.clicked:
+    discard
 ```
 
-| Normal | Keyboard focus | Pressed | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|---|
-| ![segmented Normal](controls/segmented-normal.png) | ![segmented Keyboard focus](controls/segmented-keyboard-focus.png) | ![segmented Pressed](controls/segmented-pressed.png) | ![segmented Disabled](controls/segmented-disabled.png) | ![segmented Touch screen](controls/segmented-touch-screen.png) | ![segmented Dark scheme](controls/segmented-dark-scheme.png) |
+**API**
+
+```nim
+proc menuButton*(label: string; items: openArray[string]; w = 0; enabled = true): int
+```
+
+A button with an arrow that drops a menu of `items`: the index
+chosen, or -1. ("-" in `items` is a separator.)
+
+```nim
+proc splitButton*(label: string; items: openArray[string]; w = 0; enabled = true): tuple[clicked: bool; chose: int]
+```
+
+A button whose left part does its default (`clicked`) and whose arrow
+part drops a menu of the other ways (`chose`: the index, else -1).
+
+### buttonRow
+
+The buttons at the foot of a dialog, right-aligned, the first the default: the number clicked (from 1), else 0.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![buttonRow, normal](controls/buttonrow-normal.png) | ![buttonRow, touch screen](controls/buttonrow-touch-screen.png) | ![buttonRow, dark scheme](controls/buttonrow-dark-scheme.png) |
+
+```nim
+case buttonRow(["OK", "Cancel", "Help"])
+of 1:
+  discard
+of 2:
+  discard
+else:
+  discard
+```
+
+**API**
+
+```nim
+proc buttonRow*(labels: openArray[string]): int
+```
+
+Buttons right-aligned in a row (the first is the default); returns
+which was clicked (1-based), 0 if none.
+
+### buttonAt
+
+A button at a place of your own: over a picture, on a bar you lay out yourself. `down` draws it held in.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![buttonAt, normal](controls/buttonat-normal.png) | ![buttonAt, touch screen](controls/buttonat-touch-screen.png) | ![buttonAt, dark scheme](controls/buttonat-dark-scheme.png) |
+
+```nim
+var mapZoom = 3
+
+let r = canvas(220, 60)
+fill(r, color(0, 96, 128))
+if buttonAt("zoom-in", rect(r.x + 8, r.y + 8, 30, 24), "+"):
+  inc mapZoom
+if buttonAt("zoom-out", rect(r.x + 42, r.y + 8, 30, 24), "-"):
+  dec mapZoom
+discard buttonAt("layers", rect(r.x + 76, r.y + 8, 30, 24), "", pxPictures,
+                 blIconOnly, down = true)
+```
+
+**API**
+
+```nim
+proc buttonAt*(key: string; r: Rect; label: string; st = TextStyle(); enabled = true;
+               down = false): bool {.discardable.}
+```
+
+A push button at `r` (for bars and overlays laid out by hand); true
+when clicked. `down` draws it held in (a toggle that is on).
+
+```nim
+proc buttonAt*(key: string; r: Rect; label: string; pic: ButtonPic; look = blTextBeside;
+               enabled = true; down = false): bool {.discardable.}
+```
+
+`buttonAt` with a picture, the `look` way.
+
+```nim
+proc buttonAt*(key: string; r: Rect; label: string; glyph: string; look = blTextBeside;
+               enabled = true; down = false): bool {.discardable.}
+```
+
+`buttonAt` with a glyph of the icon font as its picture.
 
 ## Choices
 
 ### checkbox
+
+A yes or no, bound to a `bool`: the 3.1 box with its X. True when it flips.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![checkbox, normal](controls/checkbox-normal.png) | ![checkbox, touch screen](controls/checkbox-touch-screen.png) | ![checkbox, dark scheme](controls/checkbox-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Pressed | Disabled |
+|---|---|---|
+| ![checkbox, keyboard focus](controls/checkbox-keyboard-focus.png) | ![checkbox, pressed](controls/checkbox-pressed.png) | ![checkbox, disabled](controls/checkbox-disabled.png) |
+
+```nim
+var autoSave = true
+var backups = false
+
+checkbox("&Auto save", autoSave)
+checkbox("Keep &backups", backups)
+```
+
+**API**
 
 ```nim
 proc checkbox*(label: string; v: var bool; enabled = true): bool {.discardable.}
@@ -240,18 +1042,29 @@ proc checkbox*(label: string; v: var bool; enabled = true): bool {.discardable.}
 
 A check box bound to `v`; true when toggled.
 
-Example:
+### radio
+
+One of several: each radio button sets the `int` to its value when clicked.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![radio, normal](controls/radio-normal.png) | ![radio, touch screen](controls/radio-touch-screen.png) | ![radio, dark scheme](controls/radio-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Pressed | Disabled |
+|---|---|---|
+| ![radio, keyboard focus](controls/radio-keyboard-focus.png) | ![radio, pressed](controls/radio-pressed.png) | ![radio, disabled](controls/radio-disabled.png) |
 
 ```nim
-checkbox("&Auto save", autoSave)
-checkbox("Keep &backups", backups)
+var size = 1
+
+radio("&Small", size, 0)
+radio("&Medium", size, 1)
+radio("&Large", size, 2)
 ```
 
-| Normal | Keyboard focus | Pressed | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|---|
-| ![checkbox Normal](controls/checkbox-normal.png) | ![checkbox Keyboard focus](controls/checkbox-keyboard-focus.png) | ![checkbox Pressed](controls/checkbox-pressed.png) | ![checkbox Disabled](controls/checkbox-disabled.png) | ![checkbox Touch screen](controls/checkbox-touch-screen.png) | ![checkbox Dark scheme](controls/checkbox-dark-scheme.png) |
-
-### radio
+**API**
 
 ```nim
 proc radio*(label: string; v: var int; value: int;
@@ -262,19 +1075,27 @@ One option of a group: selected when `v == value`; true when chosen.
 The options sharing `v` are a group: the arrow keys move the choice
 (and the focus) between them, as in 3.1.
 
-Example:
+### toggle (a switch)
+
+An on/off switch in the manner of 3.1's slide switches. Click, tap or slide it; Space, Left and Right with the focus. `switchAt` is its behavior at a place of your own.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![toggle (a switch), normal](controls/toggle-normal.png) | ![toggle (a switch), touch screen](controls/toggle-touch-screen.png) | ![toggle (a switch), dark scheme](controls/toggle-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Pressed | Disabled |
+|---|---|---|
+| ![toggle (a switch), keyboard focus](controls/toggle-keyboard-focus.png) | ![toggle (a switch), pressed](controls/toggle-pressed.png) | ![toggle (a switch), disabled](controls/toggle-disabled.png) |
 
 ```nim
-radio("&Small", size, 0)
-radio("&Medium", size, 1)
-radio("&Large", size, 2)
+var wifi = true
+
+toggle("&Wi-Fi", wifi)
 ```
 
-| Normal | Keyboard focus | Pressed | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|---|
-| ![radio Normal](controls/radio-normal.png) | ![radio Keyboard focus](controls/radio-keyboard-focus.png) | ![radio Pressed](controls/radio-pressed.png) | ![radio Disabled](controls/radio-disabled.png) | ![radio Touch screen](controls/radio-touch-screen.png) | ![radio Dark scheme](controls/radio-dark-scheme.png) |
-
-### toggle (a 3.1 slide switch)
+**API**
 
 ```nim
 proc toggle*(label: string; v: var bool; enabled = true): bool {.discardable.}
@@ -284,22 +1105,45 @@ An on/off slide switch with a label; true when flipped. Click, tap or
 slide it; Space, Left and Right with the focus; Alt + its letter.
 
 ```nim
+proc switchAt*(id: Id; track: Rect; v: var bool; hit: var Hit;
+               enabled = true): bool
+```
+
+The behavior of a slide switch at `track` (`hit`: the interaction of
+the widget it is part of, which may be bigger): a click or a tap flips
+it, the thumb can be slid with the mouse or a finger, Space flips it,
+Left / Right turn it off / on. Draws it; true when it changed.
+
+```nim
 proc switchSize*(): tuple[w, h: int]
 ```
 
 The size of a switch's slot (bigger on touch screens).
 
-Example:
+### chips
+
+Words to turn on and off (filters), each with its x when `closable`: `ev.clicked` and `ev.closed` say which.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![chips, normal](controls/chips-normal.png) | ![chips, touch screen](controls/chips-touch-screen.png) | ![chips, dark scheme](controls/chips-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Mouse over |
+|---|---|
+| ![chips, keyboard focus](controls/chips-keyboard-focus.png) | ![chips, mouse over](controls/chips-mouse-over.png) |
 
 ```nim
-toggle("&Wi-Fi", wifi)
+var tags = @["nim", "retro", "ui"]
+var tagOn = @[true, false, false]
+
+let ev = chips(tags, tagOn, closable = true)
+if ev.clicked >= 0:
+  tagOn[ev.clicked] = not tagOn[ev.clicked]
 ```
 
-| Normal | Keyboard focus | Pressed | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|---|
-| ![toggle Normal](controls/toggle-normal.png) | ![toggle Keyboard focus](controls/toggle-keyboard-focus.png) | ![toggle Pressed](controls/toggle-pressed.png) | ![toggle Disabled](controls/toggle-disabled.png) | ![toggle Touch screen](controls/toggle-touch-screen.png) | ![toggle Dark scheme](controls/toggle-dark-scheme.png) |
-
-### chips
+**API**
 
 ```nim
 proc chips*(items: openArray[string]; selected: openArray[bool] = [];
@@ -310,19 +1154,53 @@ Rounded tags in a row that wraps: filters, labels, recipients. One
 stop for Tab: Left / Right move between them, Space or Enter clicks
 one, Delete closes it (`closable`).
 
-Example:
+### tagInput
+
+Tags as chips and a box to type the next one: Enter, a comma or Tab adds it, Backspace in the empty box takes the last one off.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![tagInput, normal](controls/taginput-normal.png) | ![tagInput, touch screen](controls/taginput-touch-screen.png) | ![tagInput, dark scheme](controls/taginput-dark-scheme.png) |
 
 ```nim
-let ev = chips(tags, tagOn, closable = true)
-if ev.clicked >= 0:
-  tagOn[ev.clicked] = not tagOn[ev.clicked]
+var tagList = @["invoice", "paid"]
+var tagText = ""
+
+tagInput(tagList, tagText)
 ```
 
-| Normal | Keyboard focus | Mouse over | Touch screen | Dark scheme |
-|---|---|---|---|---|
-| ![chips Normal](controls/chips-normal.png) | ![chips Keyboard focus](controls/chips-keyboard-focus.png) | ![chips Mouse over](controls/chips-mouse-over.png) | ![chips Touch screen](controls/chips-touch-screen.png) | ![chips Dark scheme](controls/chips-dark-scheme.png) |
+**API**
+
+```nim
+proc tagInput*(tags: var seq[string]; text: var string; w = 0; enabled = true;
+               placeholder = "Add a tag"): bool {.discardable.}
+```
+
+Tags as chips (each with its ×) and a box to type the next: Enter, a
+comma or Tab adds it, Backspace in the empty box takes the last off.
+True when the tags changed.
 
 ### rating
+
+Stars, one to five: click one, or use the arrows.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![rating, normal](controls/rating-normal.png) | ![rating, touch screen](controls/rating-touch-screen.png) | ![rating, dark scheme](controls/rating-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Mouse over | Pressed | Disabled |
+|---|---|---|---|
+| ![rating, keyboard focus](controls/rating-keyboard-focus.png) | ![rating, mouse over](controls/rating-mouse-over.png) | ![rating, pressed](controls/rating-pressed.png) | ![rating, disabled](controls/rating-disabled.png) |
+
+```nim
+var stars = 3
+
+rating(stars)
+```
+
+**API**
 
 ```nim
 proc rating*(v: var int; stars = 5; enabled = true): bool {.discardable.}
@@ -331,30 +1209,30 @@ proc rating*(v: var int; stars = 5; enabled = true): bool {.discardable.}
 Stars to click or tap, 0..`stars`; clicking the current one clears it.
 With the focus: Left / Right one star less / more, Home none, End all.
 
-Example:
-
-```nim
-rating(stars)
-```
-
-| Normal | Keyboard focus | Mouse over | Pressed | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|---|---|
-| ![rating Normal](controls/rating-normal.png) | ![rating Keyboard focus](controls/rating-keyboard-focus.png) | ![rating Mouse over](controls/rating-mouse-over.png) | ![rating Pressed](controls/rating-pressed.png) | ![rating Disabled](controls/rating-disabled.png) | ![rating Touch screen](controls/rating-touch-screen.png) | ![rating Dark scheme](controls/rating-dark-scheme.png) |
-
 ## Text input
+
+Every text box has Cut, Copy, Paste, Undo and its menu (a right click, a
+long press), selects with the mouse, the keyboard and fingers, and takes
+Arabic and any text the system's input method gives.
 
 ### edit
 
+A one-line text box bound to a `string`: true when the text changed. `password` hides it, `readOnly` lets it be selected and copied only.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![edit, normal](controls/edit-normal.png) | ![edit, touch screen](controls/edit-touch-screen.png) | ![edit, dark scheme](controls/edit-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Disabled |
+|---|---|
+| ![edit, keyboard focus](controls/edit-keyboard-focus.png) | ![edit, disabled](controls/edit-disabled.png) |
+
 ```nim
-proc edit*(s: var string; w = 0; password = false;
-           enabled = true): bool {.discardable.}
-```
+var name = "Sultan"
+var secret = "hunter2"
 
-A one-line text box bound to `s`; true when the text changed.
-
-Example:
-
-```nim
 form 0:
   field "&Name:":
     edit(name)
@@ -362,32 +1240,85 @@ form 0:
     edit(secret, password = true)
 ```
 
-| Normal | Keyboard focus | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|
-| ![edit Normal](controls/edit-normal.png) | ![edit Keyboard focus](controls/edit-keyboard-focus.png) | ![edit Disabled](controls/edit-disabled.png) | ![edit Touch screen](controls/edit-touch-screen.png) | ![edit Dark scheme](controls/edit-dark-scheme.png) |
+**API**
+
+```nim
+proc edit*(s: var string; w = 0; password = false;
+           enabled = true; readOnly = false): bool {.discardable.}
+```
+
+A one-line text box bound to `s`; true when the text changed.
+`readOnly`: selected and copied, not changed.
+
+```nim
+proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
+             allowed: set[char] = {}; right = false; frameless = false;
+             wrap = false; readOnly = false): bool
+```
+
+A text box at `r` (for widgets made of one: spin, number fields...).
+`allowed` limits the characters typed, `right` aligns the text right,
+`frameless` leaves out the border (the widget around draws one),
+`wrap` (several lines) wraps long lines at the words, `readOnly`: the
+text is selected, copied and scrolled through, not changed.
+Its menu (a right click, a long press): Cut, Copy, Paste, Delete,
+Select all. In a right-to-left interface its text keeps its own
+direction (a line of Arabic at the right, of Latin at the left, an
+empty box's caret at the right), not mirrored with the frame.
 
 ### editArea
 
+Text of several lines, `lines` high (-1: down to the bottom), with its scroll bars.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![editArea, normal](controls/editarea-normal.png) | ![editArea, touch screen](controls/editarea-touch-screen.png) | ![editArea, dark scheme](controls/editarea-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Disabled |
+|---|---|
+| ![editArea, keyboard focus](controls/editarea-keyboard-focus.png) | ![editArea, disabled](controls/editarea-disabled.png) |
+
+```nim
+var notes = "Line one\nLine two\nLine three"
+
+editArea(notes, lines = 4)
+```
+
+**API**
+
 ```nim
 proc editArea*(s: var string; lines = 6; w = 0;
-               enabled = true; wrap = true): bool {.discardable.}
+               enabled = true; wrap = true; readOnly = false): bool {.discardable.}
 ```
 
 A multi-line text box with a scroll bar. `lines` < 0 fills the
 height left in the window. Long lines wrap at the words (`wrap`
-false: they scroll sideways).
-
-Example:
-
-```nim
-editArea(notes, lines = 4)
-```
-
-| Normal | Keyboard focus | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|
-| ![editarea Normal](controls/editarea-normal.png) | ![editarea Keyboard focus](controls/editarea-keyboard-focus.png) | ![editarea Disabled](controls/editarea-disabled.png) | ![editarea Touch screen](controls/editarea-touch-screen.png) | ![editarea Dark scheme](controls/editarea-dark-scheme.png) |
+false: they scroll sideways). `readOnly`: the text can be selected,
+copied and scrolled through, not changed (a log, a message's source).
 
 ### searchBox
+
+A box with a magnifier, its hint while empty, and an x that clears it.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![searchBox, normal](controls/searchbox-normal.png) | ![searchBox, touch screen](controls/searchbox-touch-screen.png) | ![searchBox, dark scheme](controls/searchbox-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Disabled |
+|---|---|
+| ![searchBox, keyboard focus](controls/searchbox-keyboard-focus.png) | ![searchBox, disabled](controls/searchbox-disabled.png) |
+
+```nim
+var query = "invoices"
+
+searchBox(query, "Search invoices")
+```
+
+**API**
 
 ```nim
 proc searchBox*(s: var string; placeholder = "Search"; w = 0;
@@ -397,17 +1328,55 @@ proc searchBox*(s: var string; placeholder = "Search"; w = 0;
 A text box with a magnifier and a clear button; true when the text
 changed. Esc clears it.
 
-Example:
+### autocomplete
+
+A text box whose choices that match drop under it as you type: Down and Up pick, Enter or a click takes one.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![autocomplete, normal](controls/autocomplete-normal.png) | ![autocomplete, touch screen](controls/autocomplete-touch-screen.png) | ![autocomplete, dark scheme](controls/autocomplete-dark-scheme.png) |
 
 ```nim
-searchBox(query, "Search invoices")
+var acCity = ""
+
+autocomplete(acCity, ["Muscat", "Muttrah", "Sohar", "Salalah", "Nizwa", "Sur"],
+             w = 200)
 ```
 
-| Normal | Keyboard focus | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|
-| ![searchbox Normal](controls/searchbox-normal.png) | ![searchbox Keyboard focus](controls/searchbox-keyboard-focus.png) | ![searchbox Disabled](controls/searchbox-disabled.png) | ![searchbox Touch screen](controls/searchbox-touch-screen.png) | ![searchbox Dark scheme](controls/searchbox-dark-scheme.png) |
+**API**
+
+```nim
+proc autocomplete*(s: var string; choices: openArray[string]; w = 0; rows = 6;
+                   enabled = true): bool {.discardable.}
+```
+
+A text box whose list of `choices` that begin with (or hold) what is
+typed drops under it: Down and Up pick, Enter or Tab or a click takes
+one, Esc closes it. True when the text changed.
 
 ### maskedEdit
+
+Typing into a mask: `#` a digit, `A` a letter, `U` an upper-case letter, `X` a letter or digit, `*` anything. `maskRaw` gives what was typed without the mask.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![maskedEdit, normal](controls/maskededit-normal.png) | ![maskedEdit, touch screen](controls/maskededit-touch-screen.png) | ![maskedEdit, dark scheme](controls/maskededit-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Disabled |
+|---|---|
+| ![maskedEdit, keyboard focus](controls/maskededit-keyboard-focus.png) | ![maskedEdit, disabled](controls/maskededit-disabled.png) |
+
+```nim
+var phone = "96891234"
+
+row:
+  label "&Phone:"
+  maskedEdit(phone, "+### #### ####")
+```
+
+**API**
 
 ```nim
 proc maskedEdit*(value: var string; mask: string; w = 0;
@@ -445,19 +1414,28 @@ proc maskRaw*(text, mask: string): string
 The characters typed, from a text laid out like `mask` (or typed
 loosely: what does not fit the next slot is skipped).
 
-Example:
+### comboEdit
+
+A text box with a list beside it: type anything, or drop the list (Alt+Down, F4, the arrow) and pick. It suggests what begins with what is typed.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![comboEdit, normal](controls/comboedit-normal.png) | ![comboEdit, touch screen](controls/comboedit-touch-screen.png) | ![comboEdit, dark scheme](controls/comboedit-dark-scheme.png) |
+
+More states:
+
+| Clicked / open |
+|---|
+| ![comboEdit, clicked / open](controls/comboedit-clicked-open.png) |
 
 ```nim
-row:
-  label "&Phone:"
-  maskedEdit(phone, "+### #### ####")
+var city = "Ber"
+
+comboEdit(city, ["Berlin", "Bern", "Beirut", "Muscat", "Sohar"], w = 180,
+          )
 ```
 
-| Normal | Keyboard focus | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|
-| ![maskededit Normal](controls/maskededit-normal.png) | ![maskededit Keyboard focus](controls/maskededit-keyboard-focus.png) | ![maskededit Disabled](controls/maskededit-disabled.png) | ![maskededit Touch screen](controls/maskededit-touch-screen.png) | ![maskededit Dark scheme](controls/maskededit-dark-scheme.png) |
-
-### comboEdit (suggests as you type)
+**API**
 
 ```nim
 proc comboEdit*(text: var string; items: openArray[string]; w = 0;
@@ -469,18 +1447,29 @@ them all from its button). Up/Down, Enter, Esc work in the list; none
 is picked until Down (or the mouse) points at one, so Enter on its own
 keeps what was typed.
 
-Example:
+### hotkeyEdit
+
+A box that takes the next key pressed, with Ctrl, Alt and Shift, as a shortcut ("Ctrl+Shift+S"). `hotkeyPressed` tells when that shortcut is pressed.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![hotkeyEdit, normal](controls/hotkeyedit-normal.png) | ![hotkeyEdit, touch screen](controls/hotkeyedit-touch-screen.png) | ![hotkeyEdit, dark scheme](controls/hotkeyedit-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Disabled |
+|---|---|
+| ![hotkeyEdit, keyboard focus](controls/hotkeyedit-keyboard-focus.png) | ![hotkeyEdit, disabled](controls/hotkeyedit-disabled.png) |
 
 ```nim
-comboEdit(city, ["Berlin", "Bern", "Beirut", "Muscat", "Sohar"], w = 180,
-          )
+var hotkey = "Ctrl+Shift+S"
+
+row:
+  label "&Save as:"
+  hotkeyEdit(hotkey)
 ```
 
-| Normal | Clicked / open | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![comboedit Normal](controls/comboedit-normal.png) | ![comboedit Clicked / open](controls/comboedit-clicked--open.png) | ![comboedit Touch screen](controls/comboedit-touch-screen.png) | ![comboedit Dark scheme](controls/comboedit-dark-scheme.png) |
-
-### hotkeyEdit
+**API**
 
 ```nim
 proc hotkeyEdit*(keys: var string; w = 0; enabled = true): bool {.discardable.}
@@ -494,37 +1483,62 @@ Tab and Esc leave it. True when it changed.
 proc hotkeyText*(key: KeyCode; mods: set[Modifier]): string
 ```
 
-"Ctrl+Shift+S" for Ctrl + Shift + S.
+"Ctrl+Shift+S" for Ctrl + Shift + S; on a Mac "Cmd+Shift+S" -- Cmd is
+reported as Ctrl there, the Control key as the Gui key ("Control+"),
+Option as Alt ("Option+") -- elsewhere the Gui key is "Win+".
 
 ```nim
 proc parseHotkey*(s: string): tuple[key: KeyCode; mods: set[Modifier]]
 ```
 
 "Ctrl+Shift+S" -> (KeyS, {CtrlPressed, ShiftPressed}); KeyNone when it
-is not a shortcut.
+is not a shortcut. "Cmd" is Ctrl on every system (the key shortcuts
+are made with: Cmd on a Mac, Ctrl elsewhere), so a shortcut kept on one
+is the same on the others; "Control" is a Mac's Control key there (the
+Gui key), Ctrl elsewhere.
 
 ```nim
 proc hotkeyPressed*(s: string): bool
 ```
 
 The shortcut `s` ("Ctrl+S") was pressed this frame (and not used yet);
-uses it.
-
-Example:
-
-```nim
-row:
-  label "&Save as:"
-  hotkeyEdit(hotkey)
-```
-
-| Normal | Keyboard focus | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|
-| ![hotkeyedit Normal](controls/hotkeyedit-normal.png) | ![hotkeyedit Keyboard focus](controls/hotkeyedit-keyboard-focus.png) | ![hotkeyedit Disabled](controls/hotkeyedit-disabled.png) | ![hotkeyedit Touch screen](controls/hotkeyedit-touch-screen.png) | ![hotkeyedit Dark scheme](controls/hotkeyedit-dark-scheme.png) |
+uses it. On a Mac "Ctrl+S" is Cmd+S, as `s` written either way.
 
 ## Numbers, dates, colors
 
+Numbers are typed and shown as the user reads them ("1,234.50";
+`formatNumber`, `parseNumber`). `Date` is a plain (year, month, day) with
+`today()`, `addDays`, `addMonths`, `weekday` and `parseDate`.
+
 ### spin, intEdit, numberEdit
+
+Numbers to type: `spin` with its arrows (the wheel and Up/Down too), `intEdit` whole numbers, `numberEdit` decimals with `lo`, `hi` and `decimals`.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![spin, intEdit, numberEdit, normal](controls/numbers-normal.png) | ![spin, intEdit, numberEdit, touch screen](controls/numbers-touch-screen.png) | ![spin, intEdit, numberEdit, dark scheme](controls/numbers-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Disabled |
+|---|---|
+| ![spin, intEdit, numberEdit, keyboard focus](controls/numbers-keyboard-focus.png) | ![spin, intEdit, numberEdit, disabled](controls/numbers-disabled.png) |
+
+```nim
+var copies = 2
+var qty = 12
+var amount = 1234.5
+
+form 0:
+  field "&Copies:":
+    spin(copies, 1, 99)
+  field "&Quantity:":
+    intEdit(qty)
+  field "&Amount:":
+    numberEdit(amount)
+```
+
+**API**
 
 ```nim
 proc spin*(v: var int; lo, hi: int; w = 80; step = 1;
@@ -540,8 +1554,9 @@ proc intEdit*(v: var int; w = 80; lo = low(int); hi = high(int);
               thousands = false; enabled = true): bool {.discardable.}
 ```
 
-A right-aligned whole-number field.
-Only whole numbers from `lo` to `hi` are taken (true when `v` changed).
+A right-aligned whole-number field. Only whole numbers from `lo` to
+`hi` are taken (true when `v` changed); clicking or tabbing into it
+selects the number, so typing replaces it.
 
 ```nim
 proc numberEdit*(v: var float; decimals = 2; w = 110; lo = NegInf;
@@ -551,25 +1566,31 @@ proc numberEdit*(v: var float; decimals = 2; w = 110; lo = NegInf;
 
 A right-aligned number field; shows `decimals` places (0 to 12) and
 thousands separators when it does not have the focus. Only numbers
-from `lo` to `hi` are taken (true when `v` changed).
-
-Example:
-
-```nim
-form 0:
-  field "&Copies:":
-    spin(copies, 1, 99)
-  field "&Quantity:":
-    intEdit(qty)
-  field "&Amount:":
-    numberEdit(amount)
-```
-
-| Normal | Keyboard focus | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|
-| ![numbers Normal](controls/numbers-normal.png) | ![numbers Keyboard focus](controls/numbers-keyboard-focus.png) | ![numbers Disabled](controls/numbers-disabled.png) | ![numbers Touch screen](controls/numbers-touch-screen.png) | ![numbers Dark scheme](controls/numbers-dark-scheme.png) |
+from `lo` to `hi` are taken (true when `v` changed). Clicking or
+tabbing into it selects the number, so typing replaces it.
 
 ### slider, progress
+
+A track bar for a value between two ends, and a 3.1 progress bar (0.0 to 1.0).
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![slider, progress, normal](controls/slider-normal.png) | ![slider, progress, touch screen](controls/slider-touch-screen.png) | ![slider, progress, dark scheme](controls/slider-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Pressed | Disabled |
+|---|---|---|
+| ![slider, progress, keyboard focus](controls/slider-keyboard-focus.png) | ![slider, progress, pressed](controls/slider-pressed.png) | ![slider, progress, disabled](controls/slider-disabled.png) |
+
+```nim
+var volume = 40
+
+slider(volume, 0, 100)
+progress(0.62)
+```
+
+**API**
 
 ```nim
 proc slider*(v: var int; lo, hi: int; w = 0; ticks = 10;
@@ -585,24 +1606,127 @@ proc progress*(value: float; w = 0; showText = true)
 
 A progress bar, `value` from 0.0 to 1.0, with the percentage.
 
+### rangeSlider
+
+A track bar with two thumbs: a range from `lo` to `hi`. Drag either, or the band between them to move both.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![rangeSlider, normal](controls/rangeslider-normal.png) | ![rangeSlider, touch screen](controls/rangeslider-touch-screen.png) | ![rangeSlider, dark scheme](controls/rangeslider-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![rangeSlider, keyboard focus](controls/rangeslider-keyboard-focus.png) |
+
 ```nim
-proc progress*(t: TextFile): float
+var priceLo = 120
+var priceHi = 380
+
+rangeSlider(priceLo, priceHi, 0, 500)
 ```
 
-How much of the file has been looked at (0..1).
-
-Example:
+**API**
 
 ```nim
-slider(volume, 0, 100)
-progress(0.62)
+proc rangeSlider*(lo, hi: var int; minV, maxV: int; w = 0; ticks = 10;
+                  enabled = true): bool {.discardable.}
 ```
 
-| Normal | Keyboard focus | Pressed | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|---|
-| ![slider Normal](controls/slider-normal.png) | ![slider Keyboard focus](controls/slider-keyboard-focus.png) | ![slider Pressed](controls/slider-pressed.png) | ![slider Disabled](controls/slider-disabled.png) | ![slider Touch screen](controls/slider-touch-screen.png) | ![slider Dark scheme](controls/slider-dark-scheme.png) |
+A track bar with two thumbs, `lo` and `hi` (`minV <= lo <= hi <=
+maxV`): drag either (the nearer is taken), or the band between them
+to move both. Keys: arrows move the focused end (Tab... the left
+first; Shift+arrows the right). True when either changed.
+
+### popupSlider
+
+A number box with a slider that drops from its arrow, as a tool's options bar has for Opacity: type the number, or press the arrow and drag.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![popupSlider, normal](controls/popupslider-normal.png) | ![popupSlider, touch screen](controls/popupslider-touch-screen.png) | ![popupSlider, dark scheme](controls/popupslider-dark-scheme.png) |
+
+More states:
+
+| Clicked / open |
+|---|
+| ![popupSlider, clicked / open](controls/popupslider-clicked-open.png) |
+
+```nim
+var opacity = 80
+
+row:
+  label "Opacity:"
+  popupSlider(opacity, 0, 100, w = 60)
+```
+
+**API**
+
+```nim
+proc popupSlider*(v: var int; lo, hi: int; w = 0; unit = "%";
+                  enabled = true): bool {.discardable.}
+```
+
+A number box with a slider that drops down from its arrow, as a tool's
+options bar has for Opacity, Flow or Tolerance: type the number; or
+press the arrow and drag (letting go closes it); or click the arrow,
+then click or drag on the slider (Enter, Esc or a click outside close
+it). Up / Down and the wheel step it when it has the focus.
+
+### knob
+
+A round knob (a volume, a balance): drag up or right to turn it up; the wheel and the arrows too. Its value shows under it.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![knob, normal](controls/knob-normal.png) | ![knob, touch screen](controls/knob-touch-screen.png) | ![knob, dark scheme](controls/knob-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![knob, keyboard focus](controls/knob-keyboard-focus.png) |
+
+```nim
+var knobVolume = 65
+var knobBass = 30
+
+row:
+  knob(knobVolume, 0, 100, size = 56, label = "Vol")
+  knob(knobBass, 0, 100, size = 56, label = "Bass")
+```
+
+**API**
+
+```nim
+proc knob*(v: var int; lo, hi: int; size = 0; label = ""; enabled = true): bool {.discardable.}
+```
+
+A round knob (a volume, a pan): drag up or right to turn it up, the
+wheel and the arrow keys too; its value under it.
 
 ### datePicker
+
+A date field with a calendar that drops down (Alt+Down or F4). Type the date, or pick it.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![datePicker, normal](controls/datepicker-normal.png) | ![datePicker, touch screen](controls/datepicker-touch-screen.png) | ![datePicker, dark scheme](controls/datepicker-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Clicked / open | Disabled |
+|---|---|---|
+| ![datePicker, keyboard focus](controls/datepicker-keyboard-focus.png) | ![datePicker, clicked / open](controls/datepicker-clicked-open.png) | ![datePicker, disabled](controls/datepicker-disabled.png) |
+
+```nim
+var day = date(2026, 10, 27)
+
+datePicker(day)
+```
+
+**API**
 
 ```nim
 proc datePicker*(d: var Date; w = 0; enabled = true): bool {.discardable.}
@@ -612,17 +1736,27 @@ A date field (typed in `dateStyle`) with a drop-down calendar (its
 button, Alt+Down or F4). With the focus, Up / Down move a day and
 Page Up / Page Down a month.
 
-Example:
+### calendar
+
+A month to pick a day from: the arrows move the day, Page Up and Page Down the month.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![calendar, normal](controls/calendar-normal.png) | ![calendar, touch screen](controls/calendar-touch-screen.png) | ![calendar, dark scheme](controls/calendar-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![calendar, keyboard focus](controls/calendar-keyboard-focus.png) |
 
 ```nim
-datePicker(day)
+var calDay = date(2026, 10, 27)
+
+calendar(calDay)
 ```
 
-| Normal | Keyboard focus | Clicked / open | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|---|
-| ![datepicker Normal](controls/datepicker-normal.png) | ![datepicker Keyboard focus](controls/datepicker-keyboard-focus.png) | ![datepicker Clicked / open](controls/datepicker-clicked--open.png) | ![datepicker Disabled](controls/datepicker-disabled.png) | ![datepicker Touch screen](controls/datepicker-touch-screen.png) | ![datepicker Dark scheme](controls/datepicker-dark-scheme.png) |
-
-### calendar
+**API**
 
 ```nim
 proc calendar*(d: var Date; enabled = true): bool {.discardable.}
@@ -632,17 +1766,28 @@ A month calendar bound to `d`: click or tap a day; the arrows move a
 day or a week, Page Up / Page Down a month, Home / End the first /
 last day; the wheel and the < > buttons show other months.
 
-Example:
+### dateRange, presetRange
+
+From and to, with the ranges people ask for most (This month, Last year...) in a list.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![dateRange, presetRange, normal](controls/daterange-normal.png) | ![dateRange, presetRange, touch screen](controls/daterange-touch-screen.png) | ![dateRange, presetRange, dark scheme](controls/daterange-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![dateRange, presetRange, keyboard focus](controls/daterange-keyboard-focus.png) |
 
 ```nim
-calendar(day)
+var fromDay = date(2026, 10, 1)
+var toDay = date(2026, 10, 31)
+
+dateRange(fromDay, toDay)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![calendar Normal](controls/calendar-normal.png) | ![calendar Keyboard focus](controls/calendar-keyboard-focus.png) | ![calendar Touch screen](controls/calendar-touch-screen.png) | ![calendar Dark scheme](controls/calendar-dark-scheme.png) |
-
-### dateRange, presetRange
+**API**
 
 ```nim
 proc dateRange*(a, b: var Date; presets = true; key = ""): bool {.discardable.}
@@ -660,17 +1805,28 @@ proc presetRange*(p: RangePreset; day = today()): tuple[a, b: Date]
 The first and last day of the period `p` around `day` (weeks start on
 `firstWeekday`).
 
-Example:
+### timePicker
+
+Hours and minutes, each with its spin arrows.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![timePicker, normal](controls/timepicker-normal.png) | ![timePicker, touch screen](controls/timepicker-touch-screen.png) | ![timePicker, dark scheme](controls/timepicker-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Disabled |
+|---|---|
+| ![timePicker, keyboard focus](controls/timepicker-keyboard-focus.png) | ![timePicker, disabled](controls/timepicker-disabled.png) |
 
 ```nim
-dateRange(fromDay, toDay)
+var hh = 9
+var mm = 30
+
+timePicker(hh, mm)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![daterange Normal](controls/daterange-normal.png) | ![daterange Keyboard focus](controls/daterange-keyboard-focus.png) | ![daterange Touch screen](controls/daterange-touch-screen.png) | ![daterange Dark scheme](controls/daterange-dark-scheme.png) |
-
-### timePicker
+**API**
 
 ```nim
 proc timePicker*(h, m: var int; enabled = true): bool {.discardable.}
@@ -678,17 +1834,27 @@ proc timePicker*(h, m: var int; enabled = true): bool {.discardable.}
 
 Hours (0..23) and minutes as two spin boxes.
 
-Example:
+### colorPicker
+
+The 48 basic colors of the 3.1 Color dialog, a preview and a box for "#RRGGBB".
+
+| Normal | Dark scheme |
+|---|---|
+| ![colorPicker, normal](controls/colorpicker-normal.png) | ![colorPicker, dark scheme](controls/colorpicker-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Disabled |
+|---|---|
+| ![colorPicker, keyboard focus](controls/colorpicker-keyboard-focus.png) | ![colorPicker, disabled](controls/colorpicker-disabled.png) |
 
 ```nim
-timePicker(hh, mm)
+var pick = color(0, 128, 128)
+
+colorPicker(pick)
 ```
 
-| Normal | Keyboard focus | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|
-| ![timepicker Normal](controls/timepicker-normal.png) | ![timepicker Keyboard focus](controls/timepicker-keyboard-focus.png) | ![timepicker Disabled](controls/timepicker-disabled.png) | ![timepicker Touch screen](controls/timepicker-touch-screen.png) | ![timepicker Dark scheme](controls/timepicker-dark-scheme.png) |
-
-### colorPicker
+**API**
 
 ```nim
 proc colorPicker*(c: var Color; enabled = true): bool {.discardable.}
@@ -698,19 +1864,99 @@ The 48 basic colors of the 3.1 color dialog to pick from (a click, a
 tap, or the arrow keys with the focus), a preview and a "#RRGGBB" box
 to type any color in. True when `c` changed.
 
-Example:
-
 ```nim
-colorPicker(pick)
+proc hexOf*(c: Color): string
 ```
 
-| Normal | Keyboard focus | Disabled | Dark scheme |
-|---|---|---|---|
-| ![colorpicker Normal](controls/colorpicker-normal.png) | ![colorpicker Keyboard focus](controls/colorpicker-keyboard-focus.png) | ![colorpicker Disabled](controls/colorpicker-disabled.png) | ![colorpicker Dark scheme](controls/colorpicker-dark-scheme.png) |
+"#RRGGBB" of `c`.
 
-## Lists
+```nim
+proc parseHexColor*(s: string; c: var Color): bool
+```
+
+"#RRGGBB" or "RRGGBB" (or "#RGB") into `c`.
+
+### colorWell and the Color dialog
+
+A swatch of a color: a click opens the Color dialog -- the basic and custom colors, the spectrum, Hue, Sat, Lum, Red, Green, Blue and "#RRGGBB". OK sets the color. The pictures show the dialog after a click.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![colorWell and the Color dialog, normal](controls/colorwell-normal.png) | ![colorWell and the Color dialog, touch screen](controls/colorwell-touch-screen.png) | ![colorWell and the Color dialog, dark scheme](controls/colorwell-dark-scheme.png) |
+
+```nim
+var wellColor = color(30, 120, 200)
+
+row:
+  label "Color:"
+  colorWell(wellColor, "label-color", w = 60)
+```
+
+**API**
+
+```nim
+proc colorWell*(c: var Color; key: string; w = 0; title = "Color"; enabled = true): bool {.discardable.}
+```
+
+A swatch of `c` in a sunken frame: a click (Enter, Space) opens the
+Color dialog -- the basic and custom colors, the spectrum, Hue / Sat /
+Lum, Red / Green / Blue, "#RRGGBB" -- and OK sets `c` (true then).
+Use one wherever a color is chosen; `key` tells the wells apart.
+
+```nim
+proc openColorDialog*(key: string; c: Color; title = "Color")
+```
+
+Opens the Color dialog for `key` at color `c`; `colorDialogResult(key)`
+gives the color chosen (`colorWell` does both).
+
+```nim
+proc colorDialogResult*(key: string; c: var Color): bool
+```
+
+True once, after OK in the Color dialog opened for `key`: `c` is set.
+
+```nim
+proc storeCustomColors*(s: var Settings)
+```
+
+The custom colors into the settings (`restoreCustomColors` reads them).
+
+```nim
+proc restoreCustomColors*(s: Settings)
+```
+
+The custom colors as `storeCustomColors` kept them.
+
+## Lists and data
+
+Lists, grids and trees draw only the rows in view, so 100,000 rows cost
+what 20 do. They scroll with the wheel, the scroll bars, the keys and a
+finger, select with Ctrl and Shift, and find a row as its first letters are
+typed.
 
 ### listbox
+
+A list to pick one item from: `sel` is its index. `rows` is its height in items (-1: down to the bottom).
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![listbox, normal](controls/listbox-normal.png) | ![listbox, touch screen](controls/listbox-touch-screen.png) | ![listbox, dark scheme](controls/listbox-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Mouse over | Disabled |
+|---|---|---|
+| ![listbox, keyboard focus](controls/listbox-keyboard-focus.png) | ![listbox, mouse over](controls/listbox-mouse-over.png) | ![listbox, disabled](controls/listbox-disabled.png) |
+
+```nim
+var fruits = @["Apple", "Banana", "Cherry", "Dates", "Figs", "Grapes"]
+var fruit = 1
+
+listbox(fruits, fruit, rows = 5)
+```
+
+**API**
 
 ```nim
 proc listbox*(items: openArray[string]; sel: var int; rows = 6; w = 0;
@@ -718,19 +1964,31 @@ proc listbox*(items: openArray[string]; sel: var int; rows = 6; w = 0;
 ```
 
 A list bound to the selected index `sel`; true when it changed.
-Items may hold '\t' columns aligned on `tabs` (pixels).
-
-Example:
-
-```nim
-listbox(fruits, fruit, rows = 5)
-```
-
-| Normal | Keyboard focus | Mouse over | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|---|
-| ![listbox Normal](controls/listbox-normal.png) | ![listbox Keyboard focus](controls/listbox-keyboard-focus.png) | ![listbox Mouse over](controls/listbox-mouse-over.png) | ![listbox Disabled](controls/listbox-disabled.png) | ![listbox Touch screen](controls/listbox-touch-screen.png) | ![listbox Dark scheme](controls/listbox-dark-scheme.png) |
+Items may hold '\t' columns aligned on `tabs` (pixels at 100%: they
+grow with the UI's size).
 
 ### combo
+
+A drop-down list: one item shown, the list under it when it is opened (a click, Alt+Down, F4). Typing a letter picks the next item that begins with it.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![combo, normal](controls/combo-normal.png) | ![combo, touch screen](controls/combo-touch-screen.png) | ![combo, dark scheme](controls/combo-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Clicked / open | Disabled |
+|---|---|---|
+| ![combo, keyboard focus](controls/combo-keyboard-focus.png) | ![combo, clicked / open](controls/combo-clicked-open.png) | ![combo, disabled](controls/combo-disabled.png) |
+
+```nim
+var comboFruits = @["Apple", "Banana", "Cherry", "Dates", "Figs", "Grapes"]
+var fruitCombo = 2
+
+combo(comboFruits, fruitCombo, w = 160)
+```
+
+**API**
 
 ```nim
 proc combo*(items: openArray[string]; sel: var int; w = 0;
@@ -740,17 +1998,28 @@ proc combo*(items: openArray[string]; sel: var int; w = 0;
 A drop-down list bound to the selected index `sel`; `preview` draws
 its items in the list (a font's name in the font).
 
-Example:
+### checkList
+
+A list whose items each have a check box.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![checkList, normal](controls/checklist-normal.png) | ![checkList, touch screen](controls/checklist-touch-screen.png) | ![checkList, dark scheme](controls/checklist-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Disabled |
+|---|---|
+| ![checkList, keyboard focus](controls/checklist-keyboard-focus.png) | ![checkList, disabled](controls/checklist-disabled.png) |
 
 ```nim
-combo(fruits, fruitCombo, w = 160)
+var checks = @[true, false, true, false]
+
+checkList(["Cash", "Bank", "Cards", "Vouchers"], checks, rows = 4,
+          )
 ```
 
-| Normal | Keyboard focus | Clicked / open | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|---|
-| ![combo Normal](controls/combo-normal.png) | ![combo Keyboard focus](controls/combo-keyboard-focus.png) | ![combo Clicked / open](controls/combo-clicked--open.png) | ![combo Disabled](controls/combo-disabled.png) | ![combo Touch screen](controls/combo-touch-screen.png) | ![combo Dark scheme](controls/combo-dark-scheme.png) |
-
-### checkList
+**API**
 
 ```nim
 proc checkList*(items: openArray[string]; checked: var seq[bool]; rows = 6;
@@ -760,18 +2029,75 @@ proc checkList*(items: openArray[string]; checked: var seq[bool]; rows = 6;
 A list with a check box on each item: a click, a tap or Space flips
 the item; Up, Down, Page Up, Page Down, Home, End move.
 
-Example:
+### fontCombo, fontStyleCombo
+
+Drop-down lists of the font families (the built-in ones and the system's) and of a family's styles, each shown in its own letters. From `retroui/textwidgets`.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![fontCombo, fontStyleCombo, normal](controls/fontcombo-normal.png) | ![fontCombo, fontStyleCombo, touch screen](controls/fontcombo-touch-screen.png) | ![fontCombo, fontStyleCombo, dark scheme](controls/fontcombo-dark-scheme.png) |
+
+More states:
+
+| Clicked / open |
+|---|
+| ![fontCombo, fontStyleCombo, clicked / open](controls/fontcombo-clicked-open.png) |
 
 ```nim
-checkList(["Cash", "Bank", "Cards", "Vouchers"], checks, rows = 4,
-          )
+var fontFamily = "FreeSerif"
+var fontStyle = "Bold"
+
+row:
+  fontCombo(fontFamily, w = 160)
+  fontStyleCombo(fontFamily, fontStyle, w = 100)
 ```
 
-| Normal | Keyboard focus | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|
-| ![checklist Normal](controls/checklist-normal.png) | ![checklist Keyboard focus](controls/checklist-keyboard-focus.png) | ![checklist Disabled](controls/checklist-disabled.png) | ![checklist Touch screen](controls/checklist-touch-screen.png) | ![checklist Dark scheme](controls/checklist-dark-scheme.png) |
+**API**
+
+```nim
+proc fontCombo*(family: var string; w = 0; enabled = true): bool {.discardable.}
+```
+
+A drop-down list of the font families (the system's and the built-in
+ones), each shown in its own letters.
+
+```nim
+proc fontStyleCombo*(family: string; style: var string; w = 0; enabled = true): bool {.discardable.}
+```
+
+The styles of `family` ("Regular", "Bold"...), each in its letters.
+
+```nim
+proc fontSample*(family, style, text: string; h: int; color = 0xFF000000'u32): Bitmap
+```
+
+`text` in a font, `h` screen pixels tall (kept: drawn once).
 
 ### grid
+
+Rows and columns, the rows from a `seq` or from a proc (so a million cost what twenty do). Click a header to sort, drag its edge to size it; F2 or typing edits an `editable` cell.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![grid, normal](controls/grid-normal.png) | ![grid, touch screen](controls/grid-touch-screen.png) | ![grid, dark scheme](controls/grid-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Disabled |
+|---|---|
+| ![grid, keyboard focus](controls/grid-keyboard-focus.png) | ![grid, disabled](controls/grid-disabled.png) |
+
+```nim
+var cols = @[column("Item", 130), numberColumn("Qty", 50),
+             numberColumn("Price", 70)]
+var gridSel = 1
+
+grid(cols, @[@["Paper", "10", "4.50"], @["Ink", "2", "21.00"],
+             @["Pens", "40", "0.80"]], gridSel, height = 4,
+     )
+```
+
+**API**
 
 ```nim
 proc grid*(cols: var seq[Column]; rows: int; cell: proc (row, col: int): string;
@@ -841,18 +2167,6 @@ proc column*(title: string; width = 100; align = alLeft;
 A column of text (or of `kind`); the others below are short cuts.
 
 ```nim
-proc column*(t: DataTable; col: int): seq[float]
-```
-
-The numbers of a column (NaN where a cell is not one).
-
-```nim
-proc column*(t: DataTable; name: string): seq[float]
-```
-
-The numbers of the column called `name` (empty if there is none).
-
-```nim
 proc sortRows*(data: var seq[seq[string]]; col: int; descending = false)
 ```
 
@@ -867,19 +2181,48 @@ Open the editor on cell `row`, `col` of the next grid drawn (a
 "Rename" command, say). `selectTo`: select only the text before it
 (a file name without its extension); -1 selects all.
 
-Example:
+### grid with cell kinds
+
+The columns of a business screen: numbers, check boxes, status colors, drop-down choices, buttons, bars, links, icons and cells you draw. `style` colors a cell, `rowHeaders` adds the record indicator, `footer` a totals row.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![grid with cell kinds, normal](controls/datagrid-normal.png) | ![grid with cell kinds, touch screen](controls/datagrid-touch-screen.png) | ![grid with cell kinds, dark scheme](controls/datagrid-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![grid with cell kinds, keyboard focus](controls/datagrid-keyboard-focus.png) |
 
 ```nim
-grid(cols, @[@["Paper", "10", "4.50"], @["Ink", "2", "21.00"],
-             @["Pens", "40", "0.80"]], gridSel, height = 4,
-     )
+var orderCols = @[column("Order", 120), numberColumn("Amount", 70),
+                  colorColumn("DA", 30), colorColumn("PD", 30),
+                  checkColumn("S", 28), choiceColumn("Store",
+    ["Engineering", "Kitchen", "Cafeteria"], 100), buttonColumn("", 56)]
+var orders = @[@["Pool glass door", "70.000", "green", "green", "1",
+                 "Engineering", "Open"], @["Stewarding", "51.800", "green",
+    "blue", "0", "Kitchen", "Open"], @["Bread for canteen", "54.155", "orange",
+                                       "green", "0", "Cafeteria", "Open"]]
+var orderSel = 0
+
+grid(orderCols, orders.len, proc (r, c: int): string =
+  orders[r][c], orderSel, height = 3, rowHeaders = true, style = proc (r, c: int): CellStyle =
+  if c == 1 and r == 0:
+    cellStyle(fg = color(200, 0, 0), bold = true)
+  else:
+    CellStyle()
+  , footer = proc (c: int): string =
+  if c == 0:
+    "Total"
+  elif c == 1:
+    "175.955"
+  else:
+    ""
+  )
 ```
 
-| Normal | Keyboard focus | Disabled | Touch screen | Dark scheme |
-|---|---|---|---|---|
-| ![grid Normal](controls/grid-normal.png) | ![grid Keyboard focus](controls/grid-keyboard-focus.png) | ![grid Disabled](controls/grid-disabled.png) | ![grid Touch screen](controls/grid-touch-screen.png) | ![grid Dark scheme](controls/grid-dark-scheme.png) |
-
-### grid with cell kinds, colors, record indicator and totals
+**API**
 
 ```nim
 proc numberColumn*(title: string; width = 90; editable = false): Column
@@ -957,30 +2300,34 @@ proc isChecked*(s: string): bool
 
 How a check box cell reads its text.
 
-Example:
+### tree, branch, leaf
+
+A tree view: `sel` is the path of the node picked ("My computer/Documents"). A `branch` shows its children while its `bool` is true, so they can be read only when it is opened.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![tree, branch, leaf, normal](controls/tree-normal.png) | ![tree, branch, leaf, touch screen](controls/tree-touch-screen.png) | ![tree, branch, leaf, dark scheme](controls/tree-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![tree, branch, leaf, keyboard focus](controls/tree-keyboard-focus.png) |
 
 ```nim
-grid(orderCols, orders.len, proc (r, c: int): string =
-  orders[r][c], orderSel, height = 3, rowHeaders = true, style = proc (r, c: int): CellStyle =
-  if c == 1 and r == 0:
-    cellStyle(fg = color(200, 0, 0), bold = true)
-  else:
-    CellStyle()
-  , footer = proc (c: int): string =
-  if c == 0:
-    "Total"
-  elif c == 1:
-    "175.955"
-  else:
-    ""
-  )
+var treeSel = "My computer/Documents"
+var treeOpen = true
+var treeOpen2 = false
+
+tree(treeSel, 7):
+  branch("My computer", treeOpen):
+    leaf("Documents")
+    branch("Pictures", treeOpen2):
+      leaf("Holidays")
+    leaf("Music")
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![datagrid Normal](controls/datagrid-normal.png) | ![datagrid Keyboard focus](controls/datagrid-keyboard-focus.png) | ![datagrid Touch screen](controls/datagrid-touch-screen.png) | ![datagrid Dark scheme](controls/datagrid-dark-scheme.png) |
-
-### tree, branch, leaf
+**API**
 
 ```nim
 template tree*(sel: var string; rows: int; body: untyped)
@@ -1010,36 +2357,37 @@ proc leaf*(label: string; icon = true; pic = Icon(); id = ""): bool {.discardabl
 A node without children; true when it was clicked.
 
 ```nim
-proc beginTree*(sel: var string; rows = 10; w = 0; enabled = true)
+proc treeClicked*(): string
 ```
 
-Starts a tree view (see `tree`): `rows` rows high (-1: the room left).
-
-```nim
-proc beginNode*(label: string; expanded: var bool; leaf = false;
-                icon = true; pic = Icon(); id = ""; hasKids = true): bool
-```
-
-A node; `pic` replaces the built-in folder/page icon, `id` (a file's
-full path, say) replaces the "Parent/Child" path as the node's
-identity in `sel`, `hasKids` false hides the +/- box.
-
-Example:
-
-```nim
-tree(treeSel, 7):
-  branch("My computer", treeOpen):
-    leaf("Documents")
-    branch("Pictures", treeOpen2):
-      leaf("Holidays")
-    leaf("Music")
-```
-
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![tree Normal](controls/tree-normal.png) | ![tree Keyboard focus](controls/tree-keyboard-focus.png) | ![tree Touch screen](controls/tree-touch-screen.png) | ![tree Dark scheme](controls/tree-dark-scheme.png) |
+Inside or right after a `tree`: the node clicked this frame ("" if none).
 
 ### treeGrid
+
+A tree with columns: a chart of accounts, a bill of materials.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![treeGrid, normal](controls/treegrid-normal.png) | ![treeGrid, touch screen](controls/treegrid-touch-screen.png) | ![treeGrid, dark scheme](controls/treegrid-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![treeGrid, keyboard focus](controls/treegrid-keyboard-focus.png) |
+
+```nim
+var accCols = @[column("Account", 170), numberColumn("Balance", 90)]
+var accRows = @[TreeRow(level: 0, cells: @["Assets", "15,000.00"], open: true),
+                TreeRow(level: 1, cells: @["Cash", "5,000.00"]),
+                TreeRow(level: 1, cells: @["Bank", "10,000.00"]),
+                TreeRow(level: 0, cells: @["Liabilities", "4,000.00"])]
+var accSel = 1
+
+treeGrid(accCols, accRows, accSel, height = 4)
+```
+
+**API**
 
 ```nim
 proc treeGrid*(cols: var seq[Column]; rows: var seq[TreeRow]; sel: var int;
@@ -1048,22 +2396,38 @@ proc treeGrid*(cols: var seq[Column]; rows: var seq[TreeRow]; sel: var int;
 
 A tree whose rows have columns (accounts with their balances, parts
 with their quantities): rows with deeper rows after them open and
-close with their [+] box, a double click, Right / Left or Space;
+close with their ``[+]`` box, a double click, Right / Left or Space;
 Up, Down, Page Up, Page Down, Home, End move; Enter (or a double click
 on a row without children) activates. Drag a header's edge to resize
 its column. `height` in rows (-1 fills). Parents are bold.
 
-Example:
+### iconView
+
+Items as large pictures with their names under them (the Large icons view), as tiles with a detail line, or as small icons. You draw each picture.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![iconView, normal](controls/iconview-normal.png) | ![iconView, touch screen](controls/iconview-touch-screen.png) | ![iconView, dark scheme](controls/iconview-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![iconView, keyboard focus](controls/iconview-keyboard-focus.png) |
 
 ```nim
-treeGrid(accCols, accRows, accSel, height = 4)
+var iconSel = 0
+var iconMarked: seq[bool]
+
+iconView(6, proc (i: int): string =
+  ["Reports", "Budget", "Photos", "Music", "Notes", "Setup"][i], proc (i: int;
+    r: Rect) =
+  let g = [pxFolder, pxSheet, pxPictures, pxMusic, pxText, pxApp][i]
+  image(r.x + (r.w - 32) div 2, r.y + (r.h - 32) div 2,
+        glyphIcon(g, ui.theme.text, 32)), iconSel, iconMarked, height = 130)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![treegrid Normal](controls/treegrid-normal.png) | ![treegrid Keyboard focus](controls/treegrid-keyboard-focus.png) | ![treegrid Touch screen](controls/treegrid-touch-screen.png) | ![treegrid Dark scheme](controls/treegrid-dark-scheme.png) |
-
-### iconView
+**API**
 
 ```nim
 proc iconView*(count: int; label: proc (i: int): string;
@@ -1085,22 +2449,29 @@ touch, selection rectangles (drag on
 the empty part), `dragItems` and `dropOk` work as in the multi-select
 `grid`; arrows move in two dimensions.
 
-Example:
+### lineView
+
+Lines of text from a proc, any number of them: a log, a huge file. Only the lines in view are asked for.
+
+| Normal | Dark scheme |
+|---|---|
+| ![lineView, normal](controls/lineview-normal.png) | ![lineView, dark scheme](controls/lineview-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![lineView, keyboard focus](controls/lineview-keyboard-focus.png) |
 
 ```nim
-iconView(6, proc (i: int): string =
-  ["Reports", "Budget", "Photos", "Music", "Notes", "Setup"][i], proc (i: int;
-    r: Rect) =
-  let g = [pxFolder, pxSheet, pxPictures, pxMusic, pxText, pxApp][i]
-  image(r.x + (r.w - 32) div 2, r.y + (r.h - 32) div 2,
-        glyphIcon(g, ui.theme.text, 32)), iconSel, iconMarked, height = 130)
+var logSel = 3
+
+lineView(100000, proc (i: int): string =
+  "2026-10-27 10:" & $(i mod 60) & " request " & $i & " ok", logSel,
+         height = 100, numbers = true)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![iconview Normal](controls/iconview-normal.png) | ![iconview Keyboard focus](controls/iconview-keyboard-focus.png) | ![iconview Touch screen](controls/iconview-touch-screen.png) | ![iconview Dark scheme](controls/iconview-dark-scheme.png) |
-
-### lineView (huge texts, logs)
+**API**
 
 ```nim
 proc lineView*(count: int; line: proc (i: int): string; sel: var int;
@@ -1114,19 +2485,28 @@ a line, Shift or a mouse drag extends, Ctrl+A all, Ctrl+C copies them.
 The wheel scrolls (Shift + the wheel sideways), a finger drags. `wrap`
 is off: long lines scroll sideways.
 
-Example:
+### dualList
+
+Two lists to move items between (the buttons, a double click, Enter), and to order the chosen ones.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![dualList, normal](controls/duallist-normal.png) | ![dualList, touch screen](controls/duallist-touch-screen.png) | ![dualList, dark scheme](controls/duallist-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![dualList, keyboard focus](controls/duallist-keyboard-focus.png) |
 
 ```nim
-lineView(100000, proc (i: int): string =
-  "2026-10-27 10:" & $(i mod 60) & " request " & $i & " ok", logSel,
-         height = 100, numbers = true)
+var avail = @["Cash", "Bank", "Sales"]
+var chosen = @["Rent", "Salaries"]
+
+dualList(avail, chosen, rows = 5)
 ```
 
-| Normal | Keyboard focus | Dark scheme |
-|---|---|---|
-| ![lineview Normal](controls/lineview-normal.png) | ![lineview Keyboard focus](controls/lineview-keyboard-focus.png) | ![lineview Dark scheme](controls/lineview-dark-scheme.png) |
-
-### dualList
+**API**
 
 ```nim
 proc dualList*(available, chosen: var seq[string]; rows = 8;
@@ -1139,17 +2519,33 @@ the left to the right, >> all of them, < and << back; a double click
 (or Enter) moves an item across. Up / Down buttons order the chosen
 ones. On phones the lists are stacked. True when the lists changed.
 
-Example:
+### propertyGrid
+
+Properties by category: text, numbers, yes/no, choices, colors and dates, with a help line for the one picked.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![propertyGrid, normal](controls/propertygrid-normal.png) | ![propertyGrid, touch screen](controls/propertygrid-touch-screen.png) | ![propertyGrid, dark scheme](controls/propertygrid-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![propertyGrid, keyboard focus](controls/propertygrid-keyboard-focus.png) |
 
 ```nim
-dualList(avail, chosen, rows = 5)
+var props = @[textProp("Name", "Main store", "General",
+                       "What the store is called"),
+              boolProp("Active", true, "General"),
+              choiceProp("Region", ["North", "South", "East"], 1, "General"),
+              numberProp("Budget", 1500.5, 2, "Money"),
+              colorProp("Label", color(0, 128, 0), "Look")]
+var propSel = 0
+
+propertyGrid(props, propSel, height = 220)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![duallist Normal](controls/duallist-normal.png) | ![duallist Keyboard focus](controls/duallist-keyboard-focus.png) | ![duallist Touch screen](controls/duallist-touch-screen.png) | ![duallist Dark scheme](controls/duallist-dark-scheme.png) |
-
-### propertyGrid
+**API**
 
 ```nim
 proc propertyGrid*(props: var seq[Prop]; sel: var int; height = -1;
@@ -1157,7 +2553,7 @@ proc propertyGrid*(props: var seq[Prop]; sel: var int; height = -1;
 ```
 
 Properties as names and values in two columns, by `category` (a
-category folds away with its [-] box), the chosen one edited in place:
+category folds away with its ``[-]`` box), the chosen one edited in place:
 text and numbers typed, Yes / No flipped with a click or Space,
 choices dropped down (or flipped through with a double click), colors
 typed as #RRGGBB or picked, dates with their calendar. The `help` line
@@ -1222,19 +2618,59 @@ proc valueText*(p: Prop): string
 
 A property's value as the grid shows it.
 
-Example:
+### imageView
+
+A picture to look at: fitted while `zoom` is 0, else that many screen pixels per picture pixel. The wheel zooms, a double click goes between fitted and actual size, a drag moves it.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![imageView, normal](controls/imageview-normal.png) | ![imageView, touch screen](controls/imageview-touch-screen.png) | ![imageView, dark scheme](controls/imageview-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![imageView, keyboard focus](controls/imageview-keyboard-focus.png) |
 
 ```nim
-propertyGrid(props, propSel, height = 220)
+var beach = loadPicture(getHomeDir() / "Pictures" / "Beach.png")
+var picZoom = 0.0
+
+imageView(beach, picZoom, height = 180)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![propertygrid Normal](controls/propertygrid-normal.png) | ![propertygrid Keyboard focus](controls/propertygrid-keyboard-focus.png) | ![propertygrid Touch screen](controls/propertygrid-touch-screen.png) | ![propertygrid Dark scheme](controls/propertygrid-dark-scheme.png) |
+**API**
+
+```nim
+proc imageView*(b: Bitmap; zoom: var float; height = -1; w = 0)
+```
+
+A picture to look at: fitted into the view while `zoom` is 0, else
+`zoom` screen pixels per picture pixel (1.0: actual size). The wheel
+(and + / - / 0 with the focus) zooms, a double click or double tap
+goes between fitted and actual size, dragging (a finger, the arrow
+keys) moves it.
 
 ## Progress and status
 
 ### progressRing, spinner, sparkline, usageBar
+
+A ring of progress, a busy spinner, a small line of numbers, and a bar of how full something is.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![progressRing, spinner, sparkline, usageBar, normal](controls/status-normal.png) | ![progressRing, spinner, sparkline, usageBar, touch screen](controls/status-touch-screen.png) | ![progressRing, spinner, sparkline, usageBar, dark scheme](controls/status-dark-scheme.png) |
+
+```nim
+row:
+  progressRing(0.62)
+  spinner()
+  col:
+    sparkline([3.0, 5, 4, 7, 6, 9, 8, 11], w = 140, h = 30)
+    usageBar(62, 100, w = 140)
+```
+
+**API**
 
 ```nim
 proc progressRing*(value: float; size = 0; color = Color(); showText = true)
@@ -1261,22 +2697,26 @@ proc usageBar*(used, total: int64; w = 0; h = 0)
 
 How full something is (a drive): a bar, red when over 90%.
 
-Example:
+### banner
 
-```nim
-row:
-  progressRing(0.62)
-  spinner()
-  col:
-    sparkline([3.0, 5, 4, 7, 6, 9, 8, 11], w = 140, h = 30)
-    usageBar(62, 100, w = 140)
-```
+A message across the page, with its buttons (the index clicked, or 0 for its x).
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
-| ![status Normal](controls/status-normal.png) | ![status Touch screen](controls/status-touch-screen.png) | ![status Dark scheme](controls/status-dark-scheme.png) |
+| ![banner, normal](controls/banner-normal.png) | ![banner, touch screen](controls/banner-touch-screen.png) | ![banner, dark scheme](controls/banner-dark-scheme.png) |
 
-### banner
+More states:
+
+| Mouse over |
+|---|
+| ![banner, mouse over](controls/banner-mouse-over.png) |
+
+```nim
+discard banner("A new version is ready.", bkInfo, ["Update"])
+discard banner("Low on storage: 300 MB left.", bkWarning, closable = false)
+```
+
+**API**
 
 ```nim
 proc banner*(msg: string; kind = bkInfo; actions: openArray[string] = [];
@@ -1286,18 +2726,161 @@ proc banner*(msg: string; kind = bkInfo; actions: openArray[string] = [];
 A colored strip with an icon, a message and buttons ("Update", "Undo"):
 the button clicked (1-based), 0 when closed with its x, -1 if none.
 
-Example:
+### toast
+
+A balloon in the style of Windows 95 and 98: pale yellow, with its tail, an icon and a title. It goes away by itself. The pictures show it after the button was clicked.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![toast, normal](controls/toast-normal.png) | ![toast, touch screen](controls/toast-touch-screen.png) | ![toast, dark scheme](controls/toast-dark-scheme.png) |
 
 ```nim
-discard banner("A new version is ready.", bkInfo, ["Update"])
-discard banner("Low on storage: 300 MB left.", bkWarning, closable = false)
+if button("&Save"):
+  toast("Saved \"Budget.csv\" to Documents.", glyph = pxCheck, title = "Ledger")
 ```
 
-| Normal | Mouse over | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![banner Normal](controls/banner-normal.png) | ![banner Mouse over](controls/banner-mouse-over.png) | ![banner Touch screen](controls/banner-touch-screen.png) | ![banner Dark scheme](controls/banner-dark-scheme.png) |
+**API**
+
+```nim
+proc toast*(msg: string; ms = 3500; glyph = ""; title = "")
+```
+
+A notification in the style of the Windows 95 / 98 balloons: pale
+yellow, a black border, a tail pointing at the corner, an optional
+icon and bold `title`. It goes away by itself (or when clicked).
+
+```nim
+proc dismissToast*()
+```
+
+Closes the balloon (`toast`) now.
+
+```nim
+proc toastShown*(): bool
+```
+
+A balloon (`toast`) is on screen.
+
+```nim
+proc toastArea*(): Rect
+```
+
+Where the balloon was drawn last (empty before the first one).
+
+### showSnackbar, snackbar
+
+A bar at the bottom that says what was just done, with one action: the Undo of today's apps. `showSnackbar` asks for it; `snackbar()`, once a frame, draws it and is true when its action is clicked.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![showSnackbar, snackbar, normal](controls/snackbar-normal.png) | ![showSnackbar, snackbar, touch screen](controls/snackbar-touch-screen.png) | ![showSnackbar, snackbar, dark scheme](controls/snackbar-dark-scheme.png) |
+
+```nim
+if button("&Delete 3 messages"):
+  showSnackbar("3 messages deleted")
+if snackbar():
+  discard
+```
+
+**API**
+
+```nim
+proc showSnackbar*(msg: string; action = "Undo"; ms = 8000)
+```
+
+Shows a bar at the bottom of the window saying what was just done
+("3 messages deleted") with one action (`action`, "" none) for `ms`
+milliseconds: the Undo of today's apps. `snackbar` draws it and says
+when the action was clicked.
+
+```nim
+proc snackbar*(): bool
+```
+
+Draws the bar `showSnackbar` asked for (call it once a frame, after the
+window's content); true the frame its action is clicked (or Ctrl+Z
+pressed and no text box took it), which also takes the bar away.
+
+```nim
+proc hideSnackbar*()
+```
+
+Takes the bar (`showSnackbar`) away now.
+
+```nim
+proc snackbarShown*(): bool
+```
+
+The bar (`showSnackbar`) is on screen.
+
+### led, pill
+
+A small light, lit or dark, with its label; and a word in a colored tag ("Paid", "Overdue").
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![led, pill, normal](controls/ledpill-normal.png) | ![led, pill, touch screen](controls/ledpill-touch-screen.png) | ![led, pill, dark scheme](controls/ledpill-dark-scheme.png) |
+
+```nim
+row:
+  led(true, "Online")
+  led(false, "Syncing", color(255, 160, 0))
+  pill("Paid", color(0, 140, 0))
+  pill("Overdue", color(200, 0, 0))
+```
+
+**API**
+
+```nim
+proc led*(on: bool; label = ""; c = Color())
+```
+
+A small light: lit (in `c`, green when not given) or dark, with a label.
+
+```nim
+proc pill*(text: string; c = Color())
+```
+
+A short word in a colored, rounded tag ("Paid", "Overdue", "New").
+
+### timeline
+
+Events down a line: the time, a dot (the current one filled), a title and a line of detail.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![timeline, normal](controls/timeline-normal.png) | ![timeline, touch screen](controls/timeline-touch-screen.png) | ![timeline, dark scheme](controls/timeline-dark-scheme.png) |
+
+```nim
+timeline([("09:00", "Order placed", "Al Noor Trading"),
+          ("11:30", "Packed", ""), ("14:10", "Shipped", "by courier")],
+         current = 1)
+```
+
+**API**
+
+```nim
+proc timeline*(items: openArray[tuple[time, title, detail: string]]; current = -1)
+```
+
+Events down a line: their time, a dot (the `current` one filled), the
+title and a line of detail.
 
 ### emptyState, busyState
+
+What a list shows when it has nothing (an icon, a line, what to do), and while it is loading.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![emptyState, busyState, normal](controls/emptystate-normal.png) | ![emptyState, busyState, touch screen](controls/emptystate-touch-screen.png) | ![emptyState, busyState, dark scheme](controls/emptystate-dark-scheme.png) |
+
+```nim
+row([-1, -1]):
+  emptyState(pxInbox, "No messages", 100)
+  busyState("Loading...", 100)
+```
+
+**API**
 
 ```nim
 proc emptyState*(glyph, msg: string; h = -1; detail = "")
@@ -1312,19 +2895,19 @@ proc busyState*(msg: string; h = -1)
 
 A framed area with busy dots and a message ("Loading...").
 
-Example:
+### statusbar
 
-```nim
-row([-1, -1]):
-  emptyState(pxInbox, "No messages", 100)
-  busyState("Loading...", 100)
-```
+The bar at the bottom of the window, of texts: the first takes the spare room. Content above it can fill down to it (`rows = -1`).
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
-| ![emptystate Normal](controls/emptystate-normal.png) | ![emptystate Touch screen](controls/emptystate-touch-screen.png) | ![emptystate Dark scheme](controls/emptystate-dark-scheme.png) |
+| ![statusbar, normal](controls/statusbar-normal.png) | ![statusbar, touch screen](controls/statusbar-touch-screen.png) | ![statusbar, dark scheme](controls/statusbar-dark-scheme.png) |
 
-### statusbar
+```nim
+statusbar("Ready", "NUM", "12:30")
+```
+
+**API**
 
 ```nim
 proc statusbar*(parts: varargs[string])
@@ -1333,97 +2916,134 @@ proc statusbar*(parts: varargs[string])
 The status bar at the bottom of the window: the first part takes the
 spare room. Content above it can fill down to it (`rows = -1`).
 
-Example:
+### statusRow, statusSep
 
-```nim
-statusbar("Ready", "NUM", "12:30")
-```
+A status bar with controls in it (a zoom field, a menu arrow, texts), its parts parted by `statusSep`.
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
-| ![statusbar Normal](controls/statusbar-normal.png) | ![statusbar Touch screen](controls/statusbar-touch-screen.png) | ![statusbar Dark scheme](controls/statusbar-dark-scheme.png) |
+| ![statusRow, statusSep, normal](controls/statusrow-normal.png) | ![statusRow, statusSep, touch screen](controls/statusrow-touch-screen.png) | ![statusRow, statusSep, dark scheme](controls/statusrow-dark-scheme.png) |
+
+```nim
+var zoomPct = 100
+
+statusRow:
+  row:
+    label "Page 3 of 12"
+    statusSep()
+    label "Zoom:"
+    spin(zoomPct, 10, 400, w = 70)
+```
+
+**API**
+
+```nim
+template statusRow*(body: untyped)
+```
+
+A status bar with controls in it (an editable zoom field, a menu
+arrow, texts), laid out by `body` -- usually one `row`. Separate the
+parts with `statusSep`. (`statusbar` is the one of texts only.)
+
+```nim
+proc statusSep*()
+```
+
+The etched line between two parts of a status bar.
 
 ## Containers
 
-### group, card, separator
+Groups, cards, forms, tabs, scrolling and splitters are in
+[Layout](#layout). Here are the ones that fold and the tabs of documents.
 
-```nim
-template group*(title: string; body: untyped)
-```
+### expander
 
-A group box: a frame with a title around `body`.
-
-```nim
-template card*(title: string; body: untyped)
-```
-
-A panel drawn as a 3.1 group box (its title set into the top line);
-in an `adaptive` row, cards make a dashboard that reflows from one
-column (phone) to several.
-
-```nim
-```
-adaptive(260):
-card "Sales": label "12,400"
-card "Orders": label "318"
-
-```nim
-proc separator*()
-```
-
-A horizontal etched line.
-
-Example:
-
-```nim
-row([-1, -1]):
-  group("Group box"):
-    label "In a 3.1 group box"
-  card("Card"):
-    label "A raised panel"
-```
+A header that folds away what most people do not need.
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
-| ![group Normal](controls/group-normal.png) | ![group Touch screen](controls/group-touch-screen.png) | ![group Dark scheme](controls/group-dark-scheme.png) |
+| ![expander, normal](controls/expander-normal.png) | ![expander, touch screen](controls/expander-touch-screen.png) | ![expander, dark scheme](controls/expander-dark-scheme.png) |
 
-### tabs
+More states:
 
-```nim
-template tabs*(sel: var int; labels: openArray[string]; body: untyped)
-```
-
-Tabs bound to `sel`; draw the page for `sel` in `body`.
+| Keyboard focus |
+|---|
+| ![expander, keyboard focus](controls/expander-keyboard-focus.png) |
 
 ```nim
-template tabs*(sel: var int; labels: openArray[string]; sameHeight: bool;
-               body: untyped)
+var more = true
+
+expander("Advanced settings", more):
+  label "Hidden until it is opened"
 ```
 
-Tabs whose page keeps the height of the tallest one shown so far
-(property sheets, settings dialogs).
+**API**
 
 ```nim
-proc beginTabs*(sel: var int; labels: openArray[string]; sameHeight = false)
+template expander*(label: string; open: var bool; body: untyped)
 ```
 
-Tabs over a page (see `tabs`). When they do not fit, two arrow
-buttons scroll them, as on Windows 95; the chosen one is kept in view.
-`sameHeight`: the page keeps the height of the tallest page shown so
-far (a settings dialog does not jump when another tab is chosen).
+A section that opens and closes (click its header, or Left/Right).
 
-Example:
+### accordionHeader
+
+Sections of which one is open at a time: true for the open one, so draw its content then.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![accordionHeader, normal](controls/accordion-normal.png) | ![accordionHeader, touch screen](controls/accordion-touch-screen.png) | ![accordionHeader, dark scheme](controls/accordion-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![accordionHeader, keyboard focus](controls/accordion-keyboard-focus.png) |
 
 ```nim
-tabs(tabSel, ["&General", "&Look", "&Advanced"], sameHeight = true):
-  label("The page of tab " & $(tabSel + 1))
+var openSection = 0
+
+for i, t in ["General", "Advanced", "About"]:
+  if accordionHeader(t, i, openSection):
+    label("The " & t & " section")
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![tabs Normal](controls/tabs-normal.png) | ![tabs Keyboard focus](controls/tabs-keyboard-focus.png) | ![tabs Touch screen](controls/tabs-touch-screen.png) | ![tabs Dark scheme](controls/tabs-dark-scheme.png) |
+**API**
+
+```nim
+proc accordionHeader*(title: string; index: int; open: var int): bool
+```
+
+One header of an accordion (sections of which one is open at a time):
+true when section `index` is the open one -- draw its contents then.
+A click opens it (or closes it when it was open: `open` -1).
+
+```nim
+for i, t in ["General", "Advanced"]:
+  if accordionHeader(t, i, openSection): label "..."
+```
 
 ### tabStrip (document tabs)
+
+The tabs of open documents, each with its icon and its x, and a + for a new one; tabs can be dragged to order them.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![tabStrip (document tabs), normal](controls/tabstrip-normal.png) | ![tabStrip (document tabs), touch screen](controls/tabstrip-touch-screen.png) | ![tabStrip (document tabs), dark scheme](controls/tabstrip-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Mouse over |
+|---|---|
+| ![tabStrip (document tabs), keyboard focus](controls/tabstrip-keyboard-focus.png) | ![tabStrip (document tabs), mouse over](controls/tabstrip-mouse-over.png) |
+
+```nim
+var docTab = 0
+var docTabs = @["Report.txt", "Notes.md", "Budget.csv"]
+
+discard tabStrip(docTabs, docTab, [pxText, pxMarkdown, pxSheet])
+```
+
+**API**
 
 ```nim
 proc tabStrip*(labels: openArray[string]; sel: var int; glyphs: openArray[string] = [];
@@ -1440,146 +3060,34 @@ Keys: Ctrl+Tab / Ctrl+Shift+Tab anywhere; Left, Right, Home, End when
 the strip has the focus. The middle button closes a tab; a right click
 or a long press reports `menu` (show a menu with `contextMenu` after).
 
-Example:
-
-```nim
-discard tabStrip(docTabs, docTab, [pxText, pxMarkdown, pxSheet])
-```
-
-| Normal | Keyboard focus | Mouse over | Touch screen | Dark scheme |
-|---|---|---|---|---|
-| ![tabstrip Normal](controls/tabstrip-normal.png) | ![tabstrip Keyboard focus](controls/tabstrip-keyboard-focus.png) | ![tabstrip Mouse over](controls/tabstrip-mouse-over.png) | ![tabstrip Touch screen](controls/tabstrip-touch-screen.png) | ![tabstrip Dark scheme](controls/tabstrip-dark-scheme.png) |
-
-### expander
-
-```nim
-template expander*(label: string; open: var bool; body: untyped)
-```
-
-A section that opens and closes (click its header, or Left/Right).
-
-Example:
-
-```nim
-expander("Advanced settings", more):
-  label "Hidden until it is opened"
-```
-
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![expander Normal](controls/expander-normal.png) | ![expander Keyboard focus](controls/expander-keyboard-focus.png) | ![expander Touch screen](controls/expander-touch-screen.png) | ![expander Dark scheme](controls/expander-dark-scheme.png) |
-
-### form, field
-
-```nim
-template form*(labelWidth: int; body: untyped)
-```
-
-`field` rows with a label column `labelWidth` design pixels wide, or,
-with 0, as wide as the widest caption.
-
-```nim
-template field*(caption: string; body: untyped)
-```
-
-A form row: `caption` in a label column, then the control(s). In a
-narrow space (a phone) the caption goes above the control instead.
-
-Example:
-
-```nim
-form 0:
-  field "&Customer:":
-    edit name
-  field "&Amount:":
-    numberEdit amount
-```
-
-| Normal | Touch screen | Dark scheme |
-|---|---|---|
-| ![form Normal](controls/form-normal.png) | ![form Touch screen](controls/form-touch-screen.png) | ![form Dark scheme](controls/form-dark-scheme.png) |
-
-### split, vsplit
-
-```nim
-template split*(pos: var int; height: int; left, right: untyped)
-```
-
-Two panes side by side; drag the bar between them (`pos` is its x).
-
-```nim
-```
-split(listW, 300):
-listbox items, sel, rows = -1
-do:
-editArea text, lines = -1
-
-```nim
-template vsplit*(pos: var int; height: int; upper, lower: untyped)
-```
-
-Two panes above each other; drag the bar between them.
-
-```nim
-proc splitBar*(): int
-```
-
-The thickness of the bar of `split` and `vsplit`.
-
-Example:
-
-```nim
-split(split1, 100):
-  listbox(fruits, fruit, rows = -1)
-do:
-  paragraph("Drag the bar between the panes.")
-```
-
-| Normal | Touch screen | Dark scheme |
-|---|---|---|
-| ![split Normal](controls/split-normal.png) | ![split Touch screen](controls/split-touch-screen.png) | ![split Dark scheme](controls/split-dark-scheme.png) |
-
-### sidePane
-
-```nim
-template sidePane*(show: bool; paneW, paneH: var int; main, pane: untyped)
-```
-
-`main` with a `pane` beside it (`paneW` wide, in design pixels) when
-there is room, else under it (`paneH` tall): the details pane of an
-explorer, the inspector of an editor. Dragging the bar between them
-changes `paneW` or `paneH` (keep them in the app's settings).
-
-```nim
-```
-sidePane(showDetails, detailsW, detailsH):
-listbox items, sel, rows = -1
-do:
-factList(details(items[sel]))
-
-```nim
-proc paneBeside*(paneW: int; minMain = 320): bool
-```
-
-A pane `paneW` logical pixels wide fits beside content that needs
-`minMain` (not on phones held upright).
-
-Example:
-
-```nim
-sidePane(true, paneW, paneH):
-  listbox(fruits, fruit, rows = -1)
-do:
-  factList({"Name": fruits[fruit], "Kind": "Fruit"})
-```
-
-| Normal | Touch screen | Dark scheme |
-|---|---|---|
-| ![sidepane Normal](controls/sidepane-normal.png) | ![sidepane Touch screen](controls/sidepane-touch-screen.png) | ![sidepane Dark scheme](controls/sidepane-dark-scheme.png) |
-
 ## Menus and bars
 
 ### menubar, menu, menuItem, submenu
+
+The window's menu bar: `menuItem` is true when chosen, with its shortcut, a check mark or disabled. Alt, F10 and the letters work as in 3.1.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![menubar, menu, menuItem, submenu, normal](controls/menu-normal.png) | ![menubar, menu, menuItem, submenu, touch screen](controls/menu-touch-screen.png) | ![menubar, menu, menuItem, submenu, dark scheme](controls/menu-dark-scheme.png) |
+
+More states:
+
+| Clicked / open |
+|---|
+| ![menubar, menu, menuItem, submenu, clicked / open](controls/menu-clicked-open.png) |
+
+```nim
+menubar:
+  menu "&File":
+    discard menuItem("&New", "Ctrl+N")
+    discard menuItem("&Open...", "Ctrl+O")
+    menuSeparator()
+    discard menuItem("&Save", "Ctrl+S", enabled = false)
+    discard menuItem("&Word wrap", checked = true)
+  menu "&Edit":(discard menuItem("&Undo", "Ctrl+Z"))
+```
+
+**API**
 
 ```nim
 template menubar*(body: untyped)
@@ -1610,26 +3118,97 @@ An item that opens a menu of its own (one level deep).
 proc menuSeparator*()
 ```
 
-A line between groups of menu items.
+A line between groups of menu items (none at the top of a column).
 
-Example:
+### contextMenu
+
+A menu for the control drawn last, opened by a right click, a long press or the menu key. The pictures show it open.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![contextMenu, normal](controls/contextmenu-normal.png) | ![contextMenu, touch screen](controls/contextmenu-touch-screen.png) | ![contextMenu, dark scheme](controls/contextmenu-dark-scheme.png) |
 
 ```nim
-menubar:
-  menu "&File":
-    discard menuItem("&New", "Ctrl+N")
-    discard menuItem("&Open...", "Ctrl+O")
-    menuSeparator()
-    discard menuItem("&Save", "Ctrl+S", enabled = false)
-    discard menuItem("&Word wrap", checked = true)
-  menu "&Edit":(discard menuItem("&Undo", "Ctrl+Z"))
+label "Right click here, or hold a finger on it"
+contextMenu:
+  discard menuItem("&Copy", "Ctrl+C")
+  discard menuItem("&Paste", "Ctrl+V")
+  menuSeparator()
+  discard menuItem("P&roperties")
 ```
 
-| Normal | Clicked / open | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![menu Normal](controls/menu-normal.png) | ![menu Clicked / open](controls/menu-clicked--open.png) | ![menu Touch screen](controls/menu-touch-screen.png) | ![menu Dark scheme](controls/menu-dark-scheme.png) |
+**API**
+
+```nim
+template contextMenu*(body: untyped)
+```
+
+A menu that a right click (a long press on a touch screen) on the
+widget drawn last opens.
+
+### popupMenu, openPopupMenu
+
+A menu dropped where you say: under a button, at the mouse. `openPopupMenu(key, x, y)` opens it, `popupMenu(key)` draws its items.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![popupMenu, openPopupMenu, normal](controls/popupmenu-normal.png) | ![popupMenu, openPopupMenu, touch screen](controls/popupmenu-touch-screen.png) | ![popupMenu, openPopupMenu, dark scheme](controls/popupmenu-dark-scheme.png) |
+
+```nim
+var sortBy = 0
+
+if button("&Sort by"):
+  openPopupMenu("sort", ui.lastRect.x, ui.lastRect.y + ui.lastRect.h)
+popupMenu("sort"):
+  if menuItem("&Name", checked = sortBy == 0):
+    sortBy = 0
+  if menuItem("&Date", checked = sortBy == 1):
+    sortBy = 1
+  if menuItem("&Size", checked = sortBy == 2):
+    sortBy = 2
+```
+
+**API**
+
+```nim
+template popupMenu*(key: string; body: untyped)
+```
+
+The menu opened with `openPopupMenu(key, x, y)`: `menuItem`s in
+`body`; it closes when one is chosen, on Esc or a click outside.
+
+```nim
+proc openPopupMenu*(key: string; x, y: int)
+```
+
+Opens the menu `key` with its top left at `x`, `y` (under a button
+that drops it down); draw it with `popupMenu(key)`.
+
+```nim
+proc popupMenuOpen*(key: string): bool
+```
+
+The menu `key` is open.
 
 ### breadcrumb
+
+Where the user is, each part a link back: the index clicked, else -1.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![breadcrumb, normal](controls/breadcrumb-normal.png) | ![breadcrumb, touch screen](controls/breadcrumb-touch-screen.png) | ![breadcrumb, dark scheme](controls/breadcrumb-dark-scheme.png) |
+
+More states:
+
+| Mouse over |
+|---|
+| ![breadcrumb, mouse over](controls/breadcrumb-mouse-over.png) |
+
+```nim
+breadcrumb(["C:", "Users", "Foxoman", "Documents"])
+```
+
+**API**
 
 ```nim
 proc breadcrumb*(parts: openArray[string]; w = 0;
@@ -1640,17 +3219,29 @@ The parts of a path as buttons in a row ("C: > Users > me"); returns
 the index of the part clicked, -1 if none. Parts that do not fit are
 folded into a "<<" button at the start.
 
-Example:
+### pager, stepper
+
+Pages to go through (|< < 3 of 12 > >|), and the steps of a task (Cart, Address, Payment) with the one reached.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![pager, stepper, normal](controls/pager-normal.png) | ![pager, stepper, touch screen](controls/pager-touch-screen.png) | ![pager, stepper, dark scheme](controls/pager-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![pager, stepper, keyboard focus](controls/pager-keyboard-focus.png) |
 
 ```nim
-breadcrumb(["C:", "Users", "Foxoman", "Documents"])
+var page = 3
+var stepAt = 1
+
+pager(page, 12)
+discard stepper(["Cart", "Address", "Payment"], stepAt)
 ```
 
-| Normal | Mouse over | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![breadcrumb Normal](controls/breadcrumb-normal.png) | ![breadcrumb Mouse over](controls/breadcrumb-mouse-over.png) | ![breadcrumb Touch screen](controls/breadcrumb-touch-screen.png) | ![breadcrumb Dark scheme](controls/breadcrumb-dark-scheme.png) |
-
-### pager, stepper
+**API**
 
 ```nim
 proc pager*(page: var int; pages: int; enabled = true): bool {.discardable.}
@@ -1667,18 +3258,27 @@ The steps of a task (a wizard, a checkout) as numbered circles joined
 by a line: done ones ticked, the current one highlighted. Returns the
 step clicked (only steps already done can be), -1 if none.
 
-Example:
+### recordNav
+
+The record navigator of a form: first, previous, "3 of 20", next, last, New, Delete and Save (`raNew`, `raSave`...).
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![recordNav, normal](controls/recordnav-normal.png) | ![recordNav, touch screen](controls/recordnav-touch-screen.png) | ![recordNav, dark scheme](controls/recordnav-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![recordNav, keyboard focus](controls/recordnav-keyboard-focus.png) |
 
 ```nim
-pager(page, 12)
-discard stepper(["Cart", "Address", "Payment"], stepAt)
+var recPos = 2
+
+discard recordNav(recPos, 20, dirty = true)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![pager Normal](controls/pager-normal.png) | ![pager Keyboard focus](controls/pager-keyboard-focus.png) | ![pager Touch screen](controls/pager-touch-screen.png) | ![pager Dark scheme](controls/pager-dark-scheme.png) |
-
-### recordNav
+**API**
 
 ```nim
 proc recordNav*(pos: var int; count: int; dirty = false; canAdd = true;
@@ -1691,17 +3291,21 @@ Cancel (Save and Cancel while the record is `dirty`). `pos` is the
 record shown (0-based); the moves change it. Ctrl+Home / Ctrl+End,
 Ctrl+PageUp / Ctrl+PageDown move too. On phones it is shorter.
 
-Example:
+### findBar, findIn, replaceAllIn
+
+A bar to find and replace text in: Enter or F3 the next match, Shift+F3 the one before, Esc closes it. The app does the finding with `findIn` and `replaceAllIn`.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![findBar, findIn, replaceAllIn, normal](controls/findbar-normal.png) | ![findBar, findIn, replaceAllIn, touch screen](controls/findbar-touch-screen.png) | ![findBar, findIn, replaceAllIn, dark scheme](controls/findbar-dark-scheme.png) |
 
 ```nim
-discard recordNav(recPos, 20, dirty = true)
+var findState = FindState(open: true, what: "cat", replacing: true)
+
+discard findBar(findState)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![recordnav Normal](controls/recordnav-normal.png) | ![recordnav Keyboard focus](controls/recordnav-keyboard-focus.png) | ![recordnav Touch screen](controls/recordnav-touch-screen.png) | ![recordnav Dark scheme](controls/recordnav-dark-scheme.png) |
-
-### findBar, findIn, replaceAllIn
+**API**
 
 ```nim
 proc findBar*(f: var FindState; key = ""): FindEvent
@@ -1727,19 +3331,30 @@ proc replaceAllIn*(text: var string; what, with: string; matchCase = false;
 
 Replaces every match; returns how many.
 
-Example:
+## Dialogs
 
-```nim
-discard findBar(findState)
-```
+Dialogs are modal, have the 3.1 frame, drag by their titles and scroll
+when they are taller than the screen; on a phone they take the screen.
+Each is drawn while its `open` is true, and sets it false when it closes,
+so `if button("Save as..."): saveOpen = true` is all it takes to show one.
+
+### msgBox
+
+A message with its icon and buttons: the button clicked (from 1) in the frame it closes, else 0.
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
-| ![findbar Normal](controls/findbar-normal.png) | ![findbar Touch screen](controls/findbar-touch-screen.png) | ![findbar Dark scheme](controls/findbar-dark-scheme.png) |
+| ![msgBox, normal](controls/msgbox-normal.png) | ![msgBox, touch screen](controls/msgbox-touch-screen.png) | ![msgBox, dark scheme](controls/msgbox-dark-scheme.png) |
 
-## Dialogs
+```nim
+var msgOpen = true
 
-### msgBox
+discard msgBox(msgOpen, "Retro Files",
+               "Delete \"Budget.csv\" for good?\nThis cannot be undone.",
+               ["&Delete", "Cancel"], miWarning)
+```
+
+**API**
 
 ```nim
 proc msgBox*(open: var bool; title, msg: string;
@@ -1753,21 +3368,24 @@ A message box while `open`. Returns the number of the button clicked
 proc msgIcon*(kind: MsgIcon)
 ```
 
-A 32x32 message box icon.
+A 32x32 message box icon (at 100%: it grows with the UI's size).
 
-Example:
+### inputBox
 
-```nim
-discard msgBox(msgOpen, "Retro Files",
-               "Delete \"Budget.csv\" for good?\nThis cannot be undone.",
-               ["&Delete", "Cancel"], miWarning)
-```
+A question with a text box: true once, when OK is clicked.
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
-| ![msgbox Normal](controls/msgbox-normal.png) | ![msgbox Touch screen](controls/msgbox-touch-screen.png) | ![msgbox Dark scheme](controls/msgbox-dark-scheme.png) |
+| ![inputBox, normal](controls/inputbox-normal.png) | ![inputBox, touch screen](controls/inputbox-touch-screen.png) | ![inputBox, dark scheme](controls/inputbox-dark-scheme.png) |
 
-### inputBox
+```nim
+var inputOpen = true
+var inputText = "Untitled"
+
+discard inputBox(inputOpen, "Save as", "&File name:", inputText)
+```
+
+**API**
 
 ```nim
 proc inputBox*(open: var bool; title, prompt: string; text: var string;
@@ -1777,17 +3395,34 @@ proc inputBox*(open: var bool; title, prompt: string; text: var string;
 Asks for one line of text while `open`; returns 1 for OK, 2 for
 Cancel or Esc (once, closing it).
 
-Example:
+### dialog
 
-```nim
-discard inputBox(inputOpen, "Save as", "&File name:", inputText)
-```
+A dialog of your own: any controls in its body. Esc closes it.
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
-| ![inputbox Normal](controls/inputbox-normal.png) | ![inputbox Touch screen](controls/inputbox-touch-screen.png) | ![inputbox Dark scheme](controls/inputbox-dark-scheme.png) |
+| ![dialog, normal](controls/dialog-normal.png) | ![dialog, touch screen](controls/dialog-touch-screen.png) | ![dialog, dark scheme](controls/dialog-dark-scheme.png) |
 
-### dialog
+```nim
+var dlgOpen = true
+var dlgCopies = 2
+var collate = true
+
+dialog(dlgOpen, "Page setup", 300):
+  form 0:
+    field "&Copies:":
+      spin(dlgCopies, 1, 99)
+    field "":
+      checkbox("&Collate", collate)
+  row:
+    spring()
+    if button("OK", isDefault = true):
+      dlgOpen = false
+    if button("Cancel"):
+      dlgOpen = false
+```
+
+**API**
 
 ```nim
 template dialog*(open: var bool; title: string; width: int; body: untyped)
@@ -1798,33 +3433,52 @@ and the control-menu box close it; drag it by its title. Work that
 takes a while in it (its OK) is named by its title in the box that
 comes up.
 
-```nim
-proc beginDialog*(open: var bool; title: string; width: int): bool
-```
+### progressBox
 
-Starts a modal dialog (see `dialog`): true while it is `open`.
-
-Example:
-
-```nim
-dialog(dlgOpen, "Page setup", 300):
-  form 0:
-    field "&Copies:":
-      spin(copies, 1, 99)
-    field "":
-      checkbox("&Collate", autoSave)
-  row:
-    spring()
-    if button("OK", isDefault = true):
-      dlgOpen = true
-    discard button("Cancel")
-```
+A modal box with a progress bar while work goes on: true once when the user cancels.
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
-| ![dialog Normal](controls/dialog-normal.png) | ![dialog Touch screen](controls/dialog-touch-screen.png) | ![dialog Dark scheme](controls/dialog-dark-scheme.png) |
+| ![progressBox, normal](controls/progressbox-normal.png) | ![progressBox, touch screen](controls/progressbox-touch-screen.png) | ![progressBox, dark scheme](controls/progressbox-dark-scheme.png) |
+
+```nim
+var copying = true
+
+if progressBox(copying, "Copying", "Copying 12 files to Backup...", 0.45,
+               detail = "Budget 2026.csv"):
+  discard
+```
+
+**API**
+
+```nim
+proc progressBox*(open: var bool; title, message: string; value: float;
+                  detail = ""; canCancel = true): bool
+```
+
+A modal box with a progress bar while `open`; true (once) when the
+user cancels (Cancel or Esc).
 
 ### wizard, stepDone
+
+A dialog of steps with Back, Next and Finish. `stepDone(false)` keeps Next disabled until the step is filled in.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![wizard, stepDone, normal](controls/wizard-normal.png) | ![wizard, stepDone, touch screen](controls/wizard-touch-screen.png) | ![wizard, stepDone, dark scheme](controls/wizard-dark-scheme.png) |
+
+```nim
+var wizOpen = true
+var wizStep = 1
+var street = "Al Khuwair Street"
+
+discard wizard(wizOpen, "New company", wizStep,
+               ["Name", "Address", "Bank", "Done"], 480) do:
+  label "&Street:"
+  edit street
+```
+
+**API**
 
 ```nim
 template wizard*(open: var bool; title: string; step: var int;
@@ -1844,20 +3498,25 @@ proc stepDone*(ok: bool)
 In a `wizard`'s page: Next (or Finish) is enabled only when `ok`
 (what this page asks is filled in).
 
-Example:
+### aboutBox
+
+The About dialog: a banner in the blue of a 1994 Setup screen with the icon, name and version; pages About, What's New and Credits; Copy Info for a report of a fault.
+
+| Normal | Dark scheme |
+|---|---|
+| ![aboutBox, normal](controls/aboutbox-normal.png) | ![aboutBox, dark scheme](controls/aboutbox-dark-scheme.png) |
 
 ```nim
-discard wizard(wizOpen, "New company", wizStep,
-               ["Name", "Address", "Bank", "Done"], 480) do:
-  label "&Street:"
-  edit name
+var aboutOpen = true
+
+aboutBox(aboutOpen, "Ledger", "2.0",
+         ["(c) 2026 Foxoman. Small business accounts."], glyph = pxSheet,
+         tagline = "Small business accounts",
+         whatsNew = ["Invoices in PDF", "Bank files read"],
+         credits = [RetroFontCredit])
 ```
 
-| Normal | Touch screen | Dark scheme |
-|---|---|---|
-| ![wizard Normal](controls/wizard-normal.png) | ![wizard Touch screen](controls/wizard-touch-screen.png) | ![wizard Dark scheme](controls/wizard-dark-scheme.png) |
-
-### aboutBox
+**API**
 
 ```nim
 proc aboutBox*(open: var bool; app: string; version = ""; lines: openArray[string] = [];
@@ -1873,23 +3532,526 @@ panels'): About -- `lines` (what it is, copyright, licence; each wraps)
 and what it runs on; What's New -- `whatsNew`, a line each; Credits --
 `credits`. Copy Info puts the facts on the clipboard; OK closes it.
 
-Example:
+### splashBox
 
-```nim
-aboutBox(aboutOpen, "Ledger", "2.0",
-         ["(c) 2026 Foxoman. Small business accounts."], glyph = pxSheet,
-         tagline = "Small business accounts",
-         whatsNew = ["Invoices in PDF", "Bank files read"],
-         credits = ["Fonts: Retro Sans (CC BY-SA 3.0)"])
-```
+The box a program shows while it starts, as the About box looks, with a progress bar of blocks.
 
 | Normal | Dark scheme |
 |---|---|
-| ![aboutbox Normal](controls/aboutbox-normal.png) | ![aboutbox Dark scheme](controls/aboutbox-dark-scheme.png) |
+| ![splashBox, normal](controls/splashbox-normal.png) | ![splashBox, dark scheme](controls/splashbox-dark-scheme.png) |
+
+```nim
+splashBox("Ledger", "2.0", "Small business accounts", glyph = pxSheet,
+          progress = 0.4, note = "Reading the accounts...")
+```
+
+**API**
+
+```nim
+proc splashBox*(app: string; version = ""; tagline = ""; lines: openArray[string] = [];
+                art: Bitmap = nil; icon: Bitmap = nil; iconPng = ""; glyph = ""; progress = -1.0;
+                note = "Starting..."; width = 460)
+```
+
+The box a program shows while it starts, as the About box looks: a
+picture (`art`, else the blue of a 1994 Setup screen) with the icon,
+the name large and the version over it, a rainbow under it; then
+`tagline`, `lines`, a 3.1 progress bar of blocks (`progress` 0 .. 1;
+none when less than 0) and `note`. Drawn over everything, in the
+middle of the window.
+
+### problemBox, reportProblem
+
+Report a Problem: the fault log (or your text) for the user to add what they were doing, then Copy or Send by Email. `problemBox` every frame also opens it by itself after a run that ended in a fault.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![problemBox, reportProblem, normal](controls/problembox-normal.png) | ![problemBox, reportProblem, touch screen](controls/problembox-touch-screen.png) | ![problemBox, reportProblem, dark scheme](controls/problembox-dark-scheme.png) |
+
+```nim
+if button("&Report a Problem..."):
+  reportProblem("The total was wrong after the bank file was read.")
+problemBox("Ledger", "2.0")
+```
+
+**API**
+
+```nim
+proc problemBox*(app: string; version = "")
+```
+
+Call it every frame: the "Report a Problem" box when it is open -- and,
+the first time, opened by itself when the last run left faults (the
+program stopped, or `guarded` caught one). Copy puts the report on the
+clipboard; Send by Email writes it to the developer.
+
+```nim
+proc reportProblem*(text = "")
+```
+
+Opens the "Report a Problem" box (Help > Report a Problem; draw it with
+`problemBox`): `text`, else what the fault log holds (`takeFaults`),
+for the user to add what they were doing, then copy or send.
+
+### fileDialog (3.1)
+
+The Windows 3.1 Open and Save As dialog: the file name with its list, the folders, the drives and the file types. True once, with `path` set.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![fileDialog (3.1), normal](controls/filedialog-normal.png) | ![fileDialog (3.1), touch screen](controls/filedialog-touch-screen.png) | ![fileDialog (3.1), dark scheme](controls/filedialog-dark-scheme.png) |
+
+```nim
+var openOld = true
+var oldPath = getHomeDir() / "Documents"
+
+if fileDialog(openOld, oldPath, fmOpen,
+              ["Text files (*.txt)", "All Files (*.*)"]):
+  discard
+```
+
+**API**
+
+```nim
+proc fileDialog*(open: var bool; path: var string; mode = fmOpen;
+                 filters: openArray[string] = ["All Files (*.*)"];
+                 title = ""): bool
+```
+
+The 3.1 Open / Save As dialog while `open`. Returns true once, with
+`path` set, when the user confirms a file.
 
 ## App parts
 
-### settingToggle, settingChoice, settingSlider, settingButtons, settingCombo, settingLink
+What an app is made of around its content: tool bars, the status bar,
+windows in the window, docked panels, the shortcuts the user picks, the
+settings page and the parts of a phone app.
+
+### toolbar, toolButton, toolSeparator
+
+A tool bar of small buttons; those that do not fit go into a "more" menu. `down` shows a button held in.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![toolbar, toolButton, toolSeparator, normal](controls/toolbar-normal.png) | ![toolbar, toolButton, toolSeparator, touch screen](controls/toolbar-touch-screen.png) | ![toolbar, toolButton, toolSeparator, dark scheme](controls/toolbar-dark-scheme.png) |
+
+More states:
+
+| Mouse over | Pressed |
+|---|---|
+| ![toolbar, toolButton, toolSeparator, mouse over](controls/toolbar-mouse-over.png) | ![toolbar, toolButton, toolSeparator, pressed](controls/toolbar-pressed.png) |
+
+```nim
+toolbar:
+  toolButton(pxNew, "New")
+  toolButton(pxOpen, "Open")
+  toolButton(pxSave, "Save")
+  toolSeparator()
+  toolButton(pxCut, "Cut")
+  toolButton(pxCopy, "Copy")
+  toolButton(pxPaste, "Paste", down = true)
+```
+
+**API**
+
+```nim
+template toolbar*(body: untyped)
+```
+
+A bar of tool buttons below the menu bar.
+
+```nim
+proc toolButton*(ic: Icon; tip = ""; down = false;
+                 enabled = true): bool {.discardable.}
+```
+
+A tool bar button with a 16x16 icon. `down` shows it pressed in.
+
+```nim
+proc toolButton*(caption: string; tip = ""; down = false; bold = false;
+                 enabled = true; size = 1.0): bool {.discardable.}
+```
+
+A tool bar button showing a short text, or an icon of the icon font
+(`toolButton(nfCopy, "Copy", size = 1.3)`).
+
+```nim
+proc toolSeparator*()
+```
+
+A gap between groups of tool buttons.
+
+### barButton, setToolbarLook
+
+Tool bar buttons with a picture and a label, shown as the bar's look says: icons only, or the text below or beside them (Explorer's "Text Labels"). An app can offer it as a setting.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![barButton, setToolbarLook, normal](controls/barbutton-normal.png) | ![barButton, setToolbarLook, touch screen](controls/barbutton-touch-screen.png) | ![barButton, setToolbarLook, dark scheme](controls/barbutton-dark-scheme.png) |
+
+```nim
+setToolbarLook(blTextBelow)
+toolbar:
+  if barButton(pxBack, "Back"):
+    discard
+  if barButton(pxForward, "Forward"):
+    discard
+  toolSeparator()
+  if barButton(pxCopy, "Copy", tip = "Copy (Ctrl+C)"):
+    discard
+  if barButton(pxDelete, "Delete"):
+    discard
+```
+
+**API**
+
+```nim
+proc barButton*(pic: ButtonPic; label: string; tip = ""; down = false; enabled = true;
+                look = blDefault): bool {.discardable.}
+```
+
+A tool bar button with a picture and a label, shown as the bar's look
+(`toolbarLook`, Explorer's "Text Labels") or as `look` says.
+
+```nim
+proc barButton*(glyph: string; label: string; tip = ""; down = false; enabled = true;
+                look = blDefault): bool {.discardable.}
+```
+
+`barButton` with a glyph of the icon font as its picture.
+
+```nim
+proc setToolbarLook*(look: ButtonLook)
+```
+
+Every tool bar's buttons from now on (blDefault: icon only).
+
+### customizeToolbar
+
+The Customize Toolbar dialog of Windows 95: the buttons the bar can have, the ones it has, their order, and how labels show. The app keeps the bar as a list of keys (`toolKeys`, `toolKeysText`).
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![customizeToolbar, normal](controls/customizetoolbar-normal.png) | ![customizeToolbar, touch screen](controls/customizetoolbar-touch-screen.png) | ![customizeToolbar, dark scheme](controls/customizetoolbar-dark-scheme.png) |
+
+```nim
+var customizing = true
+var barKeys = @["new", "open", "-", "print"]
+var barLook = blTextBelow
+let toolChoices = [ToolChoice(key: "new", label: "New", glyph: pxNew),
+                   ToolChoice(key: "open", label: "Open", glyph: pxOpen),
+                   ToolChoice(key: "save", label: "Save", glyph: pxSave),
+                   ToolChoice(key: "print", label: "Print", glyph: pxPrint),
+                   ToolChoice(key: "mail", label: "Mail", glyph: pxMail)]
+
+if customizeToolbar(customizing, barKeys, toolChoices,
+                    ["new", "open", "-", "print"], barLook):
+  discard
+```
+
+**API**
+
+```nim
+proc customizeToolbar*(open: var bool; keys: var seq[string];
+                       available: openArray[ToolChoice]; defaults: openArray[string];
+                       look: var ButtonLook; title = "Customize Toolbar"): bool
+```
+
+The Customize Toolbar dialog while `open`. True when it changed the bar
+(`keys`, in order) or the look of its labels (`look`).
+
+```nim
+proc toolKeys*(saved: string; defaults: openArray[string];
+               available: openArray[ToolChoice]): seq[string]
+```
+
+The bar's buttons from a setting (keys joined by commas): keys the app
+no longer has are left out; the defaults when there is no setting.
+
+```nim
+proc toolKeysText*(keys: openArray[string]): string
+```
+
+The bar's buttons as a setting.
+
+### mdiArea, mdiWindow, mdiWindowMenu
+
+Windows in the window, as in Program Manager: the 3.1 frame, moved by their title bars, sized by their edges, minimized to icons, maximized, Ctrl+F6 to the next. Keep each `MdiWindow` in a global. `mdiWindowMenu` fills a Window menu: Cascade, Tile and the windows.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![mdiArea, mdiWindow, mdiWindowMenu, normal](controls/mdi-normal.png) | ![mdiArea, mdiWindow, mdiWindowMenu, touch screen](controls/mdi-touch-screen.png) | ![mdiArea, mdiWindow, mdiWindowMenu, dark scheme](controls/mdi-dark-scheme.png) |
+
+```nim
+var mdi1 = MdiWindow(title: "Accounts", r: rect(8, 8, 200, 110), open: true)
+var mdi2 = MdiWindow(title: "Invoices", r: rect(120, 50, 200, 110), open: true)
+var mdi3 = MdiWindow(title: "Notes", open: true, minimized: true)
+
+mdiArea(-1):
+  mdiWindow(mdi1):
+    label "Cash   5,000"
+    label "Bank  10,000"
+  mdiWindow(mdi2):
+    label "Invoice 42"
+  mdiWindow(mdi3):
+    label "Notes"
+```
+
+**API**
+
+```nim
+template mdiArea*(height: int; body: untyped)
+```
+
+A workspace for `mdiWindow`s: `mdiArea(-1): mdiWindow(w1): ...`.
+
+```nim
+template mdiArea*(height: int; key: string; body: untyped)
+```
+
+An area with its own windows when there are several (`key` names it
+for `mdiCascade`, `mdiTile` and `mdiWindowMenu`).
+
+```nim
+template mdiWindow*(w: var MdiWindow; body: untyped)
+```
+
+A window of the `mdiArea` around it; `body` is its content (it
+scrolls when taller than the window).
+
+```nim
+proc mdiWindowMenu*(key = "")
+```
+
+The items of a 3.1 Window menu (inside `menu "&Window":`): Cascade,
+Tile, then the windows, the active one checked.
+
+```nim
+proc mdiCascade*(key = "")
+```
+
+Overlaps the windows of the area, each a title bar lower.
+
+```nim
+proc mdiTile*(key = "")
+```
+
+Lays the windows of the area side by side.
+
+```nim
+proc mdiActivate*(w: var MdiWindow; key = "")
+```
+
+Brings `w` to the front (restored when it was minimized).
+
+### dockPanels: docked panels
+
+Panels as today's Photoshop docks them, drawn as 1994 drew its palettes: columns of tabbed groups down the right of an `mdiArea`, a column folded to icons, panels dragged between groups or out into floating palettes. The `Dock` keeps where they are (`toJson`, `loadDock`).
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![dockPanels: docked panels, normal](controls/dock-normal.png) | ![dockPanels: docked panels, touch screen](controls/dock-touch-screen.png) | ![dockPanels: docked panels, dark scheme](controls/dock-dark-scheme.png) |
+
+```nim
+var docDock = block:
+  var dk = newDock()
+  discard dk.addColumn()
+  discard dk.addGroup(0, [dockPanel("props", "Properties", nfSliders),
+                          dockPanel("info", "Info", nfInfo)], share = 45)
+  discard dk.addGroup(0, [dockPanel("layers", "Layers", nfImageMultiple)],
+                      share = 55)
+  discard dk.addColumn(iconic = true)
+  discard dk.addGroup(1, [dockPanel("history", "History", nfHistory),
+                          dockPanel("swatches", "Swatches", nfPalette)])
+  dk
+var docWin = MdiWindow(title: "Untitled-1", r: rect(10, 10, 220, 150),
+                       open: true)
+var dockOpacity = 80
+var layerOn = [true, true, false]
+
+mdiArea(-1, "work"):
+  mdiWindow(docWin):
+    label "The document"
+  discard dockPanels(docDock, "work", proc (key: string) =
+    case key
+    of "props":
+      label "Opacity:"
+      slider(dockOpacity, 0, 100)
+    of "layers":
+      for i, n in ["Text", "Shapes", "Background"]:
+        checkbox(n, layerOn[i])
+    else:
+      label("The " & key & " panel"))
+```
+
+**API**
+
+```nim
+proc dockPanels*(d: Dock; area = ""; body: proc (key: string); menu: proc (key: string) = nil): DockEvent
+```
+
+Draws the dock down the right of the `mdiArea` named `area` (call it
+inside, after the documents' windows), its floating palettes, and
+what a drag of a panel shows. `body(key)` draws a panel (in a column
+laid out as a palette's: `place`, `row`, the widgets); `menu(key)` its
+menu's items (`menuItem`...), Close and Close Tab Group after them.
+`left` says where the documents' room ends.
+
+```nim
+proc newDock*(): Dock
+```
+
+An empty dock (add columns and groups, or `loadDock`).
+
+```nim
+proc addColumn*(d: Dock; width = 0; iconic = false): DockColumn {.discardable.}
+```
+
+A column at the left of the others.
+
+```nim
+proc addGroup*(d: Dock; col: int; panels: openArray[DockPanel]; share = 100; sel = 0;
+               folded = false): DockGroup {.discardable.}
+```
+
+A group of `panels` at the bottom of column `col`.
+
+```nim
+proc dockPanel*(key, title: string; icon = ""): DockPanel
+```
+
+A panel to put in a group.
+
+```nim
+proc panelHeader*(r: Rect; id: Id; dir: Dir; tip = ""; side = hsRight): bool
+```
+
+The strip at the top of a docked column or a toolbar, as today's
+Photoshop has it, in the title bar's color (navy in 3.1) with a double
+arrow pointing `dir` (white): true when the arrows are clicked (a
+column collapsed to icons or opened, a toolbar one column or two).
+
+### paletteTabs
+
+The tabs of a palette that holds several (Layers, Channels, Paths): the one shown joined to the palette, the others behind it, and the arrow of the palette's menu.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![paletteTabs, normal](controls/palettetabs-normal.png) | ![paletteTabs, touch screen](controls/palettetabs-touch-screen.png) | ![paletteTabs, dark scheme](controls/palettetabs-dark-scheme.png) |
+
+```nim
+var palTab = 0
+
+discard paletteTabs(["Layers", "Channels", "Paths"], palTab)
+```
+
+**API**
+
+```nim
+proc paletteTabs*(labels: openArray[string]; sel: var int; menu = true): tuple[changed, menu: bool]
+```
+
+The tabs of a palette that holds several (Brushes and Options,
+Layers, Channels and Paths...): the one shown joined to the palette,
+the others behind it; with `menu`, the little arrow at the right that
+opens the palette's menu (`menu` reported). (The docked panels' look:
+`paletteTabFace`.)
+
+### keymapEditor, keymapPressed
+
+Shortcuts the user picks: a `Keymap` holds the app's defaults and the user's changes; `keymapEditor` lets them change them; `keymapPressed` says which command's keys were pressed.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![keymapEditor, keymapPressed, normal](controls/keymap-normal.png) | ![keymapEditor, keymapPressed, touch screen](controls/keymap-touch-screen.png) | ![keymapEditor, keymapPressed, dark scheme](controls/keymap-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![keymapEditor, keymapPressed, keyboard focus](controls/keymap-keyboard-focus.png) |
+
+```nim
+var keys = Keymap(defaults: @[("Ctrl+N", "New"), ("Ctrl+O", "Open"),
+                              ("Ctrl+S", "Save"), ("Ctrl+P", "Print")])
+
+keymapEditor(keys, ["New", "Open", "Save", "Save As", "Print"], height = 120)
+case keymapPressed(keys)
+of "Save":
+  discard
+else:
+  discard
+```
+
+**API**
+
+```nim
+proc keymapEditor*(km: var Keymap; commands: openArray[string]; height = 260): bool {.discardable.}
+```
+
+Rows to change the shortcuts: the commands (with theirs), the one
+chosen's box -- press the keys -- and Use Default. True when one
+changed.
+
+```nim
+proc keymapPressed*(km: Keymap): string
+```
+
+The command whose shortcut was pressed this frame ("" none); the key
+is used.
+
+```nim
+proc keyFor*(km: Keymap; command: string): string
+```
+
+The shortcut of `command` ("" none).
+
+```nim
+proc setKey*(km: var Keymap; command, keys: string)
+```
+
+`command`'s shortcut made `keys` (taken off the command that had it).
+
+```nim
+proc storeKeymap*(s: var Settings; km: Keymap; prefix = "keys.")
+```
+
+The user's shortcuts into `s` (the defaults are not kept).
+
+```nim
+proc restoreKeymap*(s: Settings; km: var Keymap; prefix = "keys.")
+```
+
+The user's shortcuts back from `s` (as `storeKeymap` put them).
+
+### settingToggle, settingChoice, settingSlider, settingCombo, settingButtons, settingLink
+
+The rows of a settings page, as a phone's or the 3.1 Control Panel's: a title, a line under it and its control at the right.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![settingToggle, settingChoice, settingSlider, settingCombo, settingButtons, settingLink, normal](controls/settings-normal.png) | ![settingToggle, settingChoice, settingSlider, settingCombo, settingButtons, settingLink, touch screen](controls/settings-touch-screen.png) | ![settingToggle, settingChoice, settingSlider, settingCombo, settingButtons, settingLink, dark scheme](controls/settings-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![settingToggle, settingChoice, settingSlider, settingCombo, settingButtons, settingLink, keyboard focus](controls/settings-keyboard-focus.png) |
+
+```nim
+var setOn = true
+var setChoice = 1
+var setLevel = 60
+var setCombo = 0
+
+settingToggle("Notifications", setOn, "For new messages")
+discard settingChoice("Sync", ["Hourly", "Daily", "Never"], setChoice)
+discard settingSlider("Brightness", setLevel, 0, 100, suffix = "%")
+discard settingCombo("Color scheme", ["Classic", "Ocean", "Desert"], setCombo)
+discard settingButtons("Cache", ["Clear"], "12 MB")
+```
+
+**API**
 
 ```nim
 proc settingToggle*(title: string; v: var bool; detail = "";
@@ -1937,21 +4099,60 @@ proc settingLink*(title: string; detail = ""; glyph = nfChevronRight;
 A settings row that leads somewhere (another page, a dialog): true
 when clicked.
 
-Example:
+### appearanceSettings
+
+The look of every app in a few rows: the color scheme, the size of everything, the size of the text, controls for a mouse or fingers, the window's frame and the font. `app`'s `look` keeps the user's choice by itself.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![appearanceSettings, normal](controls/appearance-normal.png) | ![appearanceSettings, touch screen](controls/appearance-touch-screen.png) | ![appearanceSettings, dark scheme](controls/appearance-dark-scheme.png) |
 
 ```nim
-settingToggle("Notifications", setOn, "For new messages")
-discard settingChoice("Sync", ["Hourly", "Daily", "Never"], setChoice)
-discard settingSlider("Brightness", setLevel, 0, 100, suffix = "%")
-discard settingCombo("Color scheme", ["Classic", "Ocean", "Desert"], setCombo)
-discard settingButtons("Cache", ["Clear"], "12 MB")
+appearanceSettings()
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![settings Normal](controls/settings-normal.png) | ![settings Keyboard focus](controls/settings-keyboard-focus.png) | ![settings Touch screen](controls/settings-touch-screen.png) | ![settings Dark scheme](controls/settings-dark-scheme.png) |
+**API**
+
+```nim
+proc appearanceSettings*(): bool {.discardable.}
+```
+
+Settings rows for how every app looks: the color scheme, the size of
+everything, the size of the text, the size of controls (for a mouse
+or fingers), the window's frame (on desktops: the system's or Windows
+3.1's) and the font. True when something changed (store them with
+`storeAppearance`; `app`'s `look` keeps them by itself).
+
+```nim
+proc storeAppearance*(s: var Settings)
+```
+
+Puts the look the user chose (colors, sizes, font, the window's frame)
+into `s`.
+
+```nim
+proc restoreAppearance*(s: Settings)
+```
+
+Brings back the look `storeAppearance` stored.
 
 ### avatar, factList
+
+A person's initials in a colored circle (true when clicked), and facts as name and value lines.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![avatar, factList, normal](controls/avatar-normal.png) | ![avatar, factList, touch screen](controls/avatar-touch-screen.png) | ![avatar, factList, dark scheme](controls/avatar-dark-scheme.png) |
+
+```nim
+row:
+  avatar("Sultan Al-Said")
+  avatar("Maryam Ali")
+  col:
+    factList({"Orders": "10", "Best month": "May"})
+```
+
+**API**
 
 ```nim
 proc avatar*(name: string; size = 0; color = Color()): bool {.discardable.}
@@ -1973,21 +4174,23 @@ proc factList*(facts: openArray[(string, string)]; w = 0)
 Label / value lines as a widget: `factList({"Size": "4.5 KB",
 "Modified": "today"})`; long values wrap under themselves.
 
-Example:
+### bottomNav, fab
 
-```nim
-row:
-  avatar("Sultan Al-Said")
-  avatar("Maryam Ali")
-  col:
-    factList({"Orders": "10", "Best month": "May"})
-```
+The parts of a phone app: the navigation bar at the bottom and the round floating button.
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
-| ![avatar Normal](controls/avatar-normal.png) | ![avatar Touch screen](controls/avatar-touch-screen.png) | ![avatar Dark scheme](controls/avatar-dark-scheme.png) |
+| ![bottomNav, fab, normal](controls/bottomnav-normal.png) | ![bottomNav, fab, touch screen](controls/bottomnav-touch-screen.png) | ![bottomNav, fab, dark scheme](controls/bottomnav-dark-scheme.png) |
 
-### bottomNav, fab (phone app parts)
+```nim
+var nav = 0
+
+label "Content"
+discard bottomNav([(pxHome, "Home"), (pxSearch, "Search"), (pxUser, "Me")], nav)
+discard fab(nfPlus, "New")
+```
+
+**API**
 
 ```nim
 proc bottomNav*(items: openArray[(string, string)]; sel: var int): bool {.discardable.}
@@ -2005,67 +4208,229 @@ The round "floating action button" at the bottom right, over the
 content (the main action of a screen: new message, add item). Call it
 after the status or navigation bar and before the content.
 
-Example:
+### captionBar
+
+The window's 3.1 title bar where the app draws it: on phones and tablets, and on desktops with the 3.1 frame. `app` calls it every frame, so an app has nothing to do. See [The window's frame](#the-windows-frame).
+
+*Drawn with the window's frame: see the pictures in [The window's frame](#the-windows-frame).*
 
 ```nim
-label "Content"
-discard bottomNav([(pxHome, "Home"), (pxSearch, "Search"), (pxUser, "Me")], nav)
-discard fab(nfPlus, "New")
+captionBar()
 ```
 
-| Normal | Touch screen | Dark scheme |
-|---|---|---|
-| ![bottomnav Normal](controls/bottomnav-normal.png) | ![bottomnav Touch screen](controls/bottomnav-touch-screen.png) | ![bottomnav Dark scheme](controls/bottomnav-dark-scheme.png) |
-
-### mdiArea, mdiWindow, mdiWindowMenu
+**API**
 
 ```nim
-template mdiArea*(height: int; body: untyped)
+proc captionBar*()
 ```
 
-A workspace for `mdiWindow`s: `mdiArea(-1): mdiWindow(w1): ...`.
-
-```nim
-template mdiArea*(height: int; key: string; body: untyped)
-```
-
-An area with its own windows when there are several (`key` names it
-for `mdiCascade`, `mdiTile` and `mdiWindowMenu`).
-
-```nim
-template mdiWindow*(w: var MdiWindow; body: untyped)
-```
-
-A window of the `mdiArea` around it; `body` is its content (it
-scrolls when taller than the window).
-
-```nim
-proc mdiWindowMenu*(key = "")
-```
-
-The items of a 3.1 Window menu (inside `menu "&Window":`): Cascade,
-Tile, then the windows, the active one checked.
-
-Example:
-
-```nim
-mdiArea(-1):
-  mdiWindow(mdi1):
-    label "Cash   5,000"
-    label "Bank  10,000"
-  mdiWindow(mdi2):
-    label "Invoice 42"
-  mdiWindow(mdi3):
-    label "Notes"
-```
-
-| Normal | Touch screen | Dark scheme |
-|---|---|---|
-| ![mdi Normal](controls/mdi-normal.png) | ![mdi Touch screen](controls/mdi-touch-screen.png) | ![mdi Dark scheme](controls/mdi-dark-scheme.png) |
+The window's 3.1 title bar where the app draws it. Phones and tablets:
+the system does not draw one there -- navy from the top of the screen
+(under the status bar, whose icons turn white over it), the
+control-menu box (zoom, minimize, close; also Alt+Space), the title,
+and the minimize button. Desktops with the 3.1 frame on
+(`setClassicFrame`): the title bar of a Windows 3.1 window, its
+control-menu box, its minimize and maximize buttons, inside the sizing
+border. `app` calls it every frame; with the system's frame it draws
+nothing.
 
 ## Files
 
-### pathBar (as in Explorer: folders to click, arrows for their folders)
+What a file manager, an Open dialog or a photo app is made of
+(`retroui/filewidgets`). Folders are listed on another thread and pictures
+decoded there, so a folder of 50,000 files opens at once. The pictures here
+show a sample home folder.
+
+### fileList
+
+The items of a `FolderModel` as rows with columns (`fvDetails`), large icons (`fvIcons`, pictures as thumbnails) or tiles. Selecting, sorting, renaming (F2), type-ahead and drag and drop come with it.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![fileList, normal](controls/filelist-normal.png) | ![fileList, touch screen](controls/filelist-touch-screen.png) | ![fileList, dark scheme](controls/filelist-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![fileList, keyboard focus](controls/filelist-keyboard-focus.png) |
+
+```nim
+var folder = newFolderModel(getHomeDir() / "Documents")
+
+let ev = fileList(folder, fvDetails, height = 180)
+if ev.activated:
+  if ev.item.isDir:
+    folder.open(ev.item.path)
+  else:
+    discard openFile(ev.item.path)
+```
+
+**API**
+
+```nim
+proc fileList*(m: FolderModel; view = fvDetails; thumbnails = true; bigIcons = true;
+               tapActivates = false; checkboxes = false; height = -1;
+               iconSize = 0; dragDrop = true): FileListEvent
+```
+
+The items of `m` as rows with columns (`fvDetails`), large icons
+(`fvIcons`, `iconSize` design pixels; pictures as thumbnails decoded
+in the background) or tiles. Click, Ctrl+click, Shift+click, a
+selection rectangle, arrows, type-ahead and (on phones) check boxes
+select; double click, Enter or (with `tapActivates`) a tap activates;
+headers sort; F2 or a slow second click edits a name. With `dragDrop`,
+the selection can be dragged (onto folders here, in another list, in
+a `folderTree`, a `pathBar`...), and files dragged here are reported
+in `drop`. `height` in pixels (-1: the room left). `fvColumns`:
+`fileColumns`.
+
+```nim
+proc newFolderModel*(path = ""; showHidden = false): FolderModel
+```
+
+A model, listing `path` if given.
+
+```nim
+proc fileIcon*(f: FileItem; size = 16): Icon
+```
+
+`fileGlyph` as an icon `size` logical pixels square.
+
+### fileList: large icons
+
+The same list as icons; pictures show as thumbnails, decoded in the background.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![fileList: large icons, normal](controls/fileicons-normal.png) | ![fileList: large icons, touch screen](controls/fileicons-touch-screen.png) | ![fileList: large icons, dark scheme](controls/fileicons-dark-scheme.png) |
+
+```nim
+var pics = newFolderModel(getHomeDir() / "Pictures")
+
+discard fileList(pics, fvIcons, height = 180)
+```
+
+### folderTree
+
+The places of the device (home, documents, drives) and your favorites, each opening into its folders. Files can be dragged onto them.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![folderTree, normal](controls/foldertree-normal.png) | ![folderTree, touch screen](controls/foldertree-touch-screen.png) | ![folderTree, dark scheme](controls/foldertree-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![folderTree, keyboard focus](controls/foldertree-keyboard-focus.png) |
+
+```nim
+var treeFolder = getHomeDir() / "Documents"
+
+let ev = folderTree(treeFolder, [getHomeDir() / "Documents" / "Invoices"],
+                    rows = 10)
+if ev.picked:
+  discard
+```
+
+**API**
+
+```nim
+proc folderTree*(selected: var string; favorites: openArray[string] = [];
+                 showHidden = false; rows = -1;
+                 extra: openArray[tuple[label, glyph, id: string]] = [];
+                 padding = 0): FolderTreeEvent {.discardable.}
+```
+
+The places of the device (home, documents, storage, drives...) and
+`favorites`, each opening into its folders (read when opened). Files
+can be dragged onto its folders (a closed one opens when a drag rests
+on it). `picked` when the user picked a folder: `selected`. `extra`
+nodes come first (`("This device", nfDesktop, "::device")`); picking
+one sets `selected` to its id. `padding`: room inside its frame.
+
+### placesView
+
+"This device": the places and your favorites as tiles with how full their disks are. The folder clicked, else "".
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![placesView, normal](controls/placesview-normal.png) | ![placesView, touch screen](controls/placesview-touch-screen.png) | ![placesView, dark scheme](controls/placesview-dark-scheme.png) |
+
+```nim
+let f = placesView([getHomeDir() / "Documents" / "Invoices"])
+if f.len > 0:
+  discard
+```
+
+**API**
+
+```nim
+proc placesView*(favorites: openArray[string] = []; height = -1; key = ""): string
+```
+
+"This device": the places (home, documents, storage, drives) and the
+`favorites` as tiles with how full their disks are; the folder
+clicked, "" if none.
+
+### filePreview
+
+The details pane: the file the mouse rests on, else the one selected, else the folder -- its picture or the start of its text, its size and dates, Open, Share and Properties.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![filePreview, normal](controls/filepreview-normal.png) | ![filePreview, touch screen](controls/filepreview-touch-screen.png) | ![filePreview, dark scheme](controls/filepreview-dark-scheme.png) |
+
+```nim
+var preview = newFolderModel(getHomeDir() / "Pictures")
+preview.selectAfterLoad([getHomeDir() / "Pictures" / "Beach.png"])
+
+discard filePreview(preview)
+```
+
+**API**
+
+```nim
+proc filePreview*(items: openArray[FileItem]; folder = ""; folderStats =
+                  (files: 0, folders: 0, bytes: 0'i64); buttons = true;
+                  height = -1): PreviewEvent
+```
+
+The details pane: for one item its picture (decoded in the background)
+or the start of its text, its size (a folder's is measured as you
+look), dates and kind, and Open / Share / Properties; for several
+items their count and size; for none the `folder` and `folderStats`.
+Tall, the picture is above the details; wide (under a list on a
+phone), at their left.
+
+```nim
+proc filePreview*(m: FolderModel; buttons = true; height = -1;
+                  followHover = true): PreviewEvent
+```
+
+The details pane of `m`: the item the mouse rests on (`followHover`),
+else what is selected, else the folder.
+
+### pathBar
+
+The folder as a row of its folders, as in Explorer: click one to go there, the arrow after it for its folders; a click on the empty part turns it into a box to type a path.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![pathBar, normal](controls/pathbar-normal.png) | ![pathBar, touch screen](controls/pathbar-touch-screen.png) | ![pathBar, dark scheme](controls/pathbar-dark-scheme.png) |
+
+More states:
+
+| Mouse over |
+|---|
+| ![pathBar, mouse over](controls/pathbar-mouse-over.png) |
+
+```nim
+discard pathBar("/home/sultan/Documents/Reports/2026")
+```
+
+**API**
 
 ```nim
 proc pathBar*(path: string; key = ""; editNow = false; w = 0): PathBarEvent
@@ -2078,17 +4443,25 @@ to move them there (`ev.go` / `ev.drop`); a click on the empty part, or
 `editNow` (F4, Alt+D, Ctrl+L), turns it into a box to type a path in,
 with the folders that match suggested. `key` tells several apart.
 
-Example:
+### driveBar
+
+The drive buttons of File Manager: the places, and your favorites.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![driveBar, normal](controls/drivebar-normal.png) | ![driveBar, touch screen](controls/drivebar-touch-screen.png) | ![driveBar, dark scheme](controls/drivebar-dark-scheme.png) |
+
+More states:
+
+| Mouse over |
+|---|
+| ![driveBar, mouse over](controls/drivebar-mouse-over.png) |
 
 ```nim
-discard pathBar("/home/sultan/Documents/Reports/2026")
+discard driveBar(getHomeDir(), [getHomeDir() / "Documents"])
 ```
 
-| Normal | Mouse over | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![pathbar Normal](controls/pathbar-normal.png) | ![pathbar Mouse over](controls/pathbar-mouse-over.png) | ![pathbar Touch screen](controls/pathbar-touch-screen.png) | ![pathbar Dark scheme](controls/pathbar-dark-scheme.png) |
-
-### driveBar (the drive buttons of File Manager)
+**API**
 
 ```nim
 proc driveBar*(current: string; favorites: openArray[string] = [];
@@ -2102,19 +4475,260 @@ the `favorites`, the `extra` ones such as the trash), the one holding
 `current` framed. A click goes there; files dropped on one go there.
 It scrolls (the wheel, a finger) when it does not fit.
 
-Example:
+### filePicker
+
+A modern Open and Save dialog (the whole screen on a phone): places, a path bar, the folder, a preview of the file, and for saving a name. `patterns` limits the files shown; `fmFolder` picks a folder.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![filePicker, normal](controls/filepicker-normal.png) | ![filePicker, touch screen](controls/filepicker-touch-screen.png) | ![filePicker, dark scheme](controls/filepicker-dark-scheme.png) |
 
 ```nim
-discard driveBar(getHomeDir(), ["/home/sultan/Projects"])
+var pickOpen = true
+var picked = getHomeDir() / "Pictures"
+
+if filePicker(pickOpen, picked, fmOpen, ["*.png", "*.jpg"]):
+  discard
 ```
 
-| Normal | Mouse over | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![drivebar Normal](controls/drivebar-normal.png) | ![drivebar Mouse over](controls/drivebar-mouse-over.png) | ![drivebar Touch screen](controls/drivebar-touch-screen.png) | ![drivebar Dark scheme](controls/drivebar-dark-scheme.png) |
+**API**
+
+```nim
+proc filePicker*(open: var bool; path: var string; mode = fmOpen;
+                 patterns: openArray[string] = []; title = ""; preview = true): bool
+```
+
+A modern Open / Save dialog while `open` (the whole screen on a
+phone): places, a path bar, the folder as a list (listed in the
+background, folders first, natural order), and for saving a name. True
+once, with `path` set, when the user picks a file. `patterns` limits
+the files shown (`["*.png", "*.jpg"]`). `fmFolder` picks a folder
+instead: only folders are shown, and Choose takes the one selected (or
+the one open). With `preview` (opening) the file picked -- or the one
+the mouse rests on -- is shown beside the list (under it on a phone):
+its picture or the start of its text, its size and dates.
+
+### trashList
+
+The system's trash: what was deleted, from where and when, with Restore, Delete forever and Empty the trash.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![trashList, normal](controls/trashlist-normal.png) | ![trashList, touch screen](controls/trashlist-touch-screen.png) | ![trashList, dark scheme](controls/trashlist-dark-scheme.png) |
+
+```nim
+var trashBin = block:
+  var t = newTrashList()
+  t.reload()
+  t
+
+let te = trashList(trashBin, height = 180)
+if te.changed:
+  discard
+```
+
+**API**
+
+```nim
+proc trashList*(t: TrashList; height = -1): TrashEvent
+```
+
+The trash: its items (name, where they were, when deleted, size) with
+Restore, Delete forever and Empty the trash. Files dropped on it go to
+the trash (reported in `changed`).
+
+```nim
+proc newTrashList*(): TrashList
+```
+
+An empty trash list (fill it with `reload`).
+
+### propertiesDialog
+
+The properties of files and folders: where they are, their size (folders are measured while it is open), dates, permissions.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![propertiesDialog, normal](controls/properties-normal.png) | ![propertiesDialog, touch screen](controls/properties-touch-screen.png) | ![propertiesDialog, dark scheme](controls/properties-dark-scheme.png) |
+
+```nim
+var propsOpen = true
+let budget = listFolder(getHomeDir() / "Documents").filterIt(
+    it.name == "Budget 2026.csv")
+
+propertiesDialog(propsOpen, budget)
+```
+
+**API**
+
+```nim
+proc propertiesDialog*(open: var bool; items: openArray[FileItem]): bool {.discardable.}
+```
+
+The properties of `items` while `open`: location, size (folders are
+measured while it is open), what they contain, dates, permissions,
+where a link goes. True the frame it closes.
+
+### runJobDialog
+
+Runs a copy, move, delete or zip job a slice a frame with a progress box, and asks Replace, Keep both or Skip when a name is taken (as in the pictures).
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![runJobDialog, normal](controls/runjob-normal.png) | ![runJobDialog, touch screen](controls/runjob-touch-screen.png) | ![runJobDialog, dark scheme](controls/runjob-dark-scheme.png) |
+
+```nim
+var copyJob = newJob(jkCopy, [getHomeDir() / "Documents" / "Letter.txt"],
+                     getHomeDir() / "Documents" / "Projects")
+
+if copyJob != nil and runJobDialog(copyJob, "Copying"):
+  copyJob = nil
+```
+
+**API**
+
+```nim
+proc runJobDialog*(job: FileJob; title: string): bool {.discardable.}
+```
+
+Runs `job` a slice a frame with a progress box (Cancel stops it) and,
+when a name is taken, asks "Replace / Keep both / Skip" (for all the
+others too if wanted). True once the job is over (done or cancelled).
+
+```nim
+proc newJob*(kind: JobKind; sources: openArray[string]; dest = "";
+             onConflict = cfAsk): FileJob
+```
+
+A job; call `run` every frame until its `state` is not `jsRunning`
+(`jsAsking`: answer with `resolve`). Copy and move put the `sources`
+into the folder `dest`; zip writes the archive `dest`; unzip extracts
+the archive `sources[0]` into the folder `dest`.
+
+### textFileView, hexFileView
+
+A text file of any size, its lines counted a few milliseconds a frame while the first are shown; and any file as hex, read as it is shown.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![textFileView, hexFileView, normal](controls/textfileview-normal.png) | ![textFileView, hexFileView, touch screen](controls/textfileview-touch-screen.png) | ![textFileView, hexFileView, dark scheme](controls/textfileview-dark-scheme.png) |
+
+```nim
+var letter = openTextFile(getHomeDir() / "Documents" / "Letter.txt")
+var letterHex = openHexFile(getHomeDir() / "Documents" / "Letter.txt")
+var lineSel = 0
+var hexSel = 0
+
+textFileView(letter, lineSel, height = 110)
+hexFileView(letterHex, hexSel, height = 110)
+```
+
+**API**
+
+```nim
+proc textFileView*(t: TextFile; sel: var int; numbers = true; height = -1;
+                   w = 0): LineViewEvent {.discardable.}
+```
+
+The lines of a `TextFile` (any size): its lines are counted a few
+milliseconds a frame while the first ones are shown already.
+
+```nim
+proc hexFileView*(h: HexFile; sel: var int; height = -1; w = 0): LineViewEvent {.discardable.}
+```
+
+Any file as hex dump lines (read as they are shown).
+
+```nim
+proc openTextFile*(path: string): TextFile
+```
+
+Opens `path`; its lines are found by `index` (raises IOError).
+
+```nim
+proc openHexFile*(path: string): HexFile
+```
+
+Opens `path` to show as hex, 16 bytes a line (raises IOError).
+
+### pictureBox
+
+A picture file as a control: busy dots while it is decoded, an icon if it cannot be.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![pictureBox, normal](controls/picturebox-normal.png) | ![pictureBox, touch screen](controls/picturebox-touch-screen.png) | ![pictureBox, dark scheme](controls/picturebox-dark-scheme.png) |
+
+```nim
+row:
+  pictureBox(getHomeDir() / "Pictures" / "Beach.png", w = 140, h = 100)
+  pictureBox(getHomeDir() / "Pictures" / "Sunset.png", w = 140, h = 100)
+```
+
+**API**
+
+```nim
+proc pictureBox*(path: string; w = 0; h = 0; stamp = 0'i64; frame = true)
+```
+
+A picture as a widget, `w` x `h` (0: the room there is): busy dots
+while it is decoded, an icon if it cannot be.
+
+### storageDialog
+
+On Android, the dialog that asks the user to let the app reach the shared storage (`askStorage`). Draw it every frame with the other dialogs; elsewhere it draws nothing.
+
+*It shows only on Android.*
+
+```nim
+storageDialog()
+```
+
+**API**
+
+```nim
+proc storageDialog*()
+```
+
+The dialog of `askStorage` (draw it every frame, with the others).
+
+```nim
+proc askStorage*(app, why: string; then: proc () = nil): bool
+```
+
+True when the user's files can be used now (always, but on Android
+without "All files access"). Else opens `storageDialog`, which asks
+for it and explains `why`; `then` runs when the user goes on without
+it (to work in the app's own folder).
 
 ## Charts
 
+`chart` draws 21 kinds of business chart from a few lines, or straight from
+a CSV table. Every chart has round axis numbers, a legend (click an entry to
+hide its series), a tooltip (the mouse, a tap or the arrows), and numbers as
+money, shares or 1.2K (`NumFormat`). `exportPng` saves one as a picture.
+
 ### chart
+
+A chart of series over labels. `ev.clicked` and `ev.index` tell which bar, point or slice was clicked (or picked with Enter).
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![chart, normal](controls/chart-normal.png) | ![chart, touch screen](controls/chart-touch-screen.png) | ![chart, dark scheme](controls/chart-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus | Mouse over |
+|---|---|
+| ![chart, keyboard focus](controls/chart-keyboard-focus.png) | ![chart, mouse over](controls/chart-mouse-over.png) |
+
+```nim
+chart("Sales by month", chBar, chMonths, [
+    series("2025", [120.0, 150, 90, 180, 210, 250]),
+    series("2026", [140.0, 170, 130, 190, 240, 280])], height = 220)
+```
+
+**API**
 
 ```nim
 proc chart*(title: string; kind: ChartKind; labels: openArray[string];
@@ -2172,21 +4786,13 @@ proc ohlcSeries*(name: string; opens, highs, lows, closes: openArray[float];
 
 Prices for candlesticks.
 
-Example:
+### A combo chart
 
-```nim
-chart("Sales by month", chBar, chMonths, [
-    series("2025", [120.0, 150, 90, 180, 210, 250]),
-    series("2026", [140.0, 170, 130, 190, 240, 280])], height = 220)
-```
+Bars, and a line on a second axis with its own number format. `ChartOpts` sets the titles, axis names, legend, data labels, ranges, bands and colors.
 
-| Normal | Keyboard focus | Mouse over | Touch screen | Dark scheme |
-|---|---|---|---|---|
-| ![chart Normal](controls/chart-normal.png) | ![chart Keyboard focus](controls/chart-keyboard-focus.png) | ![chart Mouse over](controls/chart-mouse-over.png) | ![chart Touch screen](controls/chart-touch-screen.png) | ![chart Dark scheme](controls/chart-dark-scheme.png) |
-
-### a combo chart: bars, and a line on a second axis
-
-Example:
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![A combo chart, normal](controls/chartcombo-normal.png) | ![A combo chart, touch screen](controls/chartcombo-touch-screen.png) | ![A combo chart, dark scheme](controls/chartcombo-dark-scheme.png) |
 
 ```nim
 chart(chCombo, chMonths, [series("Revenue", [120.0, 150, 90, 180, 210, 250]), lineSeries(
@@ -2195,11 +4801,20 @@ chart(chCombo, chMonths, [series("Revenue", [120.0, 150, 90, 180, 210, 250]), li
     format2: NumFormat(percent: true), dataLabels: false), height = 220)
 ```
 
-| Normal | Dark scheme |
-|---|---|
-| ![chartcombo Normal](controls/chartcombo-normal.png) | ![chartcombo Dark scheme](controls/chartcombo-dark-scheme.png) |
-
 ### gauge
+
+One value on a dial, with a target and bands.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![gauge, normal](controls/gauge-normal.png) | ![gauge, touch screen](controls/gauge-touch-screen.png) | ![gauge, dark scheme](controls/gauge-dark-scheme.png) |
+
+```nim
+gauge("Sales vs target", 78, hi = 100, target = 90,
+      format = NumFormat(suffix: "%"), height = 180)
+```
+
+**API**
 
 ```nim
 proc gauge*(title: string; value: float; lo = 0.0; hi = NaN; target = NaN;
@@ -2208,18 +4823,61 @@ proc gauge*(title: string; value: float; lo = 0.0; hi = NaN; target = NaN;
 
 A dial showing `value` (with a `target` mark) from `lo` to `hi`.
 
-Example:
+### barChart, lineChart, pieChart
+
+The quick ones: a list of numbers as bars, lines or slices, in one call.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![barChart, lineChart, pieChart, normal](controls/simplecharts-normal.png) | ![barChart, lineChart, pieChart, touch screen](controls/simplecharts-touch-screen.png) | ![barChart, lineChart, pieChart, dark scheme](controls/simplecharts-dark-scheme.png) |
 
 ```nim
-gauge("Sales vs target", 78, hi = 100, target = 90,
-      format = NumFormat(suffix: "%"), height = 180)
+row([-1, -1, -1]):
+  barChart([12.0, 18, 9, 22], ["Q1", "Q2", "Q3", "Q4"], title = "Orders")
+  lineChart([@[3.0, 5, 4, 7, 6], @[2.0, 3, 5, 4, 6]], ["M", "T", "W", "T", "F"],
+            ["Sohar", "Muscat"], title = "Guests")
+  pieChart([45.0, 30, 25], ["Rooms", "Food", "Spa"], title = "Revenue")
 ```
 
-| Normal | Dark scheme |
-|---|---|
-| ![gauge Normal](controls/gauge-normal.png) | ![gauge Dark scheme](controls/gauge-dark-scheme.png) |
+**API**
 
-### the 21 kinds of chart, from one CSV table
+```nim
+proc barChart*(values: openArray[float]; labels: openArray[string] = [];
+               title = ""; w = 0; h = 170; colors: openArray[Color] = [])
+```
+
+Vertical bars, one per value, with a labeled axis (see `chart` for more).
+
+```nim
+proc lineChart*(series: openArray[seq[float]]; labels: openArray[string] = [];
+                names: openArray[string] = []; title = ""; w = 0; h = 170)
+```
+
+One line per series over the same x points (see `chart` for more).
+
+```nim
+proc pieChart*(values: openArray[float]; labels: openArray[string] = [];
+               title = ""; w = 0; h = 170)
+```
+
+Slices of a circle, with a legend of shares (see `chart` for more).
+
+### The 21 kinds of chart
+
+Every kind from one CSV table: `chart(title, kind, table, labelColumn, valueColumns)`. `readCsv` reads a file (comma, semicolon or tab; quotes; a BOM); `writeCsv` saves one.
+
+| Normal |
+|---|
+| ![The 21 kinds of chart, normal](controls/chartkinds-normal.png) |
+
+```nim
+adaptive(230):
+  for k in ChartKind:
+    card($k):
+      chart("", k, salesTable, "Month", kindCols(k), height = 150)
+```
+
+**API**
 
 ```nim
 proc parseCsv*(text: string; sep = '\0'; header = true): DataTable
@@ -2239,6 +4897,35 @@ The CSV file `path` as a table (see `parseCsv`); `error` tells why
 when it cannot be read (it never raises).
 
 ```nim
+proc writeCsv*(path: string; t: DataTable; sep = ','; header = true): bool
+```
+
+Saves the table to the CSV file `path` (see `toCsv`); false when it
+cannot be written (it never raises).
+
+```nim
+proc toCsv*(t: DataTable; sep = ','; header = true): string
+```
+
+The table as CSV text: the headers first (`header` false: without
+them), then each row; CRLF line ends, which every spreadsheet reads.
+`parseCsv` reads it back to the same table.
+
+```nim
+proc csvLine*(cells: openArray[string]; sep = ','): string
+```
+
+One CSV line (no line break at its end) of `cells`, each quoted as
+`csvField` says.
+
+```nim
+proc csvField*(s: string; sep = ','): string
+```
+
+`s` as one CSV field: in quotes (its `"` doubled) when it has `sep`,
+a quote, a line break or spaces at either end; as it is otherwise.
+
+```nim
 proc tableSeries*(t: DataTable; kind: ChartKind; cols: openArray[int]): seq[Series]
 ```
 
@@ -2255,22 +4942,36 @@ Saves the part `r` of the window -- a chart: `ui.lastRect` right after
 it -- as the PNG file `path`, as it is drawn on the next frame (without
 tooltips); `exportResult` tells when it is written.
 
-Example:
-
-```nim
-adaptive(230):
-  for k in ChartKind:
-    card($k):
-      chart("", k, salesTable, "Month", kindCols(k), height = 150)
-```
-
-| Normal |
-|---|
-| ![chartkinds Normal](controls/chartkinds-normal.png) |
-
 ## Planning and dashboards
 
+What a project, sales or service app shows its work with. They take the
+mouse, the keyboard and fingers, and draw only what is in view, so
+thousands of tasks or cards stay quick.
+
 ### kpiTile, statCard, kpiRow
+
+The numbers of a dashboard: a value with its change (green or red), a target and a sparkline; `kpiRow` wraps them to the width.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![kpiTile, statCard, kpiRow, normal](controls/kpi-normal.png) | ![kpiTile, statCard, kpiRow, touch screen](controls/kpi-touch-screen.png) | ![kpiTile, statCard, kpiRow, dark scheme](controls/kpi-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![kpiTile, statCard, kpiRow, keyboard focus](controls/kpi-keyboard-focus.png) |
+
+```nim
+kpiRow:
+  kpiTile("Revenue", "OMR 84,120", 0.125, "vs last month",
+          trend = [3.0, 4, 3.5, 5, 6, 5.5, 7], target = 0.68)
+  kpiTile("Complaints", "12", -0.2, "vs last month", lowerIsBetter = true,
+          color = color(219, 68, 55))
+  statCard(pxUser, "Guests", "214", "38 arriving today", color(15, 157, 88))
+```
+
+**API**
 
 ```nim
 proc kpiTile*(label, value: string; delta = NaN; deltaNote = "";
@@ -2307,22 +5008,35 @@ template kpiRow*(body: untyped)
 
 Tiles side by side, as many as fit, wrapping onto more lines on phones.
 
-Example:
+### kanbanBoard
+
+Lanes of cards: drag a card to another lane (a finger: hold, then move), or Ctrl and the arrows; Enter opens it. A lane can have a work limit.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![kanbanBoard, normal](controls/kanban-normal.png) | ![kanbanBoard, touch screen](controls/kanban-touch-screen.png) | ![kanbanBoard, dark scheme](controls/kanban-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![kanbanBoard, keyboard focus](controls/kanban-keyboard-focus.png) |
 
 ```nim
-kpiRow:
-  kpiTile("Revenue", "OMR 84,120", 0.125, "vs last month",
-          trend = [3.0, 4, 3.5, 5, 6, 5.5, 7], target = 0.68)
-  kpiTile("Complaints", "12", -0.2, "vs last month", lowerIsBetter = true,
-          color = color(219, 68, 55))
-  statCard(pxUser, "Guests", "214", "38 arriving today", color(15, 157, 88))
+var kanbanLanes = @[KanbanLane(title: "To do", cards: @[KanbanCard(
+    title: "Price list", detail: "For the new menu", tag: color(219, 68, 55),
+    who: "Sultan Al-Said", due: date(2026, 10, 30)),
+    KanbanCard(title: "Staff rota", who: "Amal Z")]), KanbanLane(title: "Doing",
+    limit: 2, cards: @[KanbanCard(title: "Pool repair",
+                                  detail: "Pump and filter",
+                                  tag: color(66, 133, 244))]), KanbanLane(
+    title: "Done", cards: @[KanbanCard(title: "Fire drill")])]
+var kanbanSel: KanbanPos = (0, 0)
+
+kanbanBoard(kanbanLanes, kanbanSel)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![kpi Normal](controls/kpi-normal.png) | ![kpi Keyboard focus](controls/kpi-keyboard-focus.png) | ![kpi Touch screen](controls/kpi-touch-screen.png) | ![kpi Dark scheme](controls/kpi-dark-scheme.png) |
-
-### kanbanBoard
+**API**
 
 ```nim
 proc kanbanBoard*(lanes: var seq[KanbanLane]; sel: var KanbanPos; height = -1;
@@ -2338,17 +5052,36 @@ Lanes over their `limit` show their count in red. Lanes scroll on their
 own, the board sideways when they do not fit (a phone shows about one
 and a half). `height` in pixels (-1: the room left).
 
-Example:
+### ganttView
+
+Tasks on a day, week or month scale, with weekends and today marked, parts that fold and links between tasks. Drag a bar to move it, its ends to change its dates.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![ganttView, normal](controls/gantt-normal.png) | ![ganttView, touch screen](controls/gantt-touch-screen.png) | ![ganttView, dark scheme](controls/gantt-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![ganttView, keyboard focus](controls/gantt-keyboard-focus.png) |
 
 ```nim
-kanbanBoard(kanbanLanes, kanbanSel)
+var ganttTasks = @[GanttTask(name: "Opening", start: date(2026, 10, 20),
+                             finish: date(2026, 11, 12)), GanttTask(
+    name: "Kitchen", start: date(2026, 10, 20), finish: date(2026, 10, 28),
+    progress: 0.7, level: 1, color: color(219, 68, 55)), GanttTask(
+    name: "Rooms", start: date(2026, 10, 25), finish: date(2026, 11, 4),
+    progress: 0.3, level: 1, deps: @[1]), GanttTask(name: "Soft opening",
+    start: date(2026, 11, 10), finish: date(2026, 11, 10), level: 1,
+    milestone: true, deps: @[2])]
+var taskSel = 1
+var ganttScale = gsDay
+
+ganttView(ganttTasks, taskSel, ganttScale)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![kanban Normal](controls/kanban-normal.png) | ![kanban Keyboard focus](controls/kanban-keyboard-focus.png) | ![kanban Touch screen](controls/kanban-touch-screen.png) | ![kanban Dark scheme](controls/kanban-dark-scheme.png) |
-
-### ganttView
+**API**
 
 ```nim
 proc ganttView*(tasks: var seq[GanttTask]; sel: var int; scale: var GanttScale;
@@ -2358,7 +5091,7 @@ proc ganttView*(tasks: var seq[GanttTask]; sel: var int; scale: var GanttScale;
 
 Tasks on a time line: their names at the left (deeper ones indented
 under the task they are part of, which shows as a summary bar and folds
-with its [-] box), their bars at the right with how much is done, the
+with its ``[-]`` box), their bars at the right with how much is done, the
 `deps` as arrows, milestones as diamonds, today as a red line, the
 `weekend` days (0 Sunday .. 6 Saturday) shaded. Drag a bar to move it,
 its ends to change its dates (whole days; a finger: hold, then move);
@@ -2369,17 +5102,33 @@ Down, Home, End choose; Space folds; Enter or a double click opens.
 `listW`: the width of the names (design pixels; 0: chosen; drag the
 line to change it). `height` in pixels (-1: the room left).
 
-Example:
+### agendaView
+
+Appointments by month, week or day; drag one to move it, its edge to make it longer.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![agendaView, normal](controls/agenda-normal.png) | ![agendaView, touch screen](controls/agenda-touch-screen.png) | ![agendaView, dark scheme](controls/agenda-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![agendaView, keyboard focus](controls/agenda-keyboard-focus.png) |
 
 ```nim
-ganttView(ganttTasks, taskSel, ganttScale)
+var agendaItems = @[Appointment(title: "Audit", day: date(2026, 10, 27),
+                                start: 9 * 60, finish: 11 * 60), Appointment(
+    title: "Holiday", day: date(2026, 10, 29), allDay: true,
+    color: color(15, 157, 88)), Appointment(title: "Review",
+    day: date(2026, 10, 28), start: 14 * 60, finish: 15 * 60 + 30)]
+var agendaDay = date(2026, 10, 27)
+var agendaMode = amMonth
+
+agendaView(agendaItems, agendaDay, agendaMode)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![gantt Normal](controls/gantt-normal.png) | ![gantt Keyboard focus](controls/gantt-keyboard-focus.png) | ![gantt Touch screen](controls/gantt-touch-screen.png) | ![gantt Dark scheme](controls/gantt-dark-scheme.png) |
-
-### agendaView
+**API**
 
 ```nim
 proc agendaView*(items: var seq[Appointment]; day: var Date; mode: var AgendaMode;
@@ -2396,17 +5145,34 @@ another day or time (a finger: hold, then move), or its lower edge to
 change when it ends (15 minutes at a time). `height` in pixels (-1: the
 room left).
 
-Example:
+### orgChart
+
+Who reports to whom, as boxes and lines; branches fold.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![orgChart, normal](controls/orgchart-normal.png) | ![orgChart, touch screen](controls/orgchart-touch-screen.png) | ![orgChart, dark scheme](controls/orgchart-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![orgChart, keyboard focus](controls/orgchart-keyboard-focus.png) |
 
 ```nim
-agendaView(agendaItems, agendaDay, agendaMode)
+var orgStaff = @[OrgNode(name: "Amal Al-Harthy", title: "General manager",
+                         parent: -1), OrgNode(name: "Badr Al-Kindi",
+    title: "Rooms", parent: 0, color: color(66, 133, 244)), OrgNode(
+    name: "Dana Al-Said", title: "Food & beverage", parent: 0,
+    color: color(219, 68, 55)),
+                 OrgNode(name: "Eid Saleh", title: "Front office", parent: 1),
+                 OrgNode(name: "Huda Nasser", title: "Restaurant", parent: 2)]
+var orgSel = 0
+
+orgChart(orgStaff, orgSel)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![agenda Normal](controls/agenda-normal.png) | ![agenda Keyboard focus](controls/agenda-keyboard-focus.png) | ![agenda Touch screen](controls/agenda-touch-screen.png) | ![agenda Dark scheme](controls/agenda-dark-scheme.png) |
-
-### orgChart
+**API**
 
 ```nim
 proc orgChart*(nodes: var seq[OrgNode]; sel: var int; height = -1;
@@ -2415,25 +5181,39 @@ proc orgChart*(nodes: var seq[OrgNode]; sel: var int; height = -1;
 
 Who reports to whom: each node a box (name, title) under the one in
 its `parent`, joined by lines; a box with ones under it folds with the
-[-] box at its foot. Click to choose, double-click (or Enter) to open;
+``[-]`` box at its foot. Click to choose, double-click (or Enter) to open;
 Up goes to the one above, Down to the first under, Left and Right to
 the ones beside; Space folds. Bigger than its room, it scrolls (the
 bars, the wheel -- Shift for sideways --, a finger). `height` in pixels
 (-1: the room left).
 
-Example:
-
-```nim
-orgChart(orgStaff, orgSel)
-```
-
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![orgchart Normal](controls/orgchart-normal.png) | ![orgchart Keyboard focus](controls/orgchart-keyboard-focus.png) | ![orgchart Touch screen](controls/orgchart-touch-screen.png) | ![orgchart Dark scheme](controls/orgchart-dark-scheme.png) |
-
 ## Maps and 3D
 
 ### mapView
+
+A world map with values by country (colored), markers and routes; it pans, zooms (the wheel, a pinch) and says which country is under the mouse. The map is built in: no tiles, no network.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![mapView, normal](controls/mapview-normal.png) | ![mapView, touch screen](controls/mapview-touch-screen.png) | ![mapView, dark scheme](controls/mapview-dark-scheme.png) |
+
+More states:
+
+| Mouse over |
+|---|
+| ![mapView, mouse over](controls/mapview-mouse-over.png) |
+
+```nim
+var worldMap = MapState()
+
+mapView(worldMap, height = 300, values = [("OM", 120.0), ("AE", 340.0),
+    ("SA", 510.0), ("IN", 800.0), ("GB", 380.0), ("US", 950.0)],
+        markers = [cityMarker("Muscat", size = 6), cityMarker("London")], routes = [
+    MapRoute(fromLat: 23.59, fromLon: 58.41, toLat: 51.51, toLon: -0.13)],
+        legendTitle = "Sales")
+```
+
+**API**
 
 ```nim
 proc mapView*(m: var MapState; height = -1;
@@ -2482,12 +5262,6 @@ proc resetView*(m: var MapState)
 The whole world.
 
 ```nim
-proc resetView*(cam: var Camera3)
-```
-
-Back to where `camera3` or `fitView` put it.
-
-```nim
 proc countryName*(code: string): string
 ```
 
@@ -2506,21 +5280,25 @@ proc latLonOf*(code: string): tuple[lat, lon: float]
 A point well inside the country (for its label or a marker); (0, 0)
 when there is no such country.
 
-Example:
+### view3d
+
+A 3D view of meshes and models (OBJ, STL): boxes, spheres, cylinders, cones and planes, a grid and axes. Drag to turn it, the wheel to zoom.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![view3d, normal](controls/view3d-normal.png) | ![view3d, touch screen](controls/view3d-touch-screen.png) | ![view3d, dark scheme](controls/view3d-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![view3d, keyboard focus](controls/view3d-keyboard-focus.png) |
 
 ```nim
-mapView(worldMap, height = 300, values = [("OM", 120.0), ("AE", 340.0),
-    ("SA", 510.0), ("IN", 800.0), ("GB", 380.0), ("US", 950.0)],
-        markers = [cityMarker("Muscat", size = 6), cityMarker("London")], routes = [
-    MapRoute(fromLat: 23.59, fromLon: 58.41, toLat: 51.51, toLon: -0.13)],
-        legendTitle = "Sales")
+view3d(modelScene, modelCam, height = 240)
 ```
 
-| Normal | Mouse over | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![mapview Normal](controls/mapview-normal.png) | ![mapview Mouse over](controls/mapview-mouse-over.png) | ![mapview Touch screen](controls/mapview-touch-screen.png) | ![mapview Dark scheme](controls/mapview-dark-scheme.png) |
-
-### view3d
+**API**
 
 ```nim
 proc view3d*(scene: var Scene3; cam: var Camera3; height = -1; w = 0; key = "";
@@ -2533,12 +5311,6 @@ then moved) to move it, the wheel to zoom; with the focus: arrows turn,
 + / - zoom, Home goes back to the first view. `controls`: zoom and home
 buttons in the corner (handy for fingers). A click reports the mesh
 under it (`picked`), the mouse resting over one `hovered`.
-
-```nim
-proc box*(r: Rect; c: Color; t = 1)
-```
-
-A rectangle outline `t` pixels thick, inside `r`.
 
 ```nim
 proc box*(w, h, d: float; color = color(0, 0, 160); name = "box"): Mesh3
@@ -2615,17 +5387,19 @@ proc render3d*(scene: Scene3; cam: Camera3; w, h: int; background = Color()): Bi
 The scene seen by `cam`, `w` x `h` pixels (to save with `encodePng`),
 on `background` (else the scene's). Labels are not in it.
 
-Example:
+### bars3d
+
+A 3D bar chart, shown in a `view3d`.
+
+| Normal | Dark scheme |
+|---|---|
+| ![bars3d, normal](controls/bars3d-normal.png) | ![bars3d, dark scheme](controls/bars3d-dark-scheme.png) |
 
 ```nim
-view3d(modelScene, modelCam, height = 240)
+view3d(barsScene, barsCam, height = 240)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![view3d Normal](controls/view3d-normal.png) | ![view3d Keyboard focus](controls/view3d-keyboard-focus.png) | ![view3d Touch screen](controls/view3d-touch-screen.png) | ![view3d Dark scheme](controls/view3d-dark-scheme.png) |
-
-### bars3d (a 3D bar chart)
+**API**
 
 ```nim
 proc bars3d*(values: openArray[seq[float]]; rowLabels: openArray[string] = [];
@@ -2638,35 +5412,78 @@ bars per series (front to back), one color per row (`colors`, else the
 kit's), labels along the sides and, with `showValues`, on the bars.
 Negative values go down. Pair it with `fitView`.
 
-Example:
+## HTML, Markdown and rich text
 
-```nim
-view3d(barsScene, barsCam, height = 240)
-```
-
-| Normal | Dark scheme |
-|---|---|
-| ![bars3d Normal](controls/bars3d-normal.png) | ![bars3d Dark scheme](controls/bars3d-dark-scheme.png) |
-
-## HTML and Markdown
+`htmlView` draws a safe subset of HTML and CSS itself: no browser engine, no
+scripts. `webView` shows a real web page in the system's own web view (a
+window of its own on desktops); it cannot be drawn here, so it has no
+picture.
 
 ### htmlView, htmlBlock
 
+HTML: headings, paragraphs, bold, colors, tables, lists, pictures and links (reported when clicked). `htmlBlock` is the same without its own scroll bar, as a part of a page.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![htmlView, htmlBlock, normal](controls/htmlview-normal.png) | ![htmlView, htmlBlock, touch screen](controls/htmlview-touch-screen.png) | ![htmlView, htmlBlock, dark scheme](controls/htmlview-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![htmlView, htmlBlock, keyboard focus](controls/htmlview-keyboard-focus.png) |
+
 ```nim
-proc htmlView*(html: string; baseDir = ""; height = -1; key = ""): HtmlEvent {.discardable.}
+htmlView("<h3>Sales <u>report</u></h3><p>Up <b>12%</b>, costs " &
+    "<span style=\"color:#c00\">down</span>, <mark>new store</mark> open.</p>" &
+    "<table><tr><th>Month</th><th align=right>Sales</th></tr>" &
+    "<tr><td>August</td><td align=right>1,020</td></tr>" &
+    "<tr><td>September</td><td align=right>980</td></tr></table>" &
+    "<ul><li>North<li>South</ul>", height = 210)
+```
+
+**API**
+
+```nim
+proc htmlView*(html: string; baseDir = ""; height = -1; key = ""; images: HtmlImageSource = nil;
+               padding = -1; zoom: ptr float = nil): HtmlEvent {.discardable.}
 ```
 
 HTML in a framed view that scrolls (wheel, finger, scroll bar, arrows,
-Page keys); pictures load from `baseDir`. Returns the link clicked;
-links to "#a-heading" scroll there themselves. `key` tells several
-views apart.
+Page keys, Space, Home, End). Returns the link clicked (links to
+"#a-name" scroll there themselves) and the one under the pointer.
+Text is selected with the mouse (a double click: a word), Ctrl+C
+copies it (or all of it), Ctrl+A selects all. Pictures: `data:` ones
+from the page, others from `images` or files in `baseDir`; those it
+has none for are in `wantedImages`. `padding` (pixels, -1: a
+comfortable default) is room around the page. `key` tells several
+views apart (each keeps where it is scrolled to).
+
+`zoom`: the page's size, text and all (1.0 normal, 0.5 .. 3.0; 0: 1).
+When given, Ctrl+wheel and two fingers pinching over the view, and
+Ctrl+plus, minus and 0 (the view focused or under the pointer) change
+it; the app keeps it (in its settings), and may change it itself
+(View > Zoom). The page is laid out again at the new size, with the
+lines under the pointer (or at the top) kept where they were. A page
+wider than the view (zoomed in far) scrolls sideways too: Shift+wheel,
+a finger, the bar at the bottom, Left and Right.
 
 ```nim
-proc htmlBlock*(html: string; baseDir = ""; w = 0): HtmlEvent {.discardable.}
+proc htmlView*(html: string; zoom: var float; baseDir = ""; height = -1; key = "";
+               images: HtmlImageSource = nil; padding = -1): HtmlEvent {.discardable.}
+```
+
+`htmlView` that zooms, its zoom in `zoom` (the app's to keep):
+`htmlView(body, settings.mailZoom, key = "mail")`.
+
+```nim
+proc htmlBlock*(html: string; baseDir = ""; w = 0; images: HtmlImageSource = nil;
+                zoom = 1.0): HtmlEvent {.discardable.}
 ```
 
 HTML flowing in the layout at its natural height (in a page that
-scrolls, a card, a dialog).
+scrolls, a card, a dialog). Pictures as in `htmlView`; `zoom` as
+there (1.0 normal, 0.5 .. 3.0), set by the app.
 
 ```nim
 proc htmlToMarkdown*(html: string): string
@@ -2696,22 +5513,27 @@ scripts, no network; links to other local pages are followed, others
 open in the browser), and pages on the web get a button that opens them
 in the browser.
 
-Example:
+### markdownView, markdown
+
+Markdown: headings, emphasis, code, lists, task lists (a click ticks them: `toggleTask`), tables, quotes and links.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![markdownView, markdown, normal](controls/markdownview-normal.png) | ![markdownView, markdown, touch screen](controls/markdownview-touch-screen.png) | ![markdownView, markdown, dark scheme](controls/markdownview-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![markdownView, markdown, keyboard focus](controls/markdownview-keyboard-focus.png) |
 
 ```nim
-htmlView("<h3>Sales <u>report</u></h3><p>Up <b>12%</b>, costs " &
-    "<span style=\"color:#c00\">down</span>, <mark>new store</mark> open.</p>" &
-    "<table><tr><th>Month</th><th align=right>Sales</th></tr>" &
-    "<tr><td>August</td><td align=right>1,020</td></tr>" &
-    "<tr><td>September</td><td align=right>980</td></tr></table>" &
-    "<ul><li>North<li>South</ul>", height = 210)
+markdownView("# Notes\n\nSome **bold**, *italic* and `code`.\n\n" &
+    "- [x] Invoices sent\n- [ ] Stock count\n\n" &
+    "| Item | Qty |\n|---|--:|\n| Paper | 10 |\n| Ink | 2 |\n", height = 210)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![htmlview Normal](controls/htmlview-normal.png) | ![htmlview Keyboard focus](controls/htmlview-keyboard-focus.png) | ![htmlview Touch screen](controls/htmlview-touch-screen.png) | ![htmlview Dark scheme](controls/htmlview-dark-scheme.png) |
-
-### markdownView, markdown
+**API**
 
 ```nim
 proc markdownView*(md: string; height = -1; w = 0; baseDir = "";
@@ -2731,21 +5553,194 @@ Markdown flowing in the layout at its natural height (in a page that
 scrolls, a card, a dialog). See `markdownView` for a framed, scrolling
 view.
 
-Example:
+### richEdit, richToolbar
+
+A rich text editor (bold, italic, colors, sizes, lists, quotes, links, alignment) with its tool bar; it reads and writes HTML (`richFromHtml`, `toHtml`) and checks spelling where the system can. From `retroui/richedit`.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![richEdit, richToolbar, normal](controls/richedit-normal.png) | ![richEdit, richToolbar, touch screen](controls/richedit-touch-screen.png) | ![richEdit, richToolbar, dark scheme](controls/richedit-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![richEdit, richToolbar, keyboard focus](controls/richedit-keyboard-focus.png) |
 
 ```nim
-markdownView("# Notes\n\nSome **bold**, *italic* and `code`.\n\n" &
-    "- [x] Invoices sent\n- [ ] Stock count\n\n" &
-    "| Item | Qty |\n|---|--:|\n| Paper | 10 |\n| Ink | 2 |\n", height = 210)
+var letterDoc = richFromHtml("<p>Dear <b>Maryam</b>,</p><p>The new <i>price list</i> is " &
+    "<span style=\"color:#c00000\">ready</span>:</p>" &
+    "<ul><li>Rooms</li><li>Food</li></ul><p>Sultan</p>")
+
+richToolbar(letterDoc)
+richEdit(letterDoc, height = 180)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![markdownview Normal](controls/markdownview-normal.png) | ![markdownview Keyboard focus](controls/markdownview-keyboard-focus.png) | ![markdownview Touch screen](controls/markdownview-touch-screen.png) | ![markdownview Dark scheme](controls/markdownview-dark-scheme.png) |
+**API**
+
+```nim
+proc richEdit*(d: var RichDoc; height = -1; key = ""; placeholder = "";
+               enabled = true): bool {.discardable.}
+```
+
+The rich text editor, `height` pixels high (-1: the height left in the
+window), bound to `d`: true when its text (or its formatting) changed
+this frame. `placeholder` shows while it is empty; `key` tells editors
+of the same document apart. Its menu (a right click, a long press):
+Undo, Cut, Copy, Paste, Link, Select all. In a right-to-left
+interface each paragraph keeps its own direction (Arabic at the right,
+English at the left), not mirrored with the frame.
+
+```nim
+proc richToolbar*(d: var RichDoc; compact = false)
+```
+
+A row of formatting buttons for `d`'s editor: bold, italic, underline,
+strikethrough, monospace, the text color and size, bullets, numbers,
+a quote, indents, alignment, a link (asked for in a small dialog) and
+plain text again; pressed for what the caret has. `compact` (phones):
+the most used ones, the rest in a "more" menu.
+
+```nim
+proc richFromHtml*(html: string): RichDoc
+```
+
+A document from a mail's HTML: paragraphs (p, div, br), bold, italic,
+underline, strike, font and span styles (color, size, weight, family),
+links, lists (nested), quotes, headings, preformatted text; anything
+else gives its text, scripts and styles nothing. Never raises.
+
+```nim
+proc richDoc*(text = ""): RichDoc
+```
+
+A document of plain `text`: a paragraph for each of its lines.
+
+```nim
+proc toHtml*(d: RichDoc): string
+```
+
+The document as clean HTML that mail clients show well: inline styles
+only, `<p style="margin:0">` paragraphs (an empty one `<br>`), `<ul>` /
+`<ol>` lists, `<blockquote>` quotes, `<a href>` links.
+
+```nim
+proc toPlainText*(d: RichDoc): string
+```
+
+The document as plain text (a mail's text/plain part): bullets as
+"- ", numbers as "1. ", quotes as "> ", links as "text <address>".
 
 ## Canvas and reports
 
+### canvas: your own drawing
+
+Room for your own drawing: draw into the rectangle it returns with `fill`, `box`, `line`, `text`, `image`, `drawBitmap`, and the smooth `disc`, `ring`, `roundRect`, `polygon`, `thickLine`, `pieSlice`.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![canvas: your own drawing, normal](controls/canvas-normal.png) | ![canvas: your own drawing, touch screen](controls/canvas-touch-screen.png) | ![canvas: your own drawing, dark scheme](controls/canvas-dark-scheme.png) |
+
+```nim
+let r = canvas(280, 110)
+fill(r, color(255, 255, 240))
+box(r, ui.theme.frame)
+roundRect(rect(r.x + 12, r.y + 12, 100, 40), 8, color(0, 0, 128))
+text(r.x + 26, r.y + 24, "Drawn", color(255, 255, 255), true)
+disc(float(r.x + 180), float(r.y + 55), 30, color(200, 0, 0))
+line(r.x + 12, r.y + 90, r.x + 268, r.y + 70, color(0, 128, 0))
+```
+
+**API**
+
+```nim
+proc canvas*(w, h: int): Rect
+```
+
+Room for your own drawing: draw into the returned rectangle with
+`fill`, `box`, `hline`, `vline`, `text` and `image`.
+
+```nim
+proc fill*(r: Rect; c: Color)
+```
+
+A solid rectangle (see-through when the color's alpha is not 0 or
+255: a selection's highlight over a picture).
+
+```nim
+proc fill*(x, y, w, h: int; c: Color) {.inline.}
+```
+
+A solid rectangle at `x`, `y`, `w` x `h`.
+
+```nim
+proc box*(r: Rect; c: Color; t = 1)
+```
+
+A rectangle outline `t` pixels thick, inside `r`.
+
+```nim
+proc line*(x1, y1, x2, y2: int; c: Color)
+```
+
+A one-pixel line in any direction.
+
+```nim
+proc disc*(cx, cy, r: float; c: Color)
+```
+
+A filled circle centered at `cx`, `cy`.
+
+```nim
+proc roundRect*(r: Rect; radius: float; c: Color)
+```
+
+A filled rectangle with rounded corners.
+
+```nim
+proc drawBitmap*(r: Rect; b: Bitmap)
+```
+
+Draw `b` stretched into `r`; the pixels are sampled at the screen's
+full resolution, so a photo stays sharp at any zoom.
+
 ### canvas2d (the HTML5 Canvas 2D API)
+
+The whole HTML5 Canvas 2D API in Nim: paths, curves, gradients, patterns, shadows, text, pictures, transforms and compositing, as on the web. `newCanvas2D` draws off screen (`toBitmap`, `savePng`).
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![canvas2d (the HTML5 Canvas 2D API), normal](controls/canvas2d-normal.png) | ![canvas2d (the HTML5 Canvas 2D API), touch screen](controls/canvas2d-touch-screen.png) | ![canvas2d (the HTML5 Canvas 2D API), dark scheme](controls/canvas2d-dark-scheme.png) |
+
+```nim
+canvas2d(ctx, 360, 210):
+  let sky = ctx.createLinearGradient(0, 0, 0, 210)
+  sky.addColorStop(0, "#000080")
+  sky.addColorStop(1, "#1084d0")
+  ctx.fillStyle = sky
+  ctx.fillRect(0, 0, 360, 210)
+  ctx.fillStyle = "#2e7d32"
+  ctx.beginPath()
+  ctx.moveTo(0, 210)
+  ctx.bezierCurveTo(110, 100, 220, 220, 360, 130)
+  ctx.lineTo(360, 210)
+  ctx.closePath()
+  ctx.fill()
+  ctx.shadowColor = "rgba(0, 0, 0, 0.5)"
+  ctx.shadowBlur = 8
+  ctx.shadowOffsetX = 4
+  ctx.shadowOffsetY = 4
+  ctx.fillStyle = "gold"
+  ctx.beginPath()
+  ctx.arc(270, 60, 34, 0, 2 * PI)
+  ctx.fill()
+  ctx.shadowColor = "transparent"
+  ctx.font = "bold 20px sans-serif"
+  ctx.fillStyle = "white"
+  ctx.fillText("Retro canvas", 16, 34)
+```
+
+**API**
 
 ```nim
 template canvas2d*(ctx: untyped; w, h: int; body: untyped)
@@ -2755,11 +5750,11 @@ A canvas `w` x `h` (logical pixels; `w` <= 0: the room's width) in the
 layout, its context named `ctx` in `body`:
 
 ```nim
-```
 canvas2d(ctx, 300, 200):
-ctx.fillStyle = "navy"
-ctx.fillRect(10, 10, 100, 50)
-if ctx.input.clicked: echo "clicked at ", ctx.input.x, ", ", ctx.input.y
+  ctx.fillStyle = "navy"
+  ctx.fillRect(10, 10, 100, 50)
+  if ctx.input.clicked: echo "clicked at ", ctx.input.x, ", ", ctx.input.y
+```
 
 ```nim
 template canvas2dWith*(ctx: untyped; w, h: int; options: CanvasOptions; body: untyped)
@@ -2792,117 +5787,31 @@ then take `toBitmap`, `getImageData` or `savePng`. `pixelRatio`:
 backing pixels per logical pixel (2 for a sharper picture). Sizes are
 capped at 8192 pixels a side.
 
-```nim
-proc createLinearGradient*(c: Canvas2D; x0, y0, x1, y1: float): CanvasGradient
-```
+### reportView (an HTML template: PDF, printing)
 
-A gradient along the line from (`x0`, `y0`) to (`x1`, `y1`), in the
-coordinates of the shape it fills (the transform when drawing applies).
+Reports, invoices and lists laid out on pages, from an HTML template and data or from Nim code; shown on a gray desk with page buttons and zoom, saved as PDF or PNG, or printed.
 
-```nim
-proc createRadialGradient*(c: Canvas2D; x0, y0, r0, x1, y1, r1: float): CanvasGradient
-```
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![reportView (an HTML template: PDF, printing), normal](controls/reportview-normal.png) | ![reportView (an HTML template: PDF, printing), touch screen](controls/reportview-touch-screen.png) | ![reportView (an HTML template: PDF, printing), dark scheme](controls/reportview-dark-scheme.png) |
 
-A gradient between two circles (the first at offset 0).
+More states:
 
-```nim
-proc addColorStop*(g: CanvasGradient; offset: float; color: string)
-```
-
-A color at `offset` (0 at the start, 1 at the end) of the gradient.
-Offsets outside 0..1 and colors that are not colors are ignored.
+| Keyboard focus |
+|---|
+| ![reportView (an HTML template: PDF, printing), keyboard focus](controls/reportview-keyboard-focus.png) |
 
 ```nim
-proc addColorStop*(g: CanvasGradient; offset: float; color: Color)
+let shotReport = reportFromHtml(renderTemplate(shotTemplate, %*{
+    "number": "Q-118", "customer": "Al Noor Trading", "total": 268.5, "lines": [
+    {"name": "Business cards", "qty": 2, "amount": 25.0},
+    {"name": "Letterheads", "qty": 3, "amount": 76.5},
+    {"name": "Roll-up banner", "qty": 1, "amount": 167.0}]}))
+
+reportView(shotReport, height = 360)
 ```
 
-A color (a kit `Color`) at `offset` of the gradient.
-
-```nim
-proc fillText*(c: Canvas2D; text: string; x, y: float; maxWidth = 0.0)
-```
-
-Draws `text` with `font`, `fillStyle`, `textAlign` and `textBaseline`
-(Arabic joined and right to left, as everywhere in the kit);
-`maxWidth` > 0 squeezes it to fit.
-
-```nim
-proc isPointInPath*(c: Canvas2D; x, y: float; rule = frNonZero): bool
-```
-
-Whether the point `x`, `y` (the canvas's logical pixels, like
-`input.x`) is inside the current path.
-
-```nim
-proc isPointInPath*(c: Canvas2D; path: Path2D; x, y: float; rule = frNonZero): bool
-```
-
-Whether the point is inside a kept path (drawn with the current
-transform).
-
-```nim
-proc drawImage*(c: Canvas2D; img: Bitmap; dx, dy: float)
-```
-
-Draws a picture with its top-left at `dx`, `dy`, one logical pixel per
-picture pixel.
-
-```nim
-proc drawImage*(c: Canvas2D; img: Bitmap; dx, dy, dw, dh: float)
-```
-
-Draws a picture scaled into the rectangle `dx`, `dy`, `dw`, `dh`.
-
-```nim
-proc drawImage*(c: Canvas2D; img: Bitmap; sx, sy, sw, sh, dx, dy, dw, dh: float)
-```
-
-Draws the part `sx`, `sy`, `sw`, `sh` of a picture (in its pixels)
-into the rectangle `dx`, `dy`, `dw`, `dh`.
-
-```nim
-proc getImageData*(c: Canvas2D; sx, sy, sw, sh: int): ImageData
-```
-
-A copy of the canvas's pixels in the rectangle (in the canvas's own
-pixels: `pixelWidth` x `pixelHeight`); outside the canvas they are
-transparent.
-
-Example:
-
-```nim
-canvas2d(ctx, 360, 210):
-  let sky = ctx.createLinearGradient(0, 0, 0, 210)
-  sky.addColorStop(0, "#000080")
-  sky.addColorStop(1, "#1084d0")
-  ctx.fillStyle = sky
-  ctx.fillRect(0, 0, 360, 210)
-  ctx.fillStyle = "#2e7d32"
-  ctx.beginPath()
-  ctx.moveTo(0, 210)
-  ctx.bezierCurveTo(110, 100, 220, 220, 360, 130)
-  ctx.lineTo(360, 210)
-  ctx.closePath()
-  ctx.fill()
-  ctx.shadowColor = "rgba(0, 0, 0, 0.5)"
-  ctx.shadowBlur = 8
-  ctx.shadowOffsetX = 4
-  ctx.shadowOffsetY = 4
-  ctx.fillStyle = "gold"
-  ctx.beginPath()
-  ctx.arc(270, 60, 34, 0, 2 * PI)
-  ctx.fill()
-  ctx.shadowColor = "transparent"
-  ctx.font = "bold 20px sans-serif"
-  ctx.fillStyle = "white"
-  ctx.fillText("Retro canvas", 16, 34)
-```
-
-| Normal | Dark scheme |
-|---|---|
-| ![canvas2d Normal](controls/canvas2d-normal.png) | ![canvas2d Dark scheme](controls/canvas2d-dark-scheme.png) |
-
-### reportView (from an HTML template: PDF, printing)
+**API**
 
 ```nim
 proc reportView*(r: Report; height = -1; key = ""): ReportViewEvent {.discardable.}
@@ -2919,6 +5828,12 @@ left; `key` tells two views apart. Pages are drawn once per zoom and
 kept (the last 6), so scrolling is quick.
 
 ```nim
+proc reportViewPage*(key = ""): int
+```
+
+The page the `reportView` with `key` shows (from 0).
+
+```nim
 proc reportFromHtml*(html: string; baseDir = ""; title = ""): Report
 ```
 
@@ -2926,23 +5841,23 @@ A document from HTML -- typically a filled-in template
 (`reportFromHtml(renderTemplate(tpl, data))`). It reads:
 
 - `h1`-`h4` (titles), `p`, `div`, `br`, `hr`, `pre`, `blockquote`,
-`ul` / `ol` / `li`
+  `ul` / `ol` / `li`
 - `b` / `strong`, `i` / `em`, `u`, `code` / `tt` / `kbd`, `small`,
-`a href` (links), `span` and `font` with `style="color: #c00;
-font-weight: bold; font-style: italic; font-size: 14px"`
+  `a href` (links), `span` and `font` with `style="color: #c00;
+  font-weight: bold; font-style: italic; font-size: 14px"`
 - `table` (`border="1"`: lines around every cell), `thead` / `tbody` / `tfoot`
-(totals), `tr`, `th`, `td`
-with `colspan`, `align`, `width` (px, pt or %) and a background
-(`bgcolor`, `style="background: ..."`); a header cell's `align` is
-its column's; `class="plain"`: no lines or shading (for layout)
+  (totals), `tr`, `th`, `td`
+  with `colspan`, `align`, `width` (px, pt or %) and a background
+  (`bgcolor`, `style="background: ..."`); a header cell's `align` is
+  its column's; `class="plain"`: no lines or shading (for layout)
 - `img src width height` (PNG, JPEG, BMP files, relative to
-`baseDir`; in a table cell, above the cell's text)
+  `baseDir`; in a table cell, above the cell's text)
 - `style="text-align: center | right"` and `dir="rtl"` on blocks,
-`style="page-break-before: always"` (or `class="page-break"`) for a
-new page
+  `style="page-break-before: always"` (or `class="page-break"`) for a
+  new page
 - `<header>` and `<footer>`: the text of every page's top and bottom;
-with spans in them, the first goes left, the last right
-(`{page}` and `{pages}` are filled in); `<title>`: the title
+  with spans in them, the first goes left, the last right
+  (`{page}` and `{pages}` are filled in); `<title>`: the title
 
 Scripts, styles and forms are left out. Anything else shows its text.
 
@@ -3023,12 +5938,6 @@ proc savePng*(r: Report; index: int; path: string; dpi = 150.0): bool {.discarda
 Writes page `index` (from 0) as a PNG picture at `dpi`.
 
 ```nim
-proc savePng*(c: Canvas2D; path: string): bool {.discardable.}
-```
-
-Saves the picture as a PNG file; false when it cannot be written.
-
-```nim
 proc printReport*(r: Report; jobName = ""; printer = ""): tuple[ok: bool; message: string]
 ```
 
@@ -3043,26 +5952,127 @@ Sends the PDF file `path` to a printer, and says what happened (or why
 it could not) in `message`:
 
 - Linux, the BSDs, macOS: through CUPS (`lp`) to `printer`, or the
-default one; it fails cleanly when no printer is set up.
+  default one; it fails cleanly when no printer is set up.
 - Windows: to the app that prints PDF files (the "print" verb), so a
-PDF reader must be installed (Acrobat Reader, SumatraPDF, Foxit...).
+  PDF reader must be installed (Acrobat Reader, SumatraPDF, Foxit...).
 - Android: the system's print dialog (its printers, Save as PDF);
-`pages` (if known) shows there.
+  `pages` (if known) shows there.
 - iOS: not available yet.
 
-Example:
+### pdfView
+
+A PDF file's pages one under another, each drawn at the size it is shown; the wheel, the scroll bars and a finger move along, Ctrl and the wheel zoom. Call `addPdfPreviews()` once at the start: it teaches the toolkit to draw PDF pages (and the file controls to show them). `pdfPreview` gives a file's first page as a picture. From `retroui/pdfview`.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![pdfView, normal](controls/pdfview-normal.png) | ![pdfView, touch screen](controls/pdfview-touch-screen.png) | ![pdfView, dark scheme](controls/pdfview-dark-scheme.png) |
+
+More states:
+
+| Keyboard focus |
+|---|
+| ![pdfView, keyboard focus](controls/pdfview-keyboard-focus.png) |
 
 ```nim
-reportView(shotReport, height = 360)
+addPdfPreviews()
+var quotePdf = openPdfView(getHomeDir() / "Documents" / "Quote Q-118.pdf")
+
+pdfView(quotePdf, height = 300)
 ```
 
-| Normal | Keyboard focus | Touch screen | Dark scheme |
-|---|---|---|---|
-| ![reportview Normal](controls/reportview-normal.png) | ![reportview Keyboard focus](controls/reportview-keyboard-focus.png) | ![reportview Touch screen](controls/reportview-touch-screen.png) | ![reportview Dark scheme](controls/reportview-dark-scheme.png) |
+**API**
+
+```nim
+proc pdfView*(v: PdfView; height = -1; w = 0): PdfViewEvent {.discardable.}
+```
+
+The pages of `v` one under another on a gray ground, each drawn at the
+size it is shown (while it is being drawn, the one drawn before, or a
+blank page). The wheel and the scroll bars (a finger) move along;
+Ctrl + the wheel zooms; a double click (a double tap) goes between as
+wide as the view and twice that. With the focus: Page Up / Down,
+Space, Home, End, the arrows, + / - / 0 (as wide as the view).
+
+```nim
+proc openPdfView*(path: string): PdfView
+```
+
+Opens the PDF `path` to read (its pages are drawn when shown). Raises
+`PdfError` when it is not one or is damaged past reading, `IOError`
+when it cannot be read.
+
+```nim
+proc addPdfPreviews*()
+```
+
+Teaches the file widgets (lists, previews, Open dialogs) to show the
+first pages of PDF and Illustrator files, and `pageAsync` to draw
+their pages.
+
+```nim
+proc pdfPreview*(path: string; maxW = 512; maxH = 512): Bitmap
+```
+
+The first page of a PDF (or an .ai) drawn to fit `maxW` x `maxH`; nil
+when it is not one.
+
+### QR codes
+
+`qrEncode` makes the QR code of a text, `qrBitmap` its picture, to draw with `drawBitmap` (or put in a report). From `retroui/qrcode`.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![QR codes, normal](controls/qrcode-normal.png) | ![QR codes, touch screen](controls/qrcode-touch-screen.png) | ![QR codes, dark scheme](controls/qrcode-dark-scheme.png) |
+
+```nim
+let qr = qrBitmap(qrEncode("https://www.foxoman.net"), scale = 4)
+
+drawBitmap(canvas(qr.w, qr.h), qr)
+label "www.foxoman.net"
+```
+
+**API**
+
+```nim
+proc qrBitmap*(q: QrCode; scale = 4; border = 4; dark = color(0, 0, 0);
+               light = color(255, 255, 255)): Bitmap
+```
+
+The code as a picture: `scale` pixels a module, `border` modules of
+quiet zone (`light`) around it (4 is what the standard asks).
+
+```nim
+proc qrEncode*(text: string; ec = qrM; minVersion = 1; mask = -1): QrCode
+```
+
+The QR code of `text` (UTF-8): the smallest version from `minVersion`
+that holds it at the error correction `ec`; the best mask, or `mask`
+(0..7). Raises `ValueError` when it is too long for version 40 (2953
+bytes at L, 2331 at M, 1663 at Q, 1273 at H; more digits).
 
 ## Sound and video
 
+`playSound` plays a WAV file or its bytes, `tone` and `beep` make a sound
+of their own, and `uiSound` plays the system's sounds for a message or an
+error. They have no picture.
+
 ### animation (animated GIFs)
+
+The frames of `loadGif` played round and round, each for its delay. The app wakes only when the next frame is due.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![animation (animated GIFs), normal](controls/animation-normal.png) | ![animation (animated GIFs), touch screen](controls/animation-touch-screen.png) | ![animation (animated GIFs), dark scheme](controls/animation-dark-scheme.png) |
+
+```nim
+let gifFrames = loadGif(readFile("examples/assets/pattern.gif"))
+
+row:
+  animation(gifFrames, height = 48)
+  label "An animated GIF"
+```
+
+**API**
 
 ```nim
 proc animation*(frames: openArray[GifFrame]; height = 0; w = 0; paused = false;
@@ -3119,6 +6129,22 @@ proc uiSound*(kind: UiSound; volume = 1.0)
 A short sound for the moments apps have them: a click, a new
 message, something done, a warning, an error. Made here, no files.
 
+### videoView
+
+A video with play, pause, a position bar and the time. On Android the system's VideoView shows it, on Linux GStreamer; elsewhere a button opens it in the system's player. Space plays and pauses.
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![videoView, normal](controls/videoview-normal.png) | ![videoView, touch screen](controls/videoview-touch-screen.png) | ![videoView, dark scheme](controls/videoview-dark-scheme.png) |
+
+```nim
+let movie = getHomeDir() / "Videos" / "Harbour.avi"
+
+videoView(movie, height = 260)
+```
+
+**API**
+
 ```nim
 proc videoView*(path: string; height = -1; w = 0; autoplay = false; controls = true;
                 key = ""; audio = false): VideoEvent {.discardable.}
@@ -3133,15 +6159,146 @@ draws it into the window; elsewhere it shows a button that opens the
 file in the system's player. `key` tells several apart. `audio`: a
 sound file (`audioView`).
 
-Example:
-
 ```nim
-row:
-  animation(gifFrames, height = 48)
-  label "An animated GIF"
+proc closeVideo*(key: string)
 ```
+
+Lets the player of the `videoView` (or `audioView`) with this `key`
+(or path) go.
+
+### audioView
+
+A sound file to play: its name, play and pause, a position bar and the time (MP3, OGG, FLAC, WAV where the system plays them).
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
-| ![animation Normal](controls/animation-normal.png) | ![animation Touch screen](controls/animation-touch-screen.png) | ![animation Dark scheme](controls/animation-dark-scheme.png) |
+| ![audioView, normal](controls/audioview-normal.png) | ![audioView, touch screen](controls/audioview-touch-screen.png) | ![audioView, dark scheme](controls/audioview-dark-scheme.png) |
 
+```nim
+let song = getHomeDir() / "Music" / "Morning bell.ogg"
+
+audioView(song, height = 120)
+```
+
+**API**
+
+```nim
+proc audioView*(path: string; height = -1; autoplay = false; key = ""): VideoEvent {.discardable.}
+```
+
+A sound file to play: a panel with a note and its name, play / pause,
+a position bar and the time under it (MP3, OGG, FLAC, WAV... where the
+system plays them: Android; GStreamer on Linux; elsewhere it plays
+from the start with `playSound`, without the position). `closeVideo`
+stops it.
+
+## Looks
+
+### Themes
+
+Nine color schemes come with the kit (`builtinThemes`): Classic, Gray,
+Dark, OLED Black, Ocean, Desert, Plum, Hot Dog and Paper. Set one with
+`ui.theme = Ocean` or `app`'s `theme`, or let the user pick it in
+`appearanceSettings`. A `Theme` of your own is an object of colors
+(`window`, `text`, `face`, `select`...).
+
+| Classic | Gray |
+|---|---|
+| ![Themes: Classic](controls/themes-classic.png) | ![Themes: Gray](controls/themes-gray.png) |
+
+| Dark | OLED Black |
+|---|---|
+| ![Themes: Dark](controls/themes-dark.png) | ![Themes: OLED Black](controls/themes-oled-black.png) |
+
+| Ocean | Desert |
+|---|---|
+| ![Themes: Ocean](controls/themes-ocean.png) | ![Themes: Desert](controls/themes-desert.png) |
+
+| Plum | Hot Dog |
+|---|---|
+| ![Themes: Plum](controls/themes-plum.png) | ![Themes: Hot Dog](controls/themes-hot-dog.png) |
+
+| Paper |
+|---|
+| ![Themes: Paper](controls/themes-paper.png) |
+
+### Dark mode
+
+Dark and OLED Black are the dark schemes (`themeIsDark`); in them the pixel
+icons are drawn as their line twins, in the text's color (`setIconStyle`).
+To follow the system: `if systemDarkMode(): ui.theme = Dark`. OLED Black is
+true black, for phones whose pixels are off where it is black.
+
+### Size and text size
+
+The UI follows the screen's density by itself, in whole pixels so lines stay
+sharp. `setUiScale(125)` makes everything larger (Ctrl + / - / 0 do it too,
+and the phone title bar's menu); `setTextScale(130)` only the text, the
+controls growing with it; `setBaseTextSize(13)` changes the size at 100%.
+`setControlSizes(csTouch)` gives finger-sized controls on any screen.
+
+| 100% (the normal size) | setUiScale(150) |
+|---|---|
+| ![Sizes: 100% (the normal size)](controls/sizes-100-the-normal-size.png) | ![Sizes: setUiScale(150)](controls/sizes-setuiscale150.png) |
+
+| setTextScale(130) |
+|---|
+| ![Sizes: setTextScale(130)](controls/sizes-settextscale130.png) |
+
+### Fonts
+
+Text is **FreeSans** unless the app chooses another font: GNU FreeFont's
+sans, in the manner of Helvetica, built in with its bold, oblique and bold
+oblique, drawn smooth in gray with the font's own line gap. `setUiFont(ufSerif)`
+gives **FreeSerif** (in the manner of Times), `setUiFont(ufMono)` **FreeMono**
+(in the manner of Courier); code, editors and hex are FreeMono whatever
+the UI's font. Arabic is everywhere, joined and right to left (FreeSerif's).
+
+**A font file:** `loadUiFontFile("fonts/MyFont-Regular.ttf")` (its bold
+and italic beside it are found by their names), or build the app with
+`-d:retroAppFont=fonts/MyFont-Regular.ttf` to carry its own font.
+`builtinUiFonts` lists the built-in ones for a menu of your own.
+
+**Sharp text:** `setSubpixelText(true)` (or "Text edges: Sharp" in
+`appearanceSettings`, or `RETRO_TEXT=sharp`) draws the letters in the
+screen's red, green and blue strips, three times as fine across, as
+Windows' ClearType does. It is off by default.
+
+| FreeSans (ufSans, the default) | FreeSerif (ufSerif) |
+|---|---|
+| ![Fonts: FreeSans (ufSans, the default)](controls/fonts-freesans-ufsans-the-default.png) | ![Fonts: FreeSerif (ufSerif)](controls/fonts-freeserif-ufserif.png) |
+
+| FreeMono (ufMono) | Sharp text (setSubpixelText) |
+|---|---|
+| ![Fonts: FreeMono (ufMono)](controls/fonts-freemono-ufmono.png) | ![Fonts: Sharp text (setSubpixelText)](controls/fonts-sharp-text-setsubpixeltext.png) |
+
+### The window's frame
+
+A desktop app has the system's own frame, or the one Windows 3.1 had: the
+gray sizing border, the navy title bar with the control-menu box at its
+left and the minimize and maximize buttons at its right. The app draws it
+itself, and the system still does the rest: drag the title bar to move the
+window (Aero Snap on Windows), the border to size it, a double click to
+maximize it, Alt+Space for the control menu.
+
+```nim
+app "Ledger", 640, 480, frame = wfClassic:   # wfAsBuilt (the default), wfSystem, wfClassic
+  ...
+```
+
+Or build with `-d:retroFrame=classic`, or start with `RETRO_FRAME=classic`.
+**The user can always switch:** the 3.1 frame's control menu has
+"Windows' Own Frame", Windows' system menu gets "Windows 3.1 Frame", and
+`appearanceSettings` offers it as "Window"; the choice is kept for the
+app. `setClassicFrame(on)` changes it while the app runs and `classicFrame()`
+says which one is on; `userFrame = false` takes the choice away. Phones keep
+their own.
+
+| Windows 3.1 frame (frame = wfClassic) | In a dark scheme |
+|---|---|
+| ![The window's frame: Windows 3.1 frame (frame = wfClassic)](controls/frame-windows-31-frame-frame-wfclassic.png) | ![The window's frame: In a dark scheme](controls/frame-in-a-dark-scheme.png) |
+
+---
+
+This guide and its pictures are made by `tools/shots.nim` (`nimble docs`);
+`tools/controlscheck.py` checks that it shows every control.

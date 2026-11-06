@@ -1,4 +1,4 @@
-## Layers mixed on the GPU (retro/photogpu) against the CPU's composite:
+## Layers mixed on the GPU (retroui/photogpu) against the CPU's composite:
 ## every blend mode, masks (feathered, less dense), opacity and fill,
 ## groups mixing through and on their own, clipping masks (onto a layer, an
 ## adjustment layer, a group), adjustment layers (tables by channel and of
@@ -7,8 +7,8 @@
 ## Off screen (EGL); skipped where there is no OpenGL.
 
 import std/[os, strutils, tables, monotimes, times]
-import retro/[gfx, photo, photodevelop, photostyles, photogpu]
-import retro/uirelays/[eglload, screen]
+import retroui/[gfx, photo, photodevelop, photostyles, photogpu]
+import retroui/uirelays/[eglload, screen]
 
 putEnv("RETRO_GPU", "1")                 # (llvmpipe counts: it is what there is here)
 var egl: Egl

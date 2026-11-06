@@ -4,9 +4,9 @@
 ## Termux's provider, unable to rename or move).
 
 import std/[os, strutils, posix, times, algorithm]
-import retro
-import retro/[files, zip, imaging, gfx]
-import retro/uirelays/[input, services]
+import retroui
+import retroui/[files, zip, imaging, gfx]
+import retroui/uirelays/[input, services]
 import harness
 
 const

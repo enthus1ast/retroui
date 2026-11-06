@@ -1,6 +1,6 @@
 """libjxl (the copy the imagecodecs wheel carries, 0.12) through ctypes, for
 make.py: it writes the JPEG XL test files and decodes them for the references.
-Test tooling only -- retro/jxl does not use it.
+Test tooling only -- retroui/jxl does not use it.
 
 encode(frames, ...) -> bytes, encode_jpeg(jpeg) -> bytes, decode(data, bits) -> dict
 """

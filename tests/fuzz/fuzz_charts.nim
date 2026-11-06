@@ -7,8 +7,8 @@
 ##   tests/fuzz/fuzz_charts 20000 7        # rounds, random seed
 
 import std/[random, strutils, os, math]
-import retro
-import retro/uirelays/input
+import retroui
+import retroui/uirelays/input
 import ../harness
 
 randomize(if paramCount() >= 2: parseInt(paramStr(2)) else: 7)

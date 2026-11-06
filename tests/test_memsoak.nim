@@ -4,8 +4,8 @@
 ## the program holds must level off, not keep growing.
 
 import std/[os, strutils, times, monotimes, random]
-import retro
-import retro/jpeg
+import retroui
+import retroui/jpeg
 import harness
 
 fakeDriver()
@@ -77,7 +77,7 @@ when defined(linux) and defined(useMalloc):
   doAssert grew < 24 * 1024 * 1024, "the memory keeps growing: " & $(grew div (1024 * 1024)) & " MB"
   # (what it holds follows what it keeps: the pictures, not every page it
   # ever took -- 146 MB here with Nim's own allocator, 38 MB with malloc and
-  # the trimming of retro/memwatch)
+  # the trimming of retroui/memwatch)
   doAssert seen[^1] < 120 * 1024 * 1024, "too much memory held: " & $(seen[^1] div (1024 * 1024)) & " MB"
 removeDir(root)
 echo "memory soak passed"

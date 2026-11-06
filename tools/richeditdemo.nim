@@ -5,7 +5,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/os
-import retro, retro/richedit
+import retroui, retroui/richedit
 
 const sample = """
 <h2>Quarterly training plan</h2>

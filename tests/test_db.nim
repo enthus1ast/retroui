@@ -1,9 +1,9 @@
-## The local database (retro/db): values, a mail-like schema with FTS5
+## The local database (retroui/db): values, a mail-like schema with FTS5
 ## search over 20 000 messages, Arabic, the kept statements, transactions,
 ## errors, and a writer and a reader in two threads at once.
 
 import std/[os, strutils, random, monotimes, times, typedthreads, atomics]
-import retro/db
+import retroui/db
 
 let dir = getTempDir() / "retro-test-db-" & $getCurrentProcessId()
 removeDir(dir)

@@ -6,7 +6,7 @@
 ##   nim c -r -d:release tests/psd_corpus.nim /path/to/psd_files [--list]
 
 import std/[os, strutils, algorithm, monotimes, times]
-import retro/[photo, psd, photofiles]
+import retroui/[photo, psd, photofiles]
 
 let dir = if paramCount() >= 1: paramStr(1) else: "/tmp/psdtools/tests/psd_files"
 let list = "--list" in commandLineParams()

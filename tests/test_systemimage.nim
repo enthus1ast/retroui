@@ -5,7 +5,7 @@
 ## that is not installed is skipped and said so. The pictures:
 ## tests/data/systemimage (make_images.py makes them).
 
-include retro/systemimage
+include retroui/systemimage
 import std/[os, strutils]
 
 const dir = currentSourcePath.parentDir / "data" / "systemimage"

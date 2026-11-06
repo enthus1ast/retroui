@@ -10,7 +10,7 @@
 ## Run `retroios --help` for every option.
 
 import std/[os, osproc, strutils, parseopt]
-import retro/appicon
+import retroui/appicon
 
 const Usage = """
 retroios -- build an iOS .app from a retro app

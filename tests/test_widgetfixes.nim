@@ -6,8 +6,8 @@
 ## button, and `app`'s options.
 
 import std/strutils
-import retro
-import retro/uirelays/[input, screen]
+import retroui
+import retroui/uirelays/[input, screen]
 import harness
 
 fakeDriver()

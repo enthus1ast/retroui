@@ -1,10 +1,10 @@
-## E-mail messages (retro/mime): reading what Outlook and Gmail send
+## E-mail messages (retroui/mime): reading what Outlook and Gmail send
 ## (tests/data/mime), broken and cut-off messages, charsets, encoded words,
 ## addresses and dates; making messages and reading them back; and damaged
 ## samples that must not crash it.
 
 import std/[os, strutils, times, random, monotimes]
-import retro/mime
+import retroui/mime
 
 const data = currentSourcePath().parentDir / "data" / "mime"
 

@@ -1,7 +1,7 @@
 # Retro Photo -- included by photo.nim
 #
 # File > Export > SVG: the shapes as paths, the type as text, the rest as
-# a picture inside it (retro/photosvg).
+# a picture inside it (retroui/photosvg).
 
 var
   svgSave: tuple[pick: bool; path: string]          ## File > Export > SVG: the file asked for

@@ -1,10 +1,10 @@
-## QR codes (retro/qrcode): the modules equal those of reference encoders
+## QR codes (retroui/qrcode): the modules equal those of reference encoders
 ## (the fixtures below were made by segno and python-qrcode, which agree on
 ## them), the capacities the standard gives, and the picture and the
 ## outlines show the same modules.
 
 import std/strutils
-import retro/[gfx, qrcode]
+import retroui/[gfx, qrcode]
 
 proc rowsOf(q: QrCode): seq[string] =
   ## Each row as hex, its last module the lowest bit (as the fixtures).

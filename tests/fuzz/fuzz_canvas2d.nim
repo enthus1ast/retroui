@@ -1,4 +1,4 @@
-## Fuzzes the canvas (retro/canvas2d): random calls of the whole API with
+## Fuzzes the canvas (retroui/canvas2d): random calls of the whole API with
 ## good and hostile values (NaN, infinities, huge, tiny, negative), random
 ## colors, fonts, dash lists, transforms, paths, pictures and image data,
 ## on canvases of random sizes and pixel ratios; then the same in a window
@@ -12,9 +12,9 @@
 ## the n-th on (to find the one that fails).
 
 import std/[random, strutils, os, math, times]
-import retro
-import retro/canvas2d
-import retro/uirelays/input
+import retroui
+import retroui/canvas2d
+import retroui/uirelays/input
 import ../harness
 
 randomize(if paramCount() >= 2: parseInt(paramStr(2)) else: 7)

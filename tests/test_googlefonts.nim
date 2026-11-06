@@ -1,8 +1,8 @@
-## Tests of the downloader (retro/fetch, on a local file) and of reading
-## Google Fonts' CSS (retro/googlefonts) -- the network itself is not used.
+## Tests of the downloader (retroui/fetch, on a local file) and of reading
+## Google Fonts' CSS (retroui/googlefonts) -- the network itself is not used.
 
 import std/[os, strutils]
-import retro/[fetch, googlefonts, textengine]
+import retroui/[fetch, googlefonts, textengine]
 
 let css = """
 @font-face {

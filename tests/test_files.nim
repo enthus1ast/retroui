@@ -1,10 +1,10 @@
-## Tests of retro/files (listings, formats, file jobs) and retro/zip,
+## Tests of retroui/files (listings, formats, file jobs) and retroui/zip,
 ## on a scratch folder.
 
 import std/[os, strutils, algorithm]
 import std/times
 import std/random
-import retro/[files, zip, imaging, gfx, textfile, background, appicon, codec]
+import retroui/[files, zip, imaging, gfx, textfile, background, appicon, codec]
 
 let root = getTempDir() / "retro-files-test"
 removeDir(root)

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Rebuilds classes.dex from tools/android/*.java and writes it into
-# src/retro/androiddex.nim, which retroapk puts in every APK.
+# src/retroui/androiddex.nim, which retroapk puts in every APK.
 # Needs javac, an android.jar (API 23+) and dx (Debian: dalvik-exchange).
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
@@ -9,7 +9,7 @@ dx=$(command -v dx || command -v dalvik-exchange)
 work=$(mktemp -d)
 javac -source 8 -target 8 -nowarn -bootclasspath "$jar" -d "$work" "$here"/*.java
 "$dx" --dex --min-sdk-version=24 --output="$work/classes.dex" "$work"
-python3 - "$work/classes.dex" "$here/../../src/retro/androiddex.nim" <<'PY'
+python3 - "$work/classes.dex" "$here/../../src/retroui/androiddex.nim" <<'PY'
 import sys
 data = open(sys.argv[1], 'rb').read()
 lines = []
@@ -25,4 +25,4 @@ open(sys.argv[2], 'w').write(
     "const classesDex* =\n" + " &\n".join(groups) + "\n")
 PY
 rm -rf "$work"
-echo "wrote src/retro/androiddex.nim"
+echo "wrote src/retroui/androiddex.nim"

@@ -14,7 +14,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, math, strutils, sequtils]
-import retro/[gfx, photo, photopaint, photofx, photoshapes, photostyles, photodevelop, photovector,
+import retroui/[gfx, photo, photopaint, photofx, photoshapes, photostyles, photodevelop, photovector,
               photowarp, photoneural, photopdf, photofiles, textengine]
 
 const
@@ -292,7 +292,7 @@ proc cover(): Doc =
   discard d.rule(900, 1395, 1170, cyan, 3, "Cover Rule")
   discard d.typeBox([("Arabic type on the canvas", chars("Poppins", "Medium", 30, white, 0, 36))],
                     760, 1415, 410, 50, textRight, "Cover Line 3")
-  discard d.typeTool("الحرف العربي على اللوحة", chars("DejaVu Sans", "Bold", 40, cyan), 1170, 1508,
+  discard d.typeTool("الحرف العربي على اللوحة", chars("FreeSerif", "Bold", 40, cyan), 1170, 1508,
                      textLeft, "Cover Line 3: Arabic", rtl = 2)
   # the strip at the foot: a Rectangle, the barcode of Rectangles, small type
   let strip = d.shapeTool(rectPath(0, 1640, W.float, H.float), solidPaint(0xE607031A'u32), "Foot",
@@ -482,13 +482,13 @@ proc arabicAndNumbers(): Doc =
   spk.outerGlow(sun, 80, 12)
   # Arabic, set right to left: a headline on the canvas, a paragraph justified
   # with kashida, the digits as Arabic-Indic
-  let ah = d.typeTool("الحرف العربي على اللوحة", chars("DejaVu Sans", "Bold", 78, white), 1170, 170, textLeft,
+  let ah = d.typeTool("الحرف العربي على اللوحة", chars("FreeSerif", "Bold", 78, white), 1170, 170, textLeft,
                       "Arabic Headline", rtl = 2)
   ah.gradientOverlay(0xFF7DF9FF'u32, 0xFFFF6BC1'u32, angle = 0)
   ah.dropShadow(0xFF07031A'u32, 70, 6, 0)
-  discard d.typeTool("التصميم من اليمين إلى اليسار في ريترو فوتو", chars("DejaVu Sans", "Book", 34, sun), 1170,
+  discard d.typeTool("التصميم من اليمين إلى اليسار في ريترو فوتو", chars("FreeSerif", "Regular", 34, sun), 1170,
                      246, textLeft, "Arabic Subhead", rtl = 2)
-  var ac = chars("DejaVu Sans", "Book", 27, 0xFFEDE7F6'u32, 0, 50)
+  var ac = chars("FreeSerif", "Regular", 27, 0xFFEDE7F6'u32, 0, 50)
   ac.digits = 1
   discard d.typeBox([("يكتب ريترو فوتو العربية كما ينبغي أن تُكتب: الحروف متصلة، والسطور تبدأ من اليمين، " &
                       "والفقرات تُضبط بالكشيدة لا بالفراغات وحدها. اكتب العنوان على اللوحة مباشرة، " &

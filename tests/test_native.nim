@@ -1,10 +1,10 @@
-## retro/native: the Java bridge's messages (against a fake Java side that
+## retroui/native: the Java bridge's messages (against a fake Java side that
 ## answers as tools/android/RetroNative.java does), shared libraries, and
-## the same-everywhere calls on this machine.
+## the same-everywhere calls on the computer the test runs on.
 
 import std/[strutils, posix]
-import retro/native
-import retro/uirelays/services
+import retroui/native
+import retroui/uirelays/services
 
 # ---- a fake Java side -----------------------------------------------------------------------------
 

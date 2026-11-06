@@ -1,4 +1,4 @@
-## Tests of `retro/exr` (OpenEXR read and write) and `retro/gifanim`
+## Tests of `retroui/exr` (OpenEXR read and write) and `retroui/gifanim`
 ## (animated GIF write and read).
 ##
 ## How the data was made (with Python; nothing of it ships):
@@ -29,7 +29,7 @@
 ## the test leaves its files there, with what they were made from.
 
 import std/[os, times, math, strutils, monotimes]
-import retro/[exr, codec]
+import retroui/[exr, codec]
 
 const dataDir = currentSourcePath().parentDir / "data"
 let outDir = getEnv("EXRGIF_OUT")
@@ -186,7 +186,7 @@ block exrSpeed:
 
 # ---- GIF ------------------------------------------------------------------------------------------------------
 
-import retro/[gfx, gifanim]
+import retroui/[gfx, gifanim]
 
 type GifRef = tuple[file: string; w, h, frames, loop: int; durations: seq[int]; px: seq[uint32]]
 

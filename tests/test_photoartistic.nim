@@ -1,9 +1,9 @@
-## Tests of `retro/photoartistic`: the Filter Gallery and the other new
+## Tests of `retroui/photoartistic`: the Filter Gallery and the other new
 ## filters -- each gives a picture as big, keeps transparency where it
 ## should, changes the picture, stays the same run after run; the Sketch
 ## ones draw in the two colors given; the custom shapes' sets.
 
-import retro/[gfx, photo, photofx, photoartistic, photoshapes]
+import retroui/[gfx, photo, photofx, photoartistic, photoshapes]
 
 proc picture(w, h: int): Img =
   result = newImg(w, h)

@@ -1,9 +1,9 @@
-## Tests of the PDF reader (retro/pdfread): the kit's own PDFs read back --
+## Tests of the PDF reader (retroui/pdfread): the kit's own PDFs read back --
 ## their pages drawn, their text, their outlines -- the same file with
 ## compressed object streams (when qpdf is there), damaged files.
 
 import std/[os, osproc, strutils, math]
-import retro/[gfx, pdf, pdfread]
+import retroui/[gfx, pdf, pdfread]
 
 let dir = getTempDir() / "retro-pdfread-test"
 removeDir(dir)

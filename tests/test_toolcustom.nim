@@ -1,10 +1,10 @@
-## Tests of Customize Toolbar (`retro/toolcustom`) and of a panel brought to
+## Tests of Customize Toolbar (`retroui/toolcustom`) and of a panel brought to
 ## a part of its content (`revealInPanel`) -- headless, on the fake driver.
 ##
 ##   nim c -r tests/test_toolcustom.nim
 
-import retro
-import retro/uirelays/input
+import retroui
+import retroui/uirelays/input
 import harness
 
 fakeDriver()

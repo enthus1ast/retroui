@@ -5,7 +5,7 @@
 ##   nim c -r -d:release --stackTrace:on --lineTrace:on tests/fuzz/fuzz_media.nim 20000
 
 import std/[os, random, strutils, monotimes, times]
-import retro/[gfx, mediaaudio, mediagif]
+import retroui/[gfx, mediaaudio, mediagif]
 
 let dir = currentSourcePath().parentDir.parentDir / "data" / "media"
 let rounds = if paramCount() >= 1: parseInt(paramStr(1)) else: 20000

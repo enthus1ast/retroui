@@ -8,7 +8,7 @@
 ## the steps whose names hold one of those, e.g. to profile them.)
 
 import std/[monotimes, times, strutils, os]
-import retro/[gfx, photo, photopaint, photofx, photoshapes, photostyles, photodevelop, textengine, photofiles, parallel]
+import retroui/[gfx, photo, photopaint, photofx, photoshapes, photostyles, photodevelop, textengine, photofiles, parallel]
 
 proc ms(t: MonoTime): float = (getMonoTime() - t).inMicroseconds.float / 1000
 

@@ -19,7 +19,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, strutils, json, times, tables, sets, algorithm, sequtils, unicode, hashes, math]
-import retro, retro/[db, http, oauth, secrets, mime, richedit, spell, pdfview, mailimport, notify,
+import retroui, retroui/[db, http, oauth, secrets, mime, richedit, spell, pdfview, mailimport, notify,
                      bgcheck]
 import mail/[store, api, sync, graph, gmail, appids, rules, forward, importer, calendar]
 
@@ -294,7 +294,7 @@ proc startup() =
     lastTreeSel = treeSel
     place = Place(kind: plAllInbox)
 
-# ---- new mail while Retro Mail is closed (retro/bgcheck) ---------------------------------
+# ---- new mail while Retro Mail is closed (retroui/bgcheck) ---------------------------------
 
 proc checkMail() {.nimcall, gcsafe.} =
   ## The background check, with no window (on Android also in a process

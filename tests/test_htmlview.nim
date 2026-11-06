@@ -3,9 +3,9 @@
 ## `systemRelays.call` that records what the app asks of it).
 
 import std/[os, strutils, times, monotimes]
-import retro
-import retro/htmlview
-import retro/uirelays/[input, services]
+import retroui
+import retroui/htmlview
+import retroui/uirelays/[input, services]
 import harness
 
 fakeDriver()

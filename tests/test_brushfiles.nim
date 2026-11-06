@@ -1,7 +1,7 @@
-## Tests of retro/abr: Photoshop (.abr) and GIMP (.gbr) brushes read.
+## Tests of retroui/abr: Photoshop (.abr) and GIMP (.gbr) brushes read.
 
 import std/unittest
-import retro/[abr, photopaint]
+import retroui/[abr, photopaint]
 
 proc w16(o: var string; v: int) = (o.add char((v shr 8) and 255); o.add char(v and 255))
 proc w32(o: var string; v: int) =

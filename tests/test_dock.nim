@@ -1,12 +1,12 @@
-## Tests of `retro/dock`: docked panels as Photoshop's -- groups of tabs,
+## Tests of `retroui/dock`: docked panels as Photoshop's -- groups of tabs,
 ## a column collapsed to icons and its fly-out, a panel dragged to another
 ## group, to a group of its own, out into a floating palette and back,
 ## closed and brought back where it was, the bars that share the height,
 ## kept as JSON -- headless, on the fake driver.
 
 import std/[json, strutils]
-import retro, retro/dock
-import retro/uirelays/input
+import retroui, retroui/dock
+import retroui/uirelays/input
 import harness
 
 fakeDriver()

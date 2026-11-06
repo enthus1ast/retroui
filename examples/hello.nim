@@ -1,6 +1,6 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
-import retro
+import retroui
 
 var name = "World"
 var greeted = ""

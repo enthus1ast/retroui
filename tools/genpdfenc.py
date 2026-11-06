@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Writes src/retro/pdfencodings.nim: the encodings PDF fonts use
+"""Writes src/retroui/pdfencodings.nim: the encodings PDF fonts use
 (Standard, WinAnsi, MacRoman) as glyph names, and glyph names to
 characters (the Adobe Glyph List for new fonts), from fontTools."""
 import os

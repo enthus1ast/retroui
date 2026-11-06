@@ -1,13 +1,13 @@
-## The HTML5-style canvas (retro/canvas2d): shapes, anti-aliasing, lines,
+## The HTML5-style canvas (retroui/canvas2d): shapes, anti-aliasing, lines,
 ## joins, caps and dashes, transforms, clipping, colors, gradients and
 ## patterns, alpha and compositing, shadows, text, pictures, image data,
 ## hit tests, bad input, and the canvas in a window with the mouse, fingers
 ## and keys -- headless.
 
 import std/[math, times, strutils]
-import retro
-import retro/canvas2d
-import retro/uirelays/input
+import retroui
+import retroui/canvas2d
+import retroui/uirelays/input
 import harness
 
 type Rgba = tuple[r, g, b, a: int]

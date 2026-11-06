@@ -10,19 +10,18 @@
 ##   nimble board          (or: nim c -r -d:release examples/retroboard.nim)
 ##   nimble boardapk       (the Android APK: build/RetroBoard.apk)
 ##
-## The document and its drawing are the toolkit's `retro/board` (and its
-## ink `retro/freehand`); this file is the program round them.
+## The document and its drawing are the toolkit's `retroui/board` (and its
+## ink `retroui/freehand`); this file is the program round them.
 ##
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, math, strutils, tables, sets, unicode, json, sequtils, hashes]
-import retro
-import retro/[board, freehand]
+import retroui
+import retroui/[board, freehand]
 
 const
   AppName = "Retro Board"
-  BoardVersion = "1.3.1"
-  Credit = "Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net"
+  BoardVersion = "1.3.2"
   iconPng = staticRead("assets/board-icon.png")
 
 type
@@ -3268,10 +3267,11 @@ proc dialogs() =
   aboutBox(aboutDlg, AppName, BoardVersion,
            ["An endless whiteboard: ink, shapes, arrows, text, notes, frames and pictures, " &
             "on as many pages as you like.",
-            "Made with Retro Nim UI " & RetroVersion & " (retro/board, retro/freehand).",
-            Credit],
+            "Made with Retro Nim UI " & RetroVersion & " (retroui/board, retroui/freehand)."],
            tagline = "Draw, sketch and think together", iconPng = iconPng,
-           whatsNew = ["1.3.1: a line drawn from a shape or to one holds on to it (a connector, as an arrow " &
+           whatsNew = ["1.3.2: the menus answer at once; the letters drawn as before, Sharp text a choice; " &
+                       "the Windows 3.1 frame on every desktop",
+                       "1.3.1: a line drawn from a shape or to one holds on to it (a connector, as an arrow " &
                        "with no heads: it follows the shapes; Alt: a free line); 100% half as big on a tablet or " &
                        "a phone -- a page's unit to each dot of the screen",
                        "1.3.0: the panels as Retro Photo's -- docked down the right in tabs that belong " &

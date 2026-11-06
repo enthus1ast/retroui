@@ -1,7 +1,7 @@
 ## Tests of letters (#[tags]#, amounts in words) and sealed files.
 
 import std/[tables, strutils, times]
-import retro/[templates, vault]
+import retroui/[templates, vault]
 
 block wordsBlock:
   doAssert numberWords(0) == "Zero"

@@ -1,10 +1,10 @@
-## Tests of the image editor's engine (retro/photo, photopaint, photofx):
+## Tests of the image editor's engine (retroui/photo, photopaint, photofx):
 ## colors and blend modes, layers, the selection, undo, painting, the
 ## filters and adjustments, transforms, modes and files. With PHOTO_DUMP
 ## set to a folder, the results are written there as pictures to look at.
 
 import std/[os, math, strutils, times, algorithm]
-import retro/[busy, gfx, imaging, photo, photopaint, photofx, photodevelop, photosmart, photowarp, photostyles,
+import retroui/[busy, gfx, imaging, photo, photopaint, photofx, photodevelop, photosmart, photowarp, photostyles,
               textengine]
 
 let dump = getEnv("PHOTO_DUMP")

@@ -7,7 +7,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[json, strutils, times, tables, os, hashes, sets, sequtils, uri, locks]
-import retro/[db, http, oauth, secrets, mime]
+import retroui/[db, http, oauth, secrets, mime]
 import api, store, graph, gmail, appids, sigfind, invites, autoreply, assist, rules, forward, importer,
        calendar
 

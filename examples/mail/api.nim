@@ -4,7 +4,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, json, strutils, times]
-import retro/http
+import retroui/http
 
 type
   ApiError* = object of CatchableError

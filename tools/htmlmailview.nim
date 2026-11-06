@@ -12,7 +12,7 @@
 ## The status bar shows the link under the pointer and what the page wants.
 
 import std/[os, strutils, monotimes, times, hashes, tables]
-import retro
+import retroui
 
 var
   path = ""

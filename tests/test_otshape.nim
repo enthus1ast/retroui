@@ -1,13 +1,14 @@
-## Tests of `retro/otshape` (OpenType shaping) and of the variable fonts
-## of `retro/ttf`, against independent references:
+## Tests of `retroui/otshape` (OpenType shaping) and of the variable fonts
+## of `retroui/ttf`, against independent references:
 ##
 ## * shaping: 4097 runs whose glyphs, clusters, advances and offsets must
 ##   equal what HarfBuzz 15.0.0 (uharfbuzz 0.57, cluster level
 ##   "characters") gives for the same font, text, direction, script,
-##   language, features and axis values -- Arabic (Amiri, Noto Sans Arabic
-##   with its weight and width axes), Latin (EB Garamond), a font with only
-##   a legacy `kern` table (the built-in Sans) and a small font made to
-##   hold every GSUB and GPOS lookup type, context format and lookup flag;
+##   language, features and axis values -- Arabic (FreeSerif, Noto Sans
+##   Arabic with its weight and width axes), Latin (EB Garamond), a font
+##   with only a legacy `kern` table (FreeSerif-KernOnly) and a small font
+##   made to hold every GSUB and GPOS lookup type, context format and
+##   lookup flag;
 ## * variable fonts: outlines, bounds and advances at several axis values
 ##   against fontTools' `varLib.instancer` (static instances) and the
 ##   advances against HarfBuzz;
@@ -43,22 +44,28 @@
 ##   of the Noto subset at the axis values in instances/list.txt, which
 ##   also holds HarfBuzz's advance of every glyph there.
 ##
-## Amiri-Regular.ttf (OFL) is the one in src/retro/fonts; Sans.ttf the
-## built-in DejaVu subset.
+## * FreeSerif-KernOnly.ttf: GNU FreeSerif 0412 (GPL v3 or later with the
+##   font exception, src/retroui/fonts/LICENSE-FreeFont.txt) cut by
+##   `pyftsubset` to ASCII, Latin-1 and the quotes, its legacy `kern` table
+##   kept and its OpenType layout dropped.
+##
+## FreeSerif.ttf is the built-in GNU FreeFont subset in src/retroui/fonts
+## (the "serif" and "kernonly" runs were shaped again by HarfBuzz when they
+## took the place of Amiri and the DejaVu Sans subset the kit had before).
 
 import std/[os, strutils, monotimes, times, tables]
 import std/unicode except splitWhitespace
-import retro/[ttf, otshape, codec]
+import retroui/[ttf, otshape, codec]
 
 let dir = currentSourcePath().parentDir / "data" / "fonts"
-let fontDir = currentSourcePath().parentDir.parentDir / "src" / "retro" / "fonts"
+let fontDir = currentSourcePath().parentDir.parentDir / "src" / "retroui" / "fonts"
 
 var faces: Table[string, Face]
 proc face(key: string): Face =
   if key notin faces:
     let path = case key
-               of "amiri": fontDir / "Amiri-Regular.ttf"
-               of "sans": fontDir / "Sans.ttf"
+               of "serif": fontDir / "FreeSerif.ttf"
+               of "kernonly": dir / "FreeSerif-KernOnly.ttf"
                of "noto": dir / "NotoSansArabic-Subset.ttf"
                of "garamond": dir / "EBGaramond-Subset.ttf"
                of "layout": dir / "OTLayoutTest.ttf"
@@ -184,9 +191,9 @@ block axesAndInstances:
   let noto = face("noto")
   doAssert noto.axes.len == 2 and noto.instances.len > 0
   # a static font has none, and its variation is itself
-  let amiri = face("amiri")
-  doAssert amiri.axes.len == 0 and amiri.instances.len == 0
-  doAssert amiri.variation([("wght", 700.0)]) == amiri
+  let serif = face("serif")
+  doAssert serif.axes.len == 0 and serif.instances.len == 0
+  doAssert serif.variation([("wght", 700.0)]) == serif
 
 block variationIsKeptAndLeavesTheFaceAlone:
   let f = parseFace(readFile(dir / "VarTest.ttf"))
@@ -219,17 +226,17 @@ block variationIsKeptAndLeavesTheFaceAlone:
   doAssert wb > wa
 
 block featureListAndNames:
-  let amiri = face("amiri")
-  let tags = amiri.featureTags
-  for t in ["ccmp", "curs", "fina", "init", "kern", "liga", "mark", "medi", "mkmk", "rlig", "ss01"]:
+  let serif = face("serif")
+  let tags = serif.featureTags
+  for t in ["ccmp", "fina", "init", "kern", "liga", "mark", "medi", "mkmk", "rlig"]:
     doAssert t in tags, t
   for i in 1 ..< tags.len: doAssert tags[i - 1] < tags[i]
-  doAssert amiri.hasLayout
-  doAssert not face("sans").hasLayout
-  doAssert face("sans").featureTags.len == 0
-  doAssert amiri.featureName("liga") == "Standard Ligatures"
-  doAssert amiri.featureName("kern") == "Kerning"
-  doAssert amiri.featureName("init") == "Initial Forms"
+  doAssert serif.hasLayout
+  doAssert not face("kernonly").hasLayout
+  doAssert face("kernonly").featureTags.len == 0
+  doAssert serif.featureName("liga") == "Standard Ligatures"
+  doAssert serif.featureName("kern") == "Kerning"
+  doAssert serif.featureName("init") == "Initial Forms"
   let lay = face("layout")
   doAssert lay.featureName("ss01") == "Alternate a and b"      # the font's own name
   doAssert lay.featureName("ss02") == "Stylistic Set 2"
@@ -239,7 +246,7 @@ block featureListAndNames:
 
 block noLayoutFont:
   # nominal glyphs and the kern pairs ttf.nim reads, split as HarfBuzz does
-  let sans = face("sans")
+  let sans = face("kernonly")
   var cps: seq[int]
   for c in "AVATAR": cps.add ord(c)
   let gs = sans.shape(cps, false)
@@ -255,13 +262,13 @@ block noLayoutFont:
   doAssert pen == plain
 
 block emptyAndOdd:
-  let amiri = face("amiri")
-  doAssert amiri.shape(@[], true).len == 0
-  doAssert amiri.shape(@[0x10FFFF, 0xFFFF, 0xD800], false).len == 3   # missing, not crashing
-  doAssert amiri.shape(@[0x200D], true).len == 1
+  let serif = face("serif")
+  doAssert serif.shape(@[], true).len == 0
+  doAssert serif.shape(@[0x10FFFF, 0xFFFF, 0xD800], false).len == 3   # missing, not crashing
+  doAssert serif.shape(@[0x200D], true).len == 1
 
 block speed:
-  let amiri = face("amiri")
+  let serif = face("serif")
   let para = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ الرَّحْمَٰنِ الرَّحِيمِ مَالِكِ " &
              "يَوْمِ الدِّينِ إِيَّاكَ نَعْبُدُ وَإِيَّاكَ نَسْتَعِينُ اللغة العربية من أكثر اللغات انتشارا في العالم، " &
              "يتحدثها أكثر من أربعمائة مليون نسمة، وهي لغة رسمية في اثنتين وعشرين دولة. "
@@ -269,14 +276,14 @@ block speed:
   while cps.len < 1000:
     for r in para.runes:
       if cps.len < 1000: cps.add int(r)
-  discard amiri.shape(cps, true, "arab")
+  discard serif.shape(cps, true, "arab")
   var best = 1e9
   for _ in 0 ..< 20:
     let t0 = getMonoTime()
-    let gs = amiri.shape(cps, true, "arab")
+    let gs = serif.shape(cps, true, "arab")
     best = min(best, float((getMonoTime() - t0).inNanoseconds) / 1e6)
     doAssert gs.len > 900
-  echo "speed: 1000 Arabic characters (Amiri) shaped in ", best.formatFloat(ffDecimal, 2), " ms"
+  echo "speed: 1000 Arabic characters (FreeSerif) shaped in ", best.formatFloat(ffDecimal, 2), " ms"
   when defined(release) and not defined(otshapeNoTiming):
     doAssert best < 2.0
 

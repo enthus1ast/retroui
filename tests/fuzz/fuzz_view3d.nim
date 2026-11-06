@@ -4,8 +4,8 @@
 ##   nim c -r -d:release --stackTrace:on --lineTrace:on tests/fuzz/fuzz_view3d.nim 20000
 
 import std/[os, random, strutils, math]
-import retro/gfx
-import retro/view3d
+import retroui/gfx
+import retroui/view3d
 
 let dir = currentSourcePath().parentDir.parentDir / "data" / "3d"
 var seeds: seq[string]

@@ -1,7 +1,7 @@
 ## Tests of printing color management: CMYK and table profiles read
-## (retro/iccprofile), converted with every intent and black point
-## compensation (retro/icclut) and checked against littlecms, the press
-## profile hook of retro/photoinks, and the built-in ink model written as a
+## (retroui/iccprofile), converted with every intent and black point
+## compensation (retroui/icclut) and checked against littlecms, the press
+## profile hook of retroui/photoinks, and the built-in ink model written as a
 ## profile.
 ##
 ## The data (tests/data/icc):
@@ -23,7 +23,7 @@
 ##   'F'/'B', intent, bpc, 0, and the n colors made.
 
 import std/[unittest, os, monotimes, times, strformat, strutils]
-import retro/[iccprofile, icclut, photoinks]
+import retroui/[iccprofile, icclut, photoinks]
 
 const dir = currentSourcePath().parentDir / "data" / "icc"
 

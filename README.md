@@ -1,11 +1,15 @@
 # Retro Nim UI
 
 **Developed by Sultan Al Isaiee [@foxoman](https://github.com/foxoman)** --
-[www.foxoman.net](https://www.foxoman.net) -- [sultan@foxoman.net](mailto:sultan@foxoman.net)
+[www.foxoman.net](https://www.foxoman.net) -- [sultan@foxoman.net](mailto:sultan@foxoman.net)  
+Co-author: Claude (Anthropic)
 
 A **Windows 3.1 style UI toolkit for Nim** that builds business and desktop
 apps for **Windows, macOS, Linux, Android and iOS** from one code base. The
-package and module are called `retro`.
+package and its module are called `retroui`: `nimble install retroui`, `import retroui`.
+
+**Documentation: [docs/controls.md](docs/controls.md)** -- every control with
+pictures: getting started, layout, each control's example and API, the looks.
 
 ![Retro Files, a file manager made with Retro Nim UI](docs/filemanager.png)
 
@@ -18,9 +22,10 @@ package and module are called `retro`.
   the decoders are all built in, and only what an app calls is linked.
 - **No dependencies.** You need Nim and a C compiler — nothing else to
   install, now or on the user's machine: no GTK, Qt, SDL, Electron, browser
-  engine or Java toolchain. On Linux, X11 is loaded when the app starts, so
-  building needs no `-dev` packages; sound, video and printing use whatever
-  the system offers, loaded only when used.
+  engine or Java toolchain. On Linux, libX11 is the one library an app
+  needs, loaded when it starts (Xft, XRender, EGL and the rest are used when
+  the system has them), so building needs no `-dev` packages; sound, video
+  and printing use whatever the system offers, loaded only when used.
 - **Runs anywhere.** One code base for Windows, macOS, Linux/BSD (X11, and
   Wayland through XWayland), Termux:X11, Android 7+ and iOS. Touch, mouse and
   keyboard all work everywhere, and the layout adapts to phones, tablets,
@@ -30,7 +35,7 @@ package and module are called `retro`.
   unchanged frame costs nothing and is not sent to the screen, and the app
   uses no CPU while it waits. A 50,000-file folder or a 100,000-row grid
   scrolls in well under a millisecond per frame.
-- **Reaches any OS API.** `retro/native` calls any Android Java API without
+- **Reaches any OS API.** `retroui/native` calls any Android Java API without
   writing Java, any macOS/iOS API through the Objective-C runtime, Win32 and
   COM, and any C library through `dlopen`, with ready-made cross-platform
   calls (battery, vibrate, dark mode, device name…).
@@ -42,14 +47,12 @@ package and module are called `retro`.
 - **Looks the part.** The 3.1 look down to the pixel — black outlines, the
   two-step bevels, the default button's ring, navy and white title bars,
   dithered scroll tracks, etched group boxes, hard menu shadows — in
-  **MS W98 UI**, the MS Sans Serif of Windows 98 as outlines, drawn on its
-  pixel grid so it is crisp at 100 %, on HD, 2K and 4K screens and at
-  in-between scales (no licence: see "The font" below). **Kawkab Mono** (a
-  monospaced Arabic and Latin font), **Retro Sans** (a recreation of MS
-  Sans Serif with Arabic, bitmaps at 100 %), **Fixedsys Excelsior** (the
-  8 x 16 Fixedsys look, crisp on its pixel grid), DejaVu Sans and **Open
-  Sans** are the other choices
-  (`setUiFont`, or the user in `appearanceSettings`). 109 pixel icons in
+  **FreeSans** (GNU FreeFont's Helvetica-like sans, with its bold, oblique
+  and bold oblique), its heights on whole pixels so it is crisp at 100 %,
+  at 125 % and 150 %, and on HD, 2K and 4K screens, with Arabic everywhere
+  (FreeSerif's). **FreeSerif**, **FreeMono** or a font file are the other
+  choices (`setUiFont`, or the user in `appearanceSettings`; see "The
+  fonts" below). 255 pixel icons in
   the manner of the period. Lists and pages glide when scrolled, and a
   flicked finger keeps them moving.
 - **Safe.** Every decoder and parser (PNG, JPEG, BMP, GIF, WAV, zip, CSV,
@@ -94,13 +97,13 @@ You need **Nim 2.0 or newer** and **a C compiler**:
 | macOS | `brew install nim`, `xcode-select --install` | Cocoa |
 | Linux / BSD | your package manager: `nim`, `gcc` or `clang` | X11 is loaded at run time: no `-dev` packages |
 | Android, on the device | Termux: `pkg install nim clang ndk-sysroot git` | builds APKs right on the phone |
-| Android, from a desktop | nothing more: the first APK build fetches the NDK into `~/.retro/ndk` | no Java, no Gradle, no SDK, no OpenSSL |
+| Android, from a desktop | a clang with lld (LLVM on Windows, `brew install llvm lld`, `clang lld` packages) or zig; with neither, the first APK build fetches the NDK into `~/.retro/ndk` | no NDK, no Java, no Gradle, no SDK, no OpenSSL |
 | iOS | a Mac with Xcode | |
 
 Then:
 
 ```sh
-nimble install retro          # the library and its tools (or the repository's URL)
+nimble install retroui          # the library and its tools (or the repository's URL)
 retrokit doctor                                # checks what this machine has
 retrokit new myapp --kind:business             # a ready app: hello, form, business, files, charts
 cd myapp && nimble run
@@ -116,7 +119,9 @@ cd myapp && nimble run
 | `retrokit small app.nim` | the smallest build (optimized for size, stripped), and its size |
 | `retrokit apk app.nim` | an Android APK (the `retroapk` tool, below) |
 
-From a clone of this repository:
+From a clone of this repository (the examples are built only when you ask,
+one at a time; `nimble install retroui` installs only the toolkit and its
+tools):
 
 ```sh
 nimble gallery        # every control in one window
@@ -127,6 +132,7 @@ nimble charts         # Chart Viewer: a CSV file as charts, saved as PNG
 nimble photo          # Retro Photo, the image editor
 nimble board          # Retro Board, the whiteboard
 nimble mail           # Retro Mail: Microsoft 365, Outlook.com and Gmail (mailexe, mailapk)
+nimble hrbook         # HR Book: employee records of several hotels, sealed with a PIN
 nimble apk            # Retro Files as an Android APK (build/RetroFiles.apk)
 nimble photoapk       # Retro Photo as an APK (photoinstall: build and adb install)
 nimble galleryapk     # the gallery as an APK
@@ -135,7 +141,9 @@ nimble photoexe       # Retro Photo for Windows, with its icon (from Linux or ma
 nimble filesexe       # Retro Files for Windows (galleryexe, boardexe: the others)
 nimble photoappimage  # Retro Photo as a Linux AppImage, with its icon and menu entry (one file, runs anywhere:
 nimble filesappimage  # Retro Files as an AppImage      built against glibc 2.31 with zig when it is there)
-nimble apks           # every app as an APK            (the apps: the table in retro.nimble)
+RETRO_APP=hrbook nimble exe        # any one app of the table in retroui.nimble: exe, appapk,
+RETRO_APP=hrbook nimble appapk     #   appimage, macapp
+nimble apks           # every app as an APK            (the apps: the table in retroui.nimble)
 nimble exes           # every app for Windows
 nimble appimages      # every app as an AppImage
 nimble macapps        # every app for macOS, zipped .app (on a Mac: build/mac/)
@@ -146,9 +154,15 @@ nimble fuzz           # the fuzzers
 nimble docs           # the API reference (docs/api) and docs/controls.md
 ```
 
-Every task builds with what `nimble install` brought: the APK tasks fetch
-the Android NDK once (about 700 MB, into `~/.retro/ndk`; `nimble ndk` does it
-now, `ANDROID_NDK_HOME` uses yours), sign with a key made for you in
+**Step by step** -- an APK from Windows, macOS, Linux or a BSD without
+the Android SDK, an iOS app on a Mac, signing and installing: see
+[BUILDING.md](BUILDING.md).
+
+Every task builds with what `nimble install` brought: the APK tasks need
+no Android NDK -- `retroapk` carries Android's headers and libraries (1.2 MB,
+unpacked once into `~/.retro/android-sysroot`) and builds with a clang that
+has lld, or zig; with neither they fetch the NDK once (about 700 MB, into
+`~/.retro/ndk`; `nimble ndk` does it now, `ANDROID_NDK_HOME` uses yours), sign with a key made for you in
 `~/.retro/android` (`RETRO_KEYS` another folder), and need no Java, Gradle, SDK, OpenSSL or apksigner. In
 Termux the compiler is installed with `pkg` the first time.
 
@@ -182,26 +196,38 @@ RETRO_FRAME=system ./app              # when it starts: the system's frame after
 
 **The user can always switch.** In every app, with nothing to write: the
 3.1 frame's control menu has **Windows' Own Frame** (elsewhere **Desktop's
-Own Frame**), and on Windows the system's frame gets **Windows 3.1 Frame**
-in its system menu (the title bar's icon, Alt+Space). The choice is kept
-for the app (`window.ini` in its data folder) and wins over the frame it was
-built with at the next start; `appearanceSettings` offers it too, as
-**Window**. On X11 and macOS with the system's frame, the window manager
-owns that menu: offer `appearanceSettings` there.
+Own Frame**); on Windows the system's frame gets **Windows 3.1 Frame** in
+its system menu (the title bar's icon, Alt+Space), and on macOS the menu
+bar gets it in a **Window** menu (checked while that frame is on). The
+choice is kept for the app (`window.ini` in its data folder) and wins over
+the frame it was built with at the next start; `appearanceSettings` offers
+it too, as **Window**. On X11 and Wayland the window manager keeps its menu
+(Alt+Space, a right click on the title bar) to itself: there
+`appearanceSettings` is the way back to the 3.1 frame, so offer it.
+
+**Where:** every desktop. Windows; macOS; Linux and the BSDs on X11, with
+any window manager (EWMH: GNOME, KDE, Xfce, openbox... -- snapping and
+tiling as for other windows) or none (an X server that shows one app: the
+app's window is then moved, sized and maximized by the driver); Wayland
+desktops through XWayland (the default build), or as Wayland's own windows
+with `-d:gtk4` or `-d:sdl3`. The other drivers have it too: GTK 4, SDL 3
+and SDL 2 (where a double click on the title bar maximizes on Windows only,
+and the control menu's Move and Size do nothing), Siwin (not on macOS; on
+Windows the frame chosen is the next window's). Only the phones keep their
+own.
 
 **For the developer:** `app`'s `frame` (`wfAsBuilt`, `wfSystem`,
 `wfClassic`) is the frame the window opens with, `userFrame = false` takes
 the user's choice away; `setClassicFrame(on)` changes it while the app runs,
 `chooseClassicFrame(on)` changes it as the user would (and keeps it),
-`classicFrame()` says which one is on. Windows and X11 have it (macOS too,
-not yet tried on a Mac); Wayland and the phones keep their own. A window
-manager's own keys stay its own: openbox, say, opens its window menu for
-Alt+Space before the app sees it.
+`classicFrame()` says which one is on. A window manager's own keys stay its
+own: openbox, say, opens its window menu for Alt+Space before the app sees
+it (the control-menu box still opens the app's).
 
 ## Your first app
 
 ```nim
-import retro
+import retroui
 
 var name = "World"
 var greeting = ""
@@ -223,17 +249,14 @@ retrokit small hello.nim          # optimized for size, LTO, stripped: about 1.1
 retroapk hello.nim --install      # on a phone in Termux
 ```
 
-For the smallest program add `-d:retroNoW98 -d:retroNoKawkab
--d:retroNoFixedsys -d:retroNoOpenSans` (four fonts left out, about 670 KB:
-Retro Sans, DejaVu Sans Mono and DejaVu Sans stand in). On Windows from
-Linux: `nim c -d:release -d:useMalloc -d:lto --opt:size --passL:-s -d:mingw
+On Windows from Linux: `nim c -d:release -d:useMalloc -d:lto --opt:size --passL:-s -d:mingw
 --cpu:amd64 --app:gui hello.nim`.
 
 Build with `-d:useMalloc` (or put `switch("define", "useMalloc")` in your
 `config.nims`; `retroapk` adds it by itself): with Nim's own allocator a
 program never gives memory back to the system, and one that shows many
 pictures only grows. The toolkit warns at compile time without it, and
-`retro/memwatch` gives back what the program lets go of
+`retroui/memwatch` gives back what the program lets go of
 (`trimHeap`, by itself when it rests and when it goes to the background).
 
 `app` opens the window and runs its body once per frame. Each widget
@@ -252,7 +275,7 @@ app "Ledger", 900, 600,
     userFrame = true,                # the user may switch it (kept per app)
     gpu = gmAuto,                    # gmAuto, gmGpu, gmCpu
     scale = 125,                     # the size of everything, in percent
-    font = ufW98,                    # the UI's font
+    font = ufSans,                   # the UI's font (ufSerif, ufMono)
     zoom = 0,                        # whole-pixel magnification (0: the display's)
     id = "ledger",                   # the app's name for what the toolkit keeps
     icon = ledgerIcon,               # the window's picture (a PNG's bytes)
@@ -290,10 +313,10 @@ $RETRO_ZOOM win over the options when the app starts (tests, screenshots).
   boxes, bold menus) in eight colour schemes (`builtinThemes`: Classic,
   Gray, Dark, Ocean, Desert, Plum, Hot Dog, Paper), or your own `Theme`
   (`ui.theme = Dark`).
-  Text is MS W98 UI (the default), Kawkab Mono (monospaced Arabic and
-  Latin), Retro Sans, the 3.1 font with Arabic (bitmaps at 100 %, smooth outlines on HD
-  screens), or DejaVu Sans (`setUiFont`); icons are the
-  3.1-style pixel icons or the Nerd Fonts symbols.
+  Text is FreeSans (the default), FreeSerif or FreeMono -- GNU FreeFont,
+  built in, each in its four styles, Arabic everywhere -- or a font file
+  (`setUiFont`, `loadUiFontFile`); icons are
+  the 3.1-style pixel icons or the Nerd Fonts symbols.
 - **Sizes.** Layout uses design pixels that follow the screen's density
   (Xft.dpi, GDK_SCALE, the monitor's real size, Android's density, Windows
   per-monitor DPI), in whole pixels so lines stay sharp. Users can make
@@ -402,8 +425,9 @@ toolButton(nfCopy, "Copy", size = 1.3)
 image(x, y, glyphIcon(nfFolder, color(222, 170, 40), 24))   # as an Icon
 ```
 
-`TextStyle` has `bold`, `italic`, `mono`, `underline`, `strike`, `size`
-(times the UI's text size) and `rtl`. `textWidth`, `lineHeight` and
+`TextStyle` has `bold`, `italic` (the font's own italic: FreeSans Oblique,
+not a slanted copy), `mono` (FreeMono), `serif` (FreeSerif), `underline`,
+`strike`, `size` (times the UI's text size) and `rtl`. `textWidth`, `lineHeight` and
 `FontH` measure. The icon constants (`nfFolder`, `nfCog`, `nfGithub`...,
 `nerdIconNames` lists them all) come from Font Awesome, Material Design,
 Seti and Devicons via Nerd Fonts. Characters in no built-in font (CJK,
@@ -419,14 +443,14 @@ rectangles from textures the CPU makes once (text, icons, shapes),
 pictures as textures sent only where they changed. A start-up self-test,
 a fall back to the CPU and a guard against a crash at start keep a bad
 driver from hurting; `setGpuMode(gmAuto/gmGpu/gmCpu)` or "Drawing" in
-`appearanceSettings` chooses. On HD and 4K screens MS W98 UI is drawn from
-smoothed outlines (MS W98 UI HD), pixel icons are scaled with Scale2x and
-Scale3x, and small marks at the screen's resolution (`setHdText(false)`:
-the pixels of 1998, magnified). There is a true-black OLED theme; in it (and in Dark) the pixel icons are
+`appearanceSettings` chooses. The text is drawn at the screen's own
+resolution on every screen; on HD and 4K screens pixel icons are scaled
+with Scale2x and Scale3x, and small marks are drawn at the screen's
+resolution (`setHdText(false)`: the pixels of 1998, magnified). There is a true-black OLED theme; in it (and in Dark) the pixel icons are
 drawn as their line twins -- Nerd Fonts symbols in the text's color, crisp
 at any size (`setIconStyle`).
 
-**Big images.** The photo engine (`retro/photo`) shows a change being made
+**Big images.** The photo engine (`retroui/photo`) shows a change being made
 with the mouse -- a layer moved, transformed, adjusted -- before it is done
 (`LivePart`): the view's pixels are composited straight from the layers at
 the view's size, and the full-size pixels change once, when it is put down
@@ -434,63 +458,98 @@ the view's size, and the full-size pixels change once, when it is put down
 70-megapixel photo, dragging a layer costs about 8 ms a frame and Free
 Transform 25 ms.
 
-**The font.** Every app's text is **MS W98 UI** unless it chooses
-otherwise: the MS Sans Serif of Windows 98 made outlines by Lev Leontev
-(2019) and fixed by martyr— (MARTYR X LTD, 2022,
-github.com/MARTYR-X-LTD/ms-w98-ui), regular and bold. Its glyphs are put on
-its pixel grid at every scale, so it looks as it did on a 1998 screen and
-stays crisp at 2x and in between; Arabic, and characters it does not
-have, come from the other fonts. **It has no licence.** Its authors call
-it free to use, but the letters are Microsoft's MS Sans Serif, and nobody
-has granted rights to them; `src/retro/fonts/NOTICE-MSW98UI.txt` says
-what is known. For a program you sell or publish, build with
-`-d:retroNoW98` (it is left out, and Retro Sans is the default) or choose
-another font with `setUiFont`. `setUiFont(ufKawkab)` gives **Kawkab
-Mono**: Abdullah Arif's monospaced Arabic (with the Latin of Source
-Code Pro), SIL OFL 1.1, built for the kit by `tools/genkawkab.py`. Its
-stems are fitted to whole pixels and its letters are a whole number of
-screen pixels wide at every scale (100 %, 2x, 125 %, 150 %...), so the
-text is crisp on any screen and lines up in columns; Arabic joins and
-lam-alef is one letter. `setUiFont(ufRetro)` gives **Retro Sans**, the
-3.1 look: a recreation of the Windows 3.1 MS Sans Serif (after lou's,
-CC BY-SA 3.0), regular and bold, with the Arabic of GNU Unifont joined
-and right to left. At 100 % it is drawn from its bitmaps, one screen
-pixel per font pixel, as on a 1992 screen; larger, and on HD, 2K and 4K
-screens, from smoothed outlines of the same shapes, so it stays sharp and
-keeps its character at every size. `setUiFont(ufFixedsys)` gives
-**Fixedsys Excelsior**, the Fixedsys look of Windows 3.x and DOS screens:
-Darien Valentine's 8 x 16 font (public domain, CC0; with Kirill Pertsev's
-additions), monospaced, its thousands of characters (Latin, Greek,
-Cyrillic, Hebrew, box drawing...) traced again from their pixels into
-clean outlines by `tools/genfixedsys.py`. At 100 % and whole multiples
-every font pixel is screen pixels, its line 16 pixels as it was; on HD
-screens and in large text it is drawn from smoothed outlines (Fixedsys
-Excelsior HD: diagonals smooth, stems still on the pixels;
-`setHdText(false)` keeps the pixels). Its bold is drawn as Windows drew a
-bitmap font's, each letter again a pixel to the right, and its Arabic is
-Unifont's, the same 8 x 16 cell. `setUiFont(ufOpenSans)` gives **Open
-Sans** (SIL OFL 1.1, `tools/genopensans.py`), a smooth modern font,
-regular and bold, its stems fitted to the pixels at small sizes; Arabic
-comes from DejaVu Sans. `setUiFont(ufSmooth)` switches to
-DejaVu Sans; `loadUiFontFile(path)` to a font of the user's (a .ttf; a
-pixel font is drawn on its grid, crisp) (before `app` for one app's default, or at any time);
-`uiFont()` tells which is on; `appearanceSettings` puts the choice in an
-app's Settings and `storeAppearance` / `restoreAppearance` keep it
-(`builtinUiFonts` lists the fonts for a menu of an app's own, `uiFontKey` /
-`uiFontOfKey` name them in its settings).
-Monospaced text (code, hex) is Kawkab Mono with Kawkab Mono, Fixedsys with
-Fixedsys, DejaVu Sans Mono with the others. The fonts are
-also in `src/retro/fonts` as TrueType files for other programs:
-`RetroSans.ttf`, `RetroSansBold.ttf` and `RetroSansArabic.ttf` (the
-bitmaps as square pixels) and `RetroSansHD*.ttf` (the smoothed outlines),
-`FixedsysExcelsior.ttf` and `FixedsysExcelsiorHD.ttf` (12 of its pixels
-to the em: at 12 pixels per em, 9 points, one font pixel is one screen
-pixel), `OpenSans.ttf` and `OpenSansBold.ttf`.
-The Arabic is its own file because its licence (OFL) and that of the
-Latin letters (CC BY-SA) do not allow one merged file; the toolkit joins
-them when it draws.
+**The fonts.** Every app's text is **FreeSans** unless it chooses
+otherwise: GNU FreeFont's sans (in the manner of Helvetica and Arial),
+built into the app in its regular, bold, oblique and bold oblique.
+`setUiFont(ufSerif)` gives **FreeSerif** (in the manner of Times),
+`setUiFont(ufMono)` **FreeMono** (in the manner of Courier); monospaced
+text (code blocks, editors, hex) is FreeMono whatever the UI's font, and
+serif families in HTML, on the canvas and in documents are FreeSerif.
+Italic and bold italic are the fonts' own italics, not slanted copies.
+**Arabic is everywhere:** FreeSans has none of its own, so its Arabic --
+in every style -- is FreeSerif's (FreeSerif Bold's in bold text), joined,
+lam-alef as one letter, right to left among Latin text, mirrored brackets;
+FreeMono draws its own in its regular and FreeSerif's in its other styles;
+a font of the user's without Arabic gets FreeSerif's the same way. The
+same holds in text boxes, the rich editor, `htmlView`, the canvas, PDF
+files and reports, and in documents (`retroui/textengine`: FreeSerif's
+OpenType tables set the Arabic, as Amiri did before). Characters no
+built-in font has (CJK, emoji) are drawn by the platform.
 
-**Pixel icons** (`retro/pixelicons`) are used the same way, as text:
+**Right to left** is the whole Unicode bidirectional algorithm (UAX #9):
+numbers and brackets, the direction marks, and the explicit embeddings,
+overrides and isolates (U+202A..202E, U+2066..2069) -- every case of
+Unicode's conformance tests passes. The zero width non-joiner and joiner
+steer the joining (Persian می‌خواهم) and never cut a word in two; text is
+kept in its letters (joined shapes pasted in, or read from an old PDF,
+come back as letters: `plainLetters`). In text boxes and the rich editor
+the caret goes through a line as it reads -- Left goes on in an Arabic
+line, a letter and its vowels are one step, Backspace takes a vowel off
+and Delete a letter with its vowels -- and stands where the next letter
+typed goes when Latin and Arabic meet; a selection of both is drawn where
+its parts are. PDF files carry Arabic as it is written (`/ActualText`,
+the letters themselves) and say their language (`lang`); an Arabic
+sheet written to Excel opens right to left (`XlsxSheet.direction`). The
+Arabic interface (`setUiLanguage("ar", @toolkitArabic)`) mirrors the
+frame, menus, lists, scroll bars and back and forward arrows; text
+boxes, documents and Markdown keep their own direction, and charts,
+maps, the media controls (play, the time bar) and pictures their sides.
+
+The fonts are subsets of GNU FreeFont 0412 made by `tools/genfreefont.py`
+from the fonts GNU publishes: Latin (with Latin-1, Extended-A and -B,
+IPA), Greek, Cyrillic, Hebrew, Arabic (FreeSerif, FreeMono), punctuation,
+currency, arrows, mathematical operators, box drawing, geometric shapes
+and the symbols the kit's own text uses -- the bold and italic styles the
+letters, their symbols coming from the regular -- with their OpenType
+kerning, marks, ligatures and Arabic forms, without the TrueType hinting.
+The twelve files take 0.94 MB in every app (compressed, unpacked when a
+face is first used; the fonts before them took 0.96 MB, and apps with
+`retroui/textengine` carried Amiri's 0.21 MB more).
+
+**Crisp at every scale.** Glyphs are drawn by the kit's own TrueType
+engine (`retroui/ttf`), at the screen's own resolution, on the CPU and the
+same masks on the GPU: the coverage of each pixel computed exactly, in
+gray, the baseline, x-height, cap height and ascender set on whole pixels
+at small sizes (below 26 pixels to the em), the strokes as the font draws
+them (FreeSans' stems, a little over a pixel at 12, keep their weight),
+letters placed at quarter pixels without drift; FreeMono's thin strokes
+(half a pixel at 12) are darkened to a whole pixel there; small text is
+drawn with a light gamma (1.2). Lines take the font's own line gap.
+
+**Sharp text** (`setSubpixelText(true)`, or "Text edges: Sharp" in
+`appearanceSettings`; `RETRO_TEXT=sharp`) draws the letters in the
+screen's red, green and blue strips, three times as fine across, as
+Windows' ClearType does, the stems then fitted to the pixels: off by
+default on every platform, used on screens of one device pixel per pixel
+(it follows Windows' strip order, RGB or BGR).
+
+`loadUiFontFile(path)` gives a font of the user's (a .ttf, or the first
+face of a .ttc; its bold, italic and bold italic beside it when they are,
+"X-Bold.ttf", "X-Italic.ttf"...); an app built with
+`-d:retroAppFont=path/X-Regular.ttf` carries its own and starts with it
+(`useAppFont`). Choose before `app` for one app's default, or at any
+time; `uiFont()` tells which is on; `appearanceSettings` puts the choice
+in an app's Settings -- FreeSans, FreeSerif, FreeMono, a font file -- and
+`storeAppearance` / `restoreAppearance` keep it (a choice stored before
+FreeFont is FreeSans now, a font file stays one). `builtinUiFonts` lists
+the built-in fonts for a menu of an app's own, `uiFontKey` / `uiFontOfKey`
+name them in its settings ("sans", "serif", "mono"; the words
+of before -- "w98", "kawkab"... -- still read). The fonts' names of before
+compile for one release as deprecated aliases: `ufW98`, `ufRetro`,
+`ufSmooth`, `ufOpenSans` are `ufSans`, `ufKawkab`, `ufFixedsys` `ufMono`.
+
+**Licences.** GNU FreeFont is under the GNU GPL v3 or later with the
+font exception ("if you create a document which uses this font, and embed
+this font or unaltered portions of this font into the document, this font
+does not by itself cause the resulting document to be covered by the GNU
+GPL"), `src/retroui/fonts/LICENSE-FreeFont.txt`; the subsets keep that
+text, and the files GNU publishes (and their FontForge sources) are where
+the licence says. The rest of the kit is MIT; the icon font is the Nerd
+Fonts symbols (MIT and SIL OFL, `src/retroui/fonts/LICENSE-NerdFonts.txt`).
+An app that hands out its binaries hands out the fonts in it: keep the
+licence text with it (the About box's credit is `RetroFontCredit`).
+
+**Pixel icons** (`retroui/pixelicons`) are used the same way, as text:
 
 ```nim
 toolButton(pxCopy, "Copy", size = 1.3)          # a 3.1-style tool bar icon
@@ -499,9 +558,10 @@ image(x, y, glyphIcon(pxComputer, black, 32))   # the 32x32 art at 32
 label retroOr(pxSave, nfSave) & " Save"         # pixel icon, or the Nerd one
 ```
 
-There are 109 (`pixelIconNames` lists them): folders and places, drives,
+There are 255 (`pixelIconNames` lists them): folders and places, drives,
 file kinds, the tool bar's actions, the message box signs, the
-hourglass, charts, maps, mail, calendar, clock, media keys and more. Each has 16x16 and 32x32 art and is drawn at a whole number
+hourglass, charts, maps, mail, calendar, clock, media keys, an image
+editor's tools and panels, and more. Each has 16x16 and 32x32 art and is drawn at a whole number
 of screen pixels per art pixel; disabled ones look embossed. Set
 `retroIcons = false` to have `retroOr` (and the toolkit's own parts) use
 the Nerd icons. The art is original, drawn in the manner of 3.1, made by
@@ -612,6 +672,7 @@ let t = readCsv("sales.csv")
 let ev = chart("By region", chDonut, t, "Region", ["Amount"], height = -1)
 if ev.clicked: showRegion(ev.index)        # a bar, point or slice (or Enter)
 exportPng(ui.lastRect, "chart.png")        # the chart as a picture
+discard writeCsv("sales-copy.csv", t)      # and a table back to CSV (quoted where needed)
 ```
 
 Every chart has round axis numbers, a legend (click an entry to hide that
@@ -631,7 +692,8 @@ Invoices, quotes, statements and lists are laid out on pages and come out
 as PDF files, PNG pictures, an on-screen preview, or paper — all in Nim,
 with nothing to install, and linked only into apps that use them (PDF
 alone adds about 45 KB). The fonts are embedded, the text in the PDF can
-be selected and searched, and Arabic is joined and runs right to left.
+be selected and searched, and Arabic is joined, runs right to left and
+is copied out of the file as it reads.
 
 ![examples/invoice.nim: an invoice from an HTML template, its pages beside the form](docs/invoice.png)
 
@@ -641,7 +703,7 @@ Templates are Mustache style: `{{name}}` (escaped), `{{{raw}}}`,
 `{{price|n2}}` formats a number:
 
 ```nim
-import retro, std/json
+import retroui, std/json
 
 const tpl = """
 <header><span>Acme Trading</span><span>Invoice {{number}}</span></header>
@@ -687,7 +749,7 @@ Pages flow by themselves: a table's header row comes again on each page,
 rows are never cut, headings stay with what follows, and `keepTogether`
 keeps a group on one page. `reportView(doc)` shows the pages on a gray
 desk with page buttons and zoom (wheel, keys, fingers, the standard
-scroll bars). `retro/pdf` draws PDF pages directly (`newPdf`, `addPage`,
+scroll bars). `retroui/pdf` draws PDF pages directly (`newPdf`, `addPage`,
 `text`, `line`, `rect`, `image`, `link`) for forms and labels.
 
 **Printing:** `printReport(doc)` (or `printPdf(path)`) returns
@@ -804,7 +866,7 @@ hexFileView(openHexFile("app.bin"), sel)  # any file as hex, read as shown
 
 ### Files on screen
 
-`retro/filewidgets` has what a file manager, an Open dialog or a photo
+`retroui/filewidgets` has what a file manager, an Open dialog or a photo
 app is made of:
 
 ```nim
@@ -867,7 +929,7 @@ app "Files", 900, 600:
   so thousands of photos on a phone's shared storage show without
   waiting.
 
-**Other apps' files** (`retro/docfs`). On Android, an app's files are
+**Other apps' files** (`retroui/docfs`). On Android, an app's files are
 its own; one that shares them offers a documents provider. Termux does,
 for its home, and Retro's file parts treat it as a folder:
 `/data/data/com.termux/files/home` is listed, opened, copied to and
@@ -901,7 +963,7 @@ toast("Copied 12 items", title = "Files")    # a yellow Windows 95 balloon
 ### Retro Files
 
 `examples/filemanager.nim` (about 2,100 lines: the rest is the toolkit's)
-is **Retro Files 3.3.2**, a complete file manager in the manner of the Windows 98
+is **Retro Files 3.3.3**, a complete file manager in the manner of the Windows 98
 Explorer -- the Standard Buttons with their labels under the icons (View >
 Toolbars > Text Labels), the Address bar, View as Web Page (the folder's
 name large and the selection described at the left), Large and Small icons,
@@ -939,18 +1001,18 @@ PDF documents (pages drawn as you scroll, zoom, a page box), videos and
 sounds (with the folder's sounds as a play list), zip archives and hex,
 pictures of PDFs and videos in the lists, renaming many by a pattern,
 Select Matching, Duplicate, Open Terminal Here, open with and share, a Settings dialog in tabs (look, sizes,
-the font -- Kawkab Mono, Retro Sans or DejaVu Sans --, smooth scrolling, thumbnails,
+the font -- FreeSans, FreeSerif, FreeMono, the system's or a font file --, smooth scrolling, thumbnails,
 preview, single tap, confirm delete, start folder, Termux access), an
 About box that fits any screen, mouse hover, and settings that stick.
 
 New in 3.1: very big pictures (gigapixel scans, huge maps) are shown and
-thumbnailed a band at a time (`retro/bigpicture`), and in Arabic a line
+thumbnailed a band at a time (`retroui/bigpicture`), and in Arabic a line
 that mixes Arabic with numbers reads right to left. New in 3.0: thumbnails of almost every picture (camera raw photos by
 their own previews, PSD and Retro Photo documents, SVG, JPEG XL,
 WebP, TIFF, EXR, HEIC/AVIF) **kept on disk**, so a folder of photos opens
 at once the second time; **smart memory** -- the pictures kept are a share
 of the device's memory and are let go when it runs short or the app goes
-to the background (`retro/memwatch`, `retro/thumbcache`); an **Arabic
+to the background (`retroui/memwatch`, `retroui/thumbcache`); an **Arabic
 interface** mirrored right to left; Tools > **Folder Sizes**; Copy To /
 Move To Folder, Send To, Share; Help > **Report a Problem** (a fault no
 longer closes the app).
@@ -1023,7 +1085,7 @@ resolution, and only when the scene, the camera or the size changed.
 
 ## Canvas
 
-`retro/canvas2d` is the HTML5 Canvas 2D API in Nim — the same names, so
+`retroui/canvas2d` is the HTML5 Canvas 2D API in Nim — the same names, so
 any canvas tutorial or JavaScript drawing code carries over — drawn by
 the kit's own anti-aliased rasterizer at the screen's resolution (crisp on
 4K screens and phones). No browser, no GPU, no library.
@@ -1031,7 +1093,7 @@ the kit's own anti-aliased rasterizer at the screen's resolution (crisp on
 ![The canvas page of the gallery](docs/gallery-canvas.png)
 
 ```nim
-import retro, std/math
+import retroui, std/math
 var angle = 0.0
 app "Canvas", 420, 320:
   canvas2d(ctx, 400, 280):
@@ -1080,21 +1142,21 @@ drawing (`fill`, `box`, `line`, `text`, `disc`, `polygon`…).
 
 ![Retro Mail: All Inboxes in threads, tags, the conversation in the preview pane](docs/mail.png)
 
-`examples/mail.nim` is **Retro Mail 1.0.3**: Outlook Express 4 to look at and to
+`examples/mail.nim` is **Retro Mail 1.0.4**: Outlook Express 4 to look at and to
 use, with what the new Outlook does, for Microsoft 365, Outlook.com and Gmail.
 It is the toolkit's network modules at work:
 
-- `retro/oauth` signs in in the system browser (OAuth 2.0, PKCE, a loopback
-  address) and `retro/secrets` keeps the tokens (DPAPI, the keychain,
+- `retroui/oauth` signs in in the system browser (OAuth 2.0, PKCE, a loopback
+  address) and `retroui/secrets` keeps the tokens (DPAPI, the keychain,
   libsecret): no password is ever typed into the app.
-- `retro/http` talks to Microsoft Graph and the Gmail API from the sync
+- `retroui/http` talks to Microsoft Graph and the Gmail API from the sync
   thread (WinHTTP, libcurl, Java's HTTP on Android).
-- `retro/db` keeps every message in SQLite with a full-text index: search
-  is offline and instant; `retro/mime` reads and writes the messages.
+- `retroui/db` keeps every message in SQLite with a full-text index: search
+  is offline and instant; `retroui/mime` reads and writes the messages.
 - `htmlView` draws the mail -- newsletters' nested tables and styles,
   hidden preheaders, quotes, Arabic -- with no browser and no script;
   pictures from the web wait until asked.
-- `retro/richedit` writes it: bold, colors, lists, quotes, links,
+- `retroui/richedit` writes it: bold, colors, lists, quotes, links,
   signatures.
 
 Threads with + and - boxes, Focused and Other, tags in their colors,
@@ -1117,10 +1179,10 @@ carries, made once).
 
 ## Whiteboard
 
-`retro/board` is a whiteboard's document, in the manner of tldraw: pages
+`retroui/board` is a whiteboard's document, in the manner of tldraw: pages
 of shapes on an endless canvas, with undo and redo, hit-testing, snapping
 and the outlines each shape is drawn with -- at any zoom, on the CPU or the
-GPU (`fillContours`). `retro/freehand` is its ink: the outline of a stroke
+GPU (`fillContours`). `retroui/freehand` is its ink: the outline of a stroke
 from a pen, a finger or the mouse, thinner where it was drawn fast or
 pressed lightly (real pressure from a pen), tapered if asked, as one
 polygon.
@@ -1128,7 +1190,7 @@ polygon.
 ![Retro Board: notes, shapes with labels, arrows held by the shapes, a frame](docs/board.png)
 
 ```nim
-import retro/board
+import retroui/board
 let b = newBoard()
 b.change("Flow"):                       # one step to undo
   let a = b.addShape(b.geoShape(gkRectangle, 0, 0, 200, 120))
@@ -1156,8 +1218,9 @@ b.saveBoard("flow.board")
   four sizes, alignment, opacity; ten fonts -- six handwriting fonts the
   module carries (Caveat, Patrick Hand, Architects Daughter, Gochi Hand,
   Indie Flower, and Aref Ruqaa for Arabic; SIL OFL, about 480 KB) and
-  Sans, Serif, Mono, Retro. A letter the font lacks is set in another
-  (`fontSpans`): Arabic after a handwriting font in Aref Ruqaa.
+  FreeSans, FreeSerif, FreeMono and FreeSerif Italic. A letter the font
+  lacks is set in another (`fontSpans`): Arabic after a handwriting font
+  in Aref Ruqaa, else in FreeSerif.
 - **As Excalidraw's options:** a fill color of its own (`fillColor`),
   fills hachure / cross-hatch / zigzag / dots (`fillLines`), sloppiness
   (`roughness`: architect, artist, cartoonist), sharp or round edges
@@ -1175,12 +1238,12 @@ b.saveBoard("flow.board")
   scale, transparent or on the canvas's color), SVG and PDF (vectors,
   text as outlines).
 
-`examples/retroboard.nim` is **Retro Board 1.3.1**, a whiteboard app made of
+`examples/retroboard.nim` is **Retro Board 1.3.2**, a whiteboard app made of
 it: the 3.1 title bar on phones and tablets, a status bar (the tool's
 hint, page, shapes, zoom, memory), the color schemes and Appearance, a
 floating tool bar (select, hand, draw, highlighter, eraser, laser,
 shapes, arrow, line, text, note, frame, picture), pages, zoom; Excalidraw's
-options in Retro Photo's docked panels (`retro/dock`), tabs grouped by
+options in Retro Photo's docked panels (`retroui/dock`), tabs grouped by
 what they are about -- **Color, Stroke, Fill** (stroke and background
 colors, opacity; stroke style, width, sloppiness, edges; hachure,
 cross-hatch, zigzag, dots), **Text, Arrow, Shapes** (fonts, size, align;
@@ -1202,62 +1265,62 @@ an APK (`nimble boardapk`).
 
 ## Image editing
 
-`retro/photo` is an image editor's engine: documents of layers (opacity,
+`retroui/photo` is an image editor's engine: documents of layers (opacity,
 29 blend modes from Multiply to Luminosity, Preserve Transparency, the
 Background, layer masks, adjustment layers), a soft selection with
 feathering, Grow, Border and Smooth,
 alpha channels, Quick Mask, Bézier paths, and many undos (only the 64-pixel
 tiles a change touched are kept). Its native files (.rpd) keep all of
 that; PNG, JPEG and BMP are read and written (`openImage`, `saveFlat`), and
-`retro/photofiles` reads and writes PSD and the other formats.
-`retro/photopaint` paints on them: soft or hard brushes of any size,
+`retroui/photofiles` reads and writes PSD and the other formats.
+`retroui/photopaint` paints on them: soft or hard brushes of any size,
 angle and roundness (or cut from the image), the airbrush, pencil,
 eraser, rubber stamp, smudge, blur and sharpen, dodge, burn and sponge,
-the paint bucket, gradients, lines with arrowheads, type. `retro/photofx`
+the paint bucket, gradients, lines with arrowheads, type. `retroui/photofx`
 has over 45 filters (Gaussian Blur, Unsharp Mask, Motion Blur, Twirl,
 Shear, Lens Flare, Emboss, Extrude, Crystallize...) and the color
 adjustments (Levels, Curves, Color Balance, Hue/Saturation by color range,
 Selective Color, Variations, Replace Color...), each with a preview.
-`retro/photodevelop` makes a photo's everyday corrections in one go, as
+`retroui/photodevelop` makes a photo's everyday corrections in one go, as
 camera raw programs do: white balance, exposure, contrast, highlights,
 shadows, whites, blacks, clarity, dehaze, vibrance, saturation, noise
 reduction, sharpening, vignette and grain, with Auto and presets; and
 Auto Tone / Contrast / Color, Shadows/Highlights, Vibrance, Exposure,
-Photo Filter, Black & White and Channel Mixer. `retro/photosmart` has the
+Photo Filter, Black & White and Channel Mixer. `retroui/photosmart` has the
 smart tools, all worked out on the device: Content-Aware Fill, the
 healing tools (Spot Healing, Healing Brush, Patch), red eye, Select
 Subject and Select Sky, Content-Aware Scale and enlarging with Preserve
-Details. `retro/photowarp` has Liquify, Lens Correction and Straighten.
-Type layers stay editable: `retro/textengine` sets styled text in any
+Details. `retroui/photowarp` has Liquify, Lens Correction and Straighten.
+Type layers stay editable: `retroui/textengine` sets styled text in any
 font of the system (tracking, kerning, leading, scales, caps, super- and
 subscript, underline; paragraphs aligned and justified, indented; Arabic
 and other right-to-left text; warps such as Arc, Flag and Fisheye; text
-along a path), and `retro/photostyles` gives layers their styles (drop
+along a path), and `retroui/photostyles` gives layers their styles (drop
 and inner shadows, glows, bevel and emboss, satin, overlays, strokes).
-`retro/photoshapes` makes shape layers (rectangles, rounded rectangles,
+`retroui/photoshapes` makes shape layers (rectangles, rounded rectangles,
 ellipses, polygons and stars, lines with arrowheads, 19 custom shapes, any
 SVG path; combined, subtracted, intersected; filled with a color or a
 gradient and stroked inside, centered or outside, solid or dashed) that
 stay sharp at any size, and layers can be clipped to the one under them.
-`retro/photofiles` opens and saves PSD documents (.psd and .psb:
+`retroui/photofiles` opens and saves PSD documents (.psd and .psb:
 layers, groups, masks, vector masks, shapes, clipping, adjustment and fill
 layers, layer styles) and exports to JPEG, PNG, PNG-8, GIF, TIFF, Targa
-and BMP with their options. `retro/photoinks` models printing inks for
+and BMP with their options. `retroui/photoinks` models printing inks for
 the CMYK mode, Proof Colors and the gamut warning, with Lab and duotones.
 Brushes have dynamics (jitter, scattering, flow, color) and symmetry, and
-`retro/filterfactory` runs filters written as formulas, kept as plug-ins.
-`retro/photowidgets` shows
+`retroui/filterfactory` runs filters written as formulas, kept as plug-ins.
+`retroui/photowidgets` shows
 a document (zoom 1:16 to 16:1, rulers, marching ants; drawn from smaller
 copies when zoomed out) and has the editor's controls: the color picker,
 the curves and levels editors, brush and swatch grids, layer rows.
 
-All of it runs on every core (`retro/parallel`): a 24 megapixel photo
+All of it runs on every core (`retroui/parallel`): a 24 megapixel photo
 opens, blurs, sharpens and develops in about a second.
 
 ![examples/photo.nim: Retro Photo, an elliptical selection colorized with Hue/Saturation](docs/photo.png)
 
 ```nim
-import retro/[photo, photopaint, photofx, photodevelop]
+import retroui/[photo, photopaint, photofx, photodevelop]
 let d = openImage("cat.png")
 d.setSelection(d.ellipseMask(80, 40, 360, 280))
 d.feather(8)
@@ -1274,7 +1337,7 @@ s.dehaze = 10
 p.applyFilter(developMargin(s), develop(s))
 ```
 
-`examples/photo.nim` is **Retro Photo 4.9.2**, an image editor in the manner
+`examples/photo.nim` is **Retro Photo 4.9.3**, an image editor in the manner
 of the ones of 1994: the toolbox, the tabbed floating palettes (Brushes
 and Options; Picker, Swatches and Scratch; Layers, Channels and Paths;
 Info; Commands; Navigator, History and Actions; Properties), an options
@@ -1305,14 +1368,14 @@ ppi, CMYK, marks and bleed, type and shapes as outlines) and PDF
 Presentation; PDF, Illustrator, PostScript and EPS files opened; Arabic set
 on the canvas with kashida; Get Google Fonts; documents that come back at
 the next start. Since 4.1: a faster engine (composite, open and save about
-twice as fast), panels docked as in today's editors (`retro/dock`), documents
+twice as fast), panels docked as in today's editors (`retroui/dock`), documents
 as tabs filling the workspace (windows of their own, MDI, as an option), a
 status bar under each picture, Adjustment Presets, Clarity, Dehaze and
 Grain, Layer Cleanup, Harmonize, Colorize, Content-Aware Expand, artboards,
 the Frame tool, the Triangle, the Magnetic Lasso, Dynamic Text, RTL/LTR and
 kashida lengths, and the selection tools as today's (a drag inside moves
 the outline). Since 4.2: the Filter Gallery (30 filters) with Oil Paint, Lighting
-Effects, Fibers, Displace and Smart Sharpen (`retro/photoartistic`), 109
+Effects, Fibers, Displace and Smart Sharpen (`retroui/photoartistic`), 109
 custom shapes in 12 sets with Live Shape properties, the Slice, Note and
 Count tools, and the toolbar docked at the left with the panels' header. Since 4.3:
 32 Bits/Channel (HDR: Radiance and PFM files, HDR Toning), press-ready PDF
@@ -1320,7 +1383,7 @@ Count tools, and the toolbar docked at the left with the panels' header. Since 4
 justified by the scribes' kashida rules with the tashkeel kept, text in
 columns and flowing between boxes. Since 4.4: 16 bits a channel kept through filters,
 adjustments, transforms and the composite; CMYK by any ICC profile; OpenType shaping
-(Amiri built in), variable fonts, the OpenType, Character Styles and Paragraph Styles
+(FreeSerif built in), variable fonts, the OpenType, Character Styles and Paragraph Styles
 panels; editable type and Smart Objects in PSD, layered TIFF; WebP, OpenEXR, camera
 raw (NEF, ARW, CR2, ORF, RW2, PEF, RAF), HEIC/AVIF, SVG export; the Timeline (frame
 animation, animated GIF and WebP); Rotate View, the Art History Brush, Vanishing Point;
@@ -1336,7 +1399,7 @@ JPEG XL written lossy too, Pexels and Unsplash in the Assets window. Since 4.8: 
 tool as today's editors have it (handles that light up and take the pointer from further away, the
 pointer showing what a drag does, a double-click on type to edit it, the layers under the
 pointer on a right click, Auto-Select by Layer or Group), Smart Guides, the Selection
-Brush, the Adjustment Brush and Content-Aware Tracing (`retro/edgetrace`), floating
+Brush, the Adjustment Brush and Content-Aware Tracing (`retroui/edgetrace`), floating
 images kept on top, the panels' side sized from its edge. Since 4.9: lines with arrowheads and other
 ends that stay lines (their ends dragged with the Move tool), Image Size in pixels, percent, inches,
 centimeters, millimeters, points or picas with a link for the proportions, Esc letting go of what is
@@ -1344,7 +1407,7 @@ under way, File > Save as PDF. `examples/magazine.nim` makes a three-page magazi
 engine, tool by tool.
 
 ```nim
-import retro/[adobefiles, photobrushes]
+import retroui/[adobefiles, photobrushes]
 let swatches = readAco(readFile("Pastels.aco"))         # (name, color) pairs
 writeFile("Pastels.ase", writeAse(swatches))
 let curves = readAcv(readFile("Contrast.acv"))           # a curve a channel
@@ -1353,7 +1416,7 @@ let pic = strokePreview(presets[0], 200, 40)             # as the Brushes palett
 ```
 
 ```nim
-import retro/[photo, photomerge, rawphoto, iccprofile]
+import retroui/[photo, photomerge, rawphoto, iccprofile]
 let pano = photomerge(@[left, middle, right], amPerspective)   # layers and their blending masks
 let hdr = exposureFusion(@[dark, normal, bright])
 let raw = readDng(readFile("IMG_0042.dng"))                  # light, white balanced
@@ -1363,7 +1426,7 @@ convertPixels(px, displayP3Profile(), srgbProfile())
 ```
 
 ```nim
-import retro/[webp, gifanim, exr, core, lang_ar]
+import retroui/[webp, gifanim, exr, core, lang_ar]
 var frames: seq[tuple[px: seq[uint32]; delayMs: int]]
 for (bmp, ms) in decodeWebpFrames(readFile("spin.webp")): frames.add (bmp.px, ms)
 writeFile("spin.gif", encodeGifFrames(240, 240, frames))      # an animated GIF
@@ -1458,12 +1521,12 @@ quietly not heard; nothing waits or crashes.
 
 ## The system's own APIs
 
-Retro never stands between an app and its system: `retro/native` reaches
+Retro never stands between an app and its system: `retroui/native` reaches
 **any** OS API from Nim, with nothing to install and no second language to
 write.
 
 ```nim
-import retro
+import retroui
 echo deviceName(), ", ", osVersion(), ", battery ", batteryLevel(), "%"
 if systemDarkMode(): ui.theme = Dark
 vibrate(40); keepScreenOn(true)
@@ -1525,21 +1588,24 @@ compiled inside the tool (soft-keyboard text, system-bar colors and
 insets, opening and sharing files, decoding pictures, storage access) --
 you never need Java or Gradle. The parts that need Android's own
 classes come compiled the same way: the web view, sound and video,
-printing, and the reflection calls of `retro/native`.
+printing, and the reflection calls of `retroui/native`.
 
 **On the phone or tablet, in Termux:**
 
 ```sh
 pkg install nim clang ndk-sysroot openssl-tool git
-nimble install retro
+nimble install retroui
 retroapk ledger.nim --name:Ledger --install    # the installer asks to confirm
 ```
 
-**On a desktop, with the Android NDK** (set `ANDROID_NDK_HOME`) and `adb`:
+**On a desktop** -- Windows, macOS, Linux or a BSD -- with a clang that has
+lld, or zig: no NDK (`retroapk` carries Android's headers and libraries;
+an NDK in `ANDROID_NDK_HOME` is used when it is there, and fetched once when
+there is no compiler at all). `adb` installs and starts the app:
 
 ```sh
 retroapk app.nim --name:"My App" --id:com.me.myapp --run
-retroapk app.nim --abi:arm64-v8a,armeabi-v7a,x86_64     # more ABIs
+retroapk app.nim --abi:arm64-v8a,x86_64     # also the emulator (32-bit ABIs: with the NDK)
 ```
 
 Other options: `--icon:icon.png`, `--version:1.2 --code:3`,
@@ -1577,33 +1643,39 @@ cross-links an unsigned bundle with `lld`.
 | Windows | GDI | `nim c -d:release --app:gui app.nim` | run under Wine 9 |
 | Windows from Linux | GDI | `nim c -d:release -d:mingw --cpu:amd64 --app:gui --passL:-static app.nim` | built |
 | macOS | Cocoa | `nim c -d:release app.nim` | not run yet |
-| Android 7+ | NativeActivity | `retroapk app.nim` | built, signed, verified with `apksigner` and `aapt`; run on a tablet; driver tested against a simulated Android |
+| Android 7+ | NativeActivity | `retroapk app.nim` | built, signed, verified with `apksigner` and `aapt`; built without the NDK (clang + lld, zig) for arm64-v8a and x86_64; run on a tablet; driver tested against a simulated Android |
 | iOS 14+ | UIKit | `retroios app.nim` | compiled and linked against the iOS 16.5 SDK |
 | anywhere | SDL3 | `nim c -d:release -d:sdl3 app.nim` (needs the `sdl3` wrapper package) | built |
 
 ## Speed and size
 
 Widgets record small drawing commands, each with a hash. At the end of a
-frame the screen is cut into bands 32 pixels high: an unchanged frame
-costs no drawing and no driver call at all, and otherwise only the bands
-whose commands changed are drawn again and sent to the screen. Glyphs are
-rendered once per size and kept; maps, 3D scenes, canvases and report
-pages are drawn into pictures of their own only when they change; slow
-work (listing folders, decoding pictures) runs on worker threads
-(`retro/background`).
+frame the screen is cut into tiles 64 pixels wide and 32 high: an
+unchanged frame costs no drawing and no driver call at all, and otherwise
+only the tiles whose commands changed are drawn again and sent to the
+screen (with the GPU, only they are drawn, in a few rectangles). A small
+change is drawn on the app's own thread; a big one on all the cores. When
+nothing happens the app sleeps: no frame, no CPU, until input or a timer.
+Glyphs are rendered once per size and kept; maps, 3D scenes, canvases and
+report pages are drawn into pictures of their own only when they change;
+slow work (listing folders, decoding pictures) runs on worker threads
+(`retroui/background`).
 
-Measured on Linux (`nimble bench`, library cost without the OS; a small
-2-core cloud machine, so the numbers wander by a third):
+Measured on Linux (`nimble bench`, library cost without the OS: a change
+and the frames until it is on the screen; a small, shared 2-core cloud
+machine, so the numbers wander by a third):
 
-| | per frame |
+| | per change |
 |---|---|
-| full redraw, 800×600, ~60 widgets | 0.26 ms |
+| full redraw, 800×600, ~60 widgets | 0.25 ms |
 | nothing changed | 0.05 ms, nothing sent |
-| one value changed | 0.17 ms, only its bands drawn and sent |
-| 100,000-row grid, tree and chart, full redraw | 0.42 ms |
-| scrolling that grid with the wheel | 0.1 ms |
-| a folder of 50,000 files: details / icons, full redraw | 0.42 / 0.4 ms |
-| ... scrolling it with the wheel | 0.16 / 0.11 ms |
+| one value changed | 0.09 ms, only its tiles drawn and sent |
+| the pointer onto a tool button (lit) | 0.1 ms |
+| a letter typed in a text box | 0.14 ms (two frames) |
+| 100,000-row grid, tree and chart, full redraw | 0.28 ms |
+| scrolling that grid with the wheel | 0.33 ms (two frames) |
+| a folder of 50,000 files: details / icons, full redraw | 0.36 / 0.56 ms |
+| ... scrolling it with the wheel | 0.52 / 0.69 ms |
 
 | | once |
 |---|---|
@@ -1632,10 +1704,9 @@ stripped; the APK holds the arm64 library):
 | `examples/gallery.nim` (everything: map, 3D, canvas, PDF, HTML, media) | 2.7 MB |
 
 Only what an app calls is linked: an app without the map, the 3D view or
-PDF does not carry them. The fonts (Kawkab Mono regular and bold, Retro
-Sans with its bitmaps and HD outlines, its Arabic, DejaVu Sans, Bold, Mono
-and the Nerd icons) add about 430 KB and the 109 pixel icons 12 KB, all stored compressed and
-unpacked when first used.
+PDF does not carry them. The fonts (FreeSans, FreeSerif and FreeMono in
+four styles each) add about 940 KB, the Nerd icons 52 KB and the 255 pixel
+icons 24 KB, all stored compressed and unpacked when first used.
 
 ## Safety
 
@@ -1661,8 +1732,11 @@ unpacked when first used.
   `fuzz_view3d`, `fuzz_media`, `fuzz_canvas2d` and `fuzz_report` do the
   same for their modules. They found real bugs, now fixed and kept as
   tests.
-- **Memory checked:** the tests also run under AddressSanitizer
-  (`--cc:clang --passC:-fsanitize=address`), without a report.
+- **Memory checked:** the tests also run under AddressSanitizer, UBSan
+  and LeakSanitizer (`--cc:clang -d:useMalloc
+  --passC:"-fsanitize=address,undefined" --passL:"-fsanitize=address,undefined"`,
+  `LSAN_OPTIONS=suppressions=tests/lsan.supp` for what Nim's runtime keeps
+  for each thread), without a report.
 - **Threads:** work on worker threads never shares state with the UI
   thread except through a locked queue; results are handed over at the
   start of a frame. A file that changes or shrinks while it is shown (a
@@ -1684,8 +1758,9 @@ needed. `nimble test` runs them all; `nimble fuzz` runs the fuzzers.
 |---|---|
 | `test_widgets` | clicks, slide-off, default button, typing and the clipboard, Tab and Space, mnemonics, lists, modal dialogs, pixels, frame skipping, hover (mouse yes, finger no), Back versus Exit |
 | `test_business` | dates, number formats, sorting; the grid (selection, multi-select, sorting, editing, resizing, every cell kind, cell colours, record indicator, totals); tree; icon view; calendar and date picker; check list; number fields; auto-complete; splitter; dialogs |
-| `test_text` | fonts, kerning, Arabic joining and lam-alef, bidi order, the rasterizer, sizes, rows, `spring`, `adaptive`, forms, page scrolling both ways with the standard scroll bars, Tab scrolling into view, Markdown |
-| `test_uifonts` | Fixedsys Excelsior and Open Sans as the UI's font: their lines, Fixedsys on its pixel grid at 100 % and 2x (pixels and HD), bold, Arabic from the other faces, the canvas's font names, kept and brought back (also with `-d:retroNoFixedsys -d:retroNoOpenSans`) |
+| `test_text` | fonts (FreeSans the default, its real bold, oblique and bold oblique, GPOS kerning, crisp stems at 100 %, 125 %, 150 % and 2x, Arabic joined in every face and in a font file, the settings of before), Arabic joining and lam-alef, bidi order, the rasterizer, sizes, rows, `spring`, `adaptive`, forms, page scrolling both ways with the standard scroll bars, Tab scrolling into view, Markdown |
+| `test_bidi` | the bidi algorithm against Unicode's (a corpus of Arabic, Persian and mixed lines, explicit embeddings and isolates, conformance lines), the joiners, Arabic in text boxes and the rich editor (caret, marks, Backspace and Delete, selections, the clipboard), PDF read back in reading order, right-to-left Excel sheets, the Arabic interface's text boxes and charts |
+| `test_uifonts` | the font choices and their settings words, a .ttc collection read and used as the UI's font, the canvas's font names, every character of the kit's strings and the Arabic translations in the fonts |
 | `test_input` | every kind of input on the widgets that take it: the slide switch, the tab strip, chips, the bottom bar, the menu key, the mouse's side buttons, a tall dialog on a touch screen |
 | `test_files` | listings (quick and full), natural sorting, copy / move / delete / zip / unzip jobs with conflicts, links and cancelling, JPEG decoding, big text and hex files, worker threads, thousands of damaged files, zip bombs, names that climb out |
 | `test_apps` | settings rows, appearance, avatars, steps, pages, banners, the bottom bar, the folder model, the file list, thumbnails, the preview, text and hex views, properties, file jobs |
@@ -1722,6 +1797,23 @@ needed. `nimble test` runs them all; `nimble fuzz` runs the fuzzers.
 | `examples/photo.nim` | Retro Photo 4: an image editor of 1994 laid out as today's image editors -- layers and groups, Smart Objects, 62 tools, filters, Neural Filters, PDF for print, Arabic type, panoramas, raw photos |
 | `examples/magazine.nim` | a three-page magazine made with Retro Photo's engine, tool by tool, saved as .rpd and PDF |
 | `examples/retroboard.nim` | Retro Board: a whiteboard in the manner of tldraw -- ink, shapes, arrows, notes, frames, pages; PNG, SVG and PDF (also an APK: `nimble boardapk`) |
+| `examples/hrbook.nim` | HR Book: the staff records of a group of hotels, private on a tablet -- smart Excel import, letters and certificates, charts, expiry alerts, encrypted backups |
+
+`examples/hrbook.nim` is **HR Book**: every employee of your hotels in one
+private book -- records, salaries and allowances, documents and the dates
+they expire, groups; Excel sheets of any layout imported smartly (the
+header row, the columns, the hotel and the people found by themselves, in
+English or Arabic; what is not sure is asked); letters and certificates
+from templates, in English and Arabic on each hotel's paper, saved as PDF
+or printed; charts and alerts. Everything stays on the device: the app
+has no internet permission, and its data file and its backups (which move
+to another tablet and merge) are sealed with a PIN (`retroui/vault`).
+`tests/test_hrbook.nim` tests its engine; `tests/hrbook_demo.nim` makes a
+book of invented people to try it with (PIN 246810).
+
+```sh
+nim c -r -d:release examples/hrbook.nim
+```
 
 | | |
 |---|---|
@@ -1739,25 +1831,25 @@ high-DPI screens, Arabic text, phones, threads.
 
 **Can it look less retro?**
 Yes. `ui.theme` takes one of eight colour schemes or your own `Theme`;
-`setUiFont(ufOpenSans)` or `setUiFont(ufSmooth)` trades MS W98 UI for
-Open Sans or DejaVu Sans (`ufRetro`: the 3.1 font; `ufFixedsys`: Fixedsys);
+`setUiFont(ufSerif)` draws in FreeSerif, `loadUiFontFile("...")` in a
+font of your own;
 `retroIcons = false` uses the Nerd Fonts icons; `appearanceSettings()`
 gives users the choices. Cards, banners, chips, bottom bars, floating
 buttons and switches are there for app-style screens.
 
 **Does the 3.1 look hold up on a 4K screen or a phone?**
-Yes. Lines and bevels stay whole pixels (2x, 3x), Kawkab Mono's stems
-and advances are fitted to the screen's pixels at every scale, Retro Sans
-switches from its bitmaps to smoothed outlines of the same letters, and the pixel
-icons are scaled by whole pixels. On touch screens the controls get
+Yes. Lines and bevels stay whole pixels (2x, 3x), the text is drawn at
+the screen's own resolution with its heights fitted to the pixels at
+every scale (100 %, 125 %, 150 %, 2x), and the pixel icons are
+scaled by whole pixels. On touch screens the controls get
 finger-sized, lists and pages scroll with momentum, and the layout folds
 into one column (`adaptive`, `isCompact`).
 
-**Can I use the font in my other programs?**
-Yes: `src/retro/fonts/RetroSans*.ttf` are ordinary TrueType files under
-CC BY-SA 3.0 (credit lou and Retro Sans; share changes to the font under
-the same licence). Using the font in an app does not put the app under
-that licence.
+**Can I use the fonts in my other programs?**
+Yes: `src/retroui/fonts/Free*.ttf` are ordinary TrueType files, subsets of
+GNU FreeFont under the GNU GPL v3 or later with the font exception (keep
+the licence with them; `tools/genfreefont.py` makes them from GNU's
+files).
 
 **What do my users need to install?**
 Nothing. The app is one file (an `.exe`, a binary, an `.app`, an `.apk`).
@@ -1785,17 +1877,17 @@ or `pushId(i)` / `popId()`.
 Retro is the UI only, so any Nim library works: `db_connector` for SQLite,
 PostgreSQL or MySQL, `std/httpclient` for web services, `std/json`. The
 grid asks for each cell through a proc, so it can show a query's rows
-without copying them; slow work goes to a thread with `retro/background`
+without copying them; slow work goes to a thread with `retroui/background`
 and comes back to the UI at the next frame.
 
 **How do I make a report, a PDF or print?**
 Write the report as HTML with `{{name}}` fields and `{{#items}}` loops
-(Mustache style), or as Nim code; `retro/report` lays it out in pages (headers, footers, totals,
+(Mustache style), or as Nim code; `retroui/report` lays it out in pages (headers, footers, totals,
 page numbers), shows a preview, saves a PDF and prints. See
 [Reports](#reports-pdf-and-printing).
 
 **Can I call something the toolkit does not wrap?**
-Yes, always. `retro/native` loads any library and calls any Java (Android)
+Yes, always. `retroui/native` loads any library and calls any Java (Android)
 or Objective-C (macOS, iOS) API by reflection; Nim's `{.importc.}` works
 as in any Nim program. See [The system's own APIs](#the-systems-own-apis).
 
@@ -1820,8 +1912,9 @@ users can enlarge the UI or the text and pick the high-contrast Paper
 scheme.
 
 **Can I use it commercially?**
-Yes: MIT, and the included fonts and data allow it (see
-[License](#license)).
+Yes: the kit is MIT, and the included data allow it; the text fonts are
+GNU FreeFont, GPL v3 or later with the font exception -- hand out their
+licence with the app (see [License](#license)).
 
 **Is the API stable?**
 It is 0.x: names may still change between versions, and the CHANGELOG
@@ -1836,9 +1929,12 @@ says how.
   fake documents provider, but none of them has run on a device yet. iOS compiles and links but has
   not been run on a device or the Simulator.
 - No screen reader support yet (everything works from the keyboard).
-- Text shaping covers Latin, Greek, Cyrillic and Arabic (with Persian and
-  Urdu letters); marks are placed without the font's positioning tables.
-  Other scripts use the platform's text where it has one.
+- Text shaping covers Latin, Greek, Cyrillic, Hebrew and Arabic (with
+  Persian and Urdu letters); in the UI marks are placed without the font's
+  positioning tables (documents use them). Other scripts use the
+  platform's text where it has one. A font file is drawn with its Arabic
+  only when it has the joined forms (presentation forms) in its character
+  map; else FreeSerif's Arabic stands in.
 - `webView` is a real browser only on Android (elsewhere it shows local
   HTML and opens web pages in the browser); `htmlView` is a subset of HTML
   without CSS layout or scripts.
@@ -1858,30 +1954,27 @@ says how.
 
 MIT; see `LICENSE`. Included: uirelays (MIT) -- with my changes, the same
 code as the `uirelays` branch, which is upstream's history and my commits on
-top, ready for a pull request (`src/retro/uirelays/RETRO.md`); **Kawkab Mono** by Abdullah
-Arif, with the Latin of Adobe's Source Code Pro (SIL OFL 1.1,
-`src/retro/fonts/LICENSE-KawkabMono.txt`); **Retro Sans**, adapted from
-lou's MS Sans Serif recreations (CC BY-SA 3.0,
-`src/retro/fonts/LICENSE-RetroSans.txt`; the licence covers the font, not
-the apps that use it); the Arabic glyphs of GNU Unifont (SIL OFL 1.1,
-`src/retro/fonts/LICENSE-Unifont.txt`); the DejaVu fonts (Bitstream Vera
-license, `src/retro/fonts/LICENSE-DejaVu.txt`); the Nerd Fonts symbols
-(MIT and SIL OFL, `src/retro/fonts/LICENSE-NerdFonts.txt`); the countries
-of Natural Earth (public domain, `src/retro/fonts/LICENSE-NaturalEarth.txt`);
-the handwriting fonts of `retro/board` -- Caveat, Patrick Hand, Architects
+top, ready for a pull request (`src/retroui/uirelays/RETRO.md`); **GNU
+FreeFont** -- FreeSans, FreeSerif and FreeMono, subsets of release 0412
+(GNU GPL v3 or later with the font exception,
+`src/retroui/fonts/LICENSE-FreeFont.txt`; the exception covers documents
+that embed the fonts; see "The fonts" for apps); the Nerd Fonts symbols
+(MIT and SIL OFL, `src/retroui/fonts/LICENSE-NerdFonts.txt`); the countries
+of Natural Earth (public domain, `src/retroui/fonts/LICENSE-NaturalEarth.txt`);
+the handwriting fonts of `retroui/board` -- Caveat, Patrick Hand, Architects
 Daughter, Gochi Hand, Indie Flower and Aref Ruqaa (SIL OFL 1.1,
-`src/retro/fonts/hand/OFL-*.txt`).
+`src/retroui/fonts/hand/OFL-*.txt`).
 The look follows Windows 3.1 as recreated by the Win31 project of
 Wiesław Šoltés (MIT); no Microsoft code, fonts or pictures are included,
 and the pixel icons are original, drawn in the manner of the period.
-`tools/genretro.py`, `tools/genfonts.py`, `tools/genunifont.py`,
-`tools/genicons.py` and `tools/genworld.py` rebuild the fonts, the icons
-and the map.
+`tools/genfreefont.py`, `tools/genfonts.py`, `tools/genicons.py` and
+`tools/genworld.py` rebuild the text fonts, the icon font, the icons and
+the map.
 
 ## Developer
 
 Retro Nim UI, Retro Photo, Retro Files and the examples are developed by
 **Sultan Al Isaiee (@foxoman)** -- [www.foxoman.net](https://www.foxoman.net),
-[sultan@foxoman.net](mailto:sultan@foxoman.net). Every app made with the kit
+[sultan@foxoman.net](mailto:sultan@foxoman.net). Co-author: Claude, Anthropic's AI. Every app made with the kit
 says so in its About box (`RetroCredit`, `RetroWebsite`, `RetroEmail` in
-`retro/core`).
+`retroui/core`).

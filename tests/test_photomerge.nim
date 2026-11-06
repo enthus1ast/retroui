@@ -1,8 +1,8 @@
-## Tests of retro/photomerge: matching and aligning pictures, panoramas,
+## Tests of retroui/photomerge: matching and aligning pictures, panoramas,
 ## focus stacks, exposure fusion, Surface Blur, skin and skies.
 
 import std/[unittest, math, random]
-import retro/[photo, photofx, photomerge]
+import retroui/[photo, photofx, photomerge]
 
 proc scene(w, h: int; seed = 3): Img =
   ## Something with corners: boxes and discs of many colors on a gradient.

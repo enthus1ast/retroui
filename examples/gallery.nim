@@ -5,7 +5,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[strutils, os, json, math]
-import retro
+import retroui
 
 const
   languages = ["English", "Deutsch", "Français", "Español", "Italiano",
@@ -1322,12 +1322,11 @@ app "Control Gallery", 760, 540, look = "retro-gallery":
                        "the whole menu and stays open while the pointer goes to it (Insert > Field)",
                        "Windows kept on top: the pin in a title bar, the control menu, Window > Always on " &
                        "Top; a size grip on any window (Windows page)",
-                       "Docked panels (retro/dock): tabs, groups, a column of icons, floating -- the side " &
+                       "Docked panels (retroui/dock): tabs, groups, a column of icons, floating -- the side " &
                        "panel sized from its edge (Windows page)",
                        "The folder tree: room inside its frame, and a menu on a right click (Files page)",
                        "Rows of fixed and own-width widgets share the room (nothing pushed out of the row)"],
-           credits = ["Fonts: Retro Sans, after lou's MS Sans Serif recreation (CC BY-SA 3.0); " &
-                      "GNU Unifont's Arabic (OFL); DejaVu (Bitstream Vera licence).",
+           credits = [RetroFontCredit,
                       "Map: Natural Earth (public domain)."])
 
   case msgBox(showConfirm, "Gallery", "Quit the control gallery?",

@@ -1,4 +1,4 @@
-## Tests of `retro/svgimport`: SVG read (colors, transforms, path data,
+## Tests of `retroui/svgimport`: SVG read (colors, transforms, path data,
 ## style sheets, uses, gradients, clips, masks, markers), made shapes
 ## (`svgShapes`, `placeSvg`: one shape for a one-color icon, undoable) and
 ## drawn (`rasterizeSvg`) as resvg draws it; bad input never crashes
@@ -12,7 +12,7 @@
 ## resvg 0.48 draws it 64 pixels wide.
 
 import std/[os, strutils, math, monotimes, times, random, tables]
-import retro/[gfx, photo, photoshapes, imaging, svgimport]
+import retroui/[gfx, photo, photoshapes, imaging, svgimport]
 
 let dir = currentSourcePath().parentDir / "data" / "svg"
 

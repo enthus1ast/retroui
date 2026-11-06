@@ -1,9 +1,20 @@
 ## How long a frame takes, with a fake driver (pure library cost: layout,
 ## widget logic, rasterizing). Run:  nimble bench
+##
+## Each line: a change (an input, a value, the whole window invalidated)
+## and the frames it takes to be on the screen -- their time together, how
+## many they are, the pixels sent.
+##
+## `RETRO_GPU=gpu nimble bench`: the same frames drawn with OpenGL, into an
+## off-screen surface (EGL; Mesa's llvmpipe where there is no GPU -- a
+## software GPU, slower than the CPU's own drawing), each frame waited for
+## (glFinish) so that its time is the GPU's work too. Built with
+## `-d:nimAllocStats`, each line also says how many blocks of memory a frame
+## takes (0 is the aim for a frame where little changed).
 
 import std/[monotimes, times, strutils, os]
-import retro/uirelays/[coords, screen, input]
-import retro
+import retroui/uirelays/[coords, screen, input, eglload]
+import retroui
 
 const W = 800
 const H = 600
@@ -22,13 +33,43 @@ drawRelays.blitRGBA = proc (p: ptr UncheckedArray[uint32]; w, h: int;
   pixelsOut += w * h
   true
 var pending: seq[Event]
+var pendingAt = 0
 inputRelays.pollEvent = proc (e: var Event; fl: set[InputFlag]): bool =
-  if pending.len == 0: return false
-  e = pending[0]
-  pending.delete(0)
+  # (read from the front without moving the rest: the bench's own
+  # bookkeeping takes no memory of a frame)
+  if pendingAt >= pending.len:
+    pending.setLen(0)
+    pendingAt = 0
+    return false
+  e = pending[pendingAt]
+  inc pendingAt
   true
-inputRelays.waitEvent = proc (e: var Event; t: int; fl: set[InputFlag]): bool = false
+inputRelays.waitEvent = proc (e: var Event; t: int; fl: set[InputFlag]): bool =
+  inputRelays.pollEvent(e, fl)          # (no waiting: the next input is there, or none)
 inputRelays.getTicks = proc (): int = ticks
+
+let gpuBench = getEnv("RETRO_GPU").toLowerAscii in ["1", "gpu"]
+var egl: Egl
+if gpuBench:
+  if not egl.openOffscreen(W, H):
+    echo "no OpenGL here: the GPU's frames not measured"
+    quit 0
+  eglload.current = egl
+  gpuRelays = GpuRelays(
+    startGpu: proc (): bool = true,
+    stopGpu: proc () = discard,
+    swapGpu: proc (): bool =
+      gpuGl().finish()                    # (the frame's work done before the clock is read)
+      true,
+    gpuProc: proc (name: cstring): pointer = eglload.current.glProc(name),
+    gpuIsEs: proc (): bool = true,
+    gpuGeneration: proc (): int = 0,
+    gpuReady: proc (): bool = true,
+    gpuBufferAge: proc (): int = 1)       # (a pbuffer keeps its pixels)
+
+proc allocsNow(): int =
+  when defined(nimAllocStats): cast[array[2, int]](getAllocStats())[0]
+  else: 0
 
 var
   name = "Untitled project"
@@ -40,7 +81,11 @@ var
   sel = 2
   lang = 0
   items: seq[string]
+  toolRect1, toolRect2, editRect, listRect: Rect
 for i in 0 ..< 200: items.add "Item number " & $i & "\t" & $(i * 3) & " KB"
+
+const okLabels = ["OK 0", "OK 1", "OK 2", "OK 3"]
+const cancelLabels = ["Cancel 0", "Cancel 1", "Cancel 2", "Cancel 3"]
 
 proc gallery() =
   menubar:
@@ -48,15 +93,17 @@ proc gallery() =
     menu "&Edit": discard menuItem("&Copy")
     menu "&Help": discard menuItem("&About")
   toolbar:
-    for ic in [icNew, icOpen, icSave, icCut, icCopy, icPaste, icPrint, icHelp]:
+    for i, ic in [icNew, icOpen, icSave, icCut, icCopy, icPaste, icPrint, icHelp]:
       toolButton(ic, "tip")
+      if i == 1: toolRect1 = ui.lastRect
+      elif i == 3: toolRect2 = ui.lastRect
   statusbar("Ready", "NUM")
   row([-1, -1, -1]):
     group "Buttons":
       for i in 0 ..< 4:
         row:
-          button("OK " & $i, isDefault = i == 0)
-          button("Cancel " & $i)
+          button(okLabels[i], isDefault = i == 0)
+          button(cancelLabels[i])
     group "Choices":
       checkbox "Auto save", a
       checkbox "Backups", b
@@ -66,6 +113,7 @@ proc gallery() =
       radio "Large", r, 2
     group "Text":
       edit name
+      editRect = ui.lastRect
       spin v, 0, 100
       combo ["English", "Deutsch", "Français"], lang
   row([-1, -1]):
@@ -75,6 +123,7 @@ proc gallery() =
       hscroll v, 0, 100, 10
     group "Lists":
       listbox items, sel, rows = 8, tabs = [120]
+      listRect = ui.lastRect
   editArea notes, lines = 6
 
 var
@@ -132,18 +181,44 @@ proc frame() =
   endFrame()
   ticks += 16
 
+var framesRun = 0
+
+proc step() =
+  ## A frame, and the ones that follow it at once (what a key or a click
+  ## changed late in a frame is drawn by one more): until one is shown.
+  frame()
+  inc framesRun
+  var n = 0
+  while ui.redraw and n < 6:
+    frame()
+    inc framesRun
+    inc n
+
 proc measure(label: string; n: int; prep: proc ()) =
-  for _ in 0 ..< 5: (prep(); frame())
+  ## `n` times: what `prep` does (an input, a change), then the frames
+  ## until it is on the screen.
+  for _ in 0 ..< 5: (prep(); step())
   pixelsOut = 0
+  framesRun = 0
+  let a0 = allocsNow()
   let t0 = getMonoTime()
   for _ in 0 ..< n:
     prep()
-    frame()
+    step()
   let us = (getMonoTime() - t0).inMicroseconds.float / n.float
-  echo label.alignLeft(34), formatFloat(us, ffDecimal, 1).align(9), " us/frame",
-       ($(pixelsOut div n)).align(10), " px blitted"
+  let allocs = (allocsNow() - a0).float / n.float
+  var line = label.alignLeft(36) & formatFloat(us, ffDecimal, 1).align(9) & " us" &
+             formatFloat(framesRun / n, ffDecimal, 1).align(5) & " frames" &
+             ($(pixelsOut div n)).align(8) & " px sent"
+  when defined(nimAllocStats): line.add formatFloat(allocs, ffDecimal, 1).align(8) & " allocs"
+  echo line
+
+proc at(r: Rect): Event = Event(kind: MouseMoveEvent, x: r.x + r.w div 2, y: r.y + r.h div 2)
 
 startApp("bench", W, H)
+if gpuBench:
+  for _ in 0 ..< 3: frame()
+  echo "drawn with ", gpuDescription()
 for _ in 0 ..< 5: frame()
 measure("full redraw (800x600, invalidated)", 300, proc () = invalidate())
 measure("nothing changed", 3000, proc () = discard)
@@ -151,6 +226,29 @@ var k = 0
 measure("one value changed (slider)", 1000, proc () =
   inc k
   v = k mod 100)
+measure("hover: tool button to tool button", 1000, proc () =
+  inc k
+  pending.add at(if (k and 1) == 0: toolRect1 else: toolRect2))
+# (the text box focused by a click, then a letter typed and taken back)
+pending.add at(editRect)
+pending.add Event(kind: MouseDownEvent, x: editRect.x + 8, y: editRect.y + 4, button: LeftButton, clicks: 1)
+step()
+pending.add Event(kind: MouseUpEvent, x: editRect.x + 8, y: editRect.y + 4, button: LeftButton)
+step()
+measure("typing in a text box", 1000, proc () =
+  inc k
+  # (a letter, then Backspace: one key a frame -- a key down ends a frame's
+  # input -- the text shown after each)
+  if (k and 1) == 0:
+    var e = Event(kind: TextInputEvent)
+    e.text[0] = 'x'
+    pending.add e
+  else:
+    pending.add Event(kind: KeyDownEvent, key: KeyBackspace))
+measure("wheel-scroll a list", 300, proc () =
+  inc k
+  pending.add at(listRect)
+  pending.add Event(kind: MouseWheelEvent, y: (if (k div 40) mod 2 == 0: -1 else: 1)))
 
 scene = 1
 for _ in 0 ..< 5: frame()
@@ -179,7 +277,7 @@ proc timeIt(label: string; n: int; body: proc ()) =
   let t0 = getMonoTime()
   for _ in 0 ..< n: body()
   let ms = (getMonoTime() - t0).inMicroseconds.float / 1000 / n.float
-  echo label.alignLeft(34), formatFloat(ms, ffDecimal, 1).align(9), " ms"
+  echo label.alignLeft(36), formatFloat(ms, ffDecimal, 1).align(9), " ms"
 
 var many = folder.all
 timeIt("sort 50,000 names naturally", 5, proc () =

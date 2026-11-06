@@ -1,4 +1,4 @@
-## Tests of spell checking and AutoCorrect (`retro/spell`): the words looked
+## Tests of spell checking and AutoCorrect (`retroui/spell`): the words looked
 ## at, the system's checker (Hunspell on Linux), the user's dictionary and
 ## AutoCorrect list kept on disk, Arabic, speed.
 ##
@@ -17,7 +17,7 @@ createDir(data)
 putEnv("XDG_DATA_HOME", data)
 putEnv("APPDATA", data)
 
-import retro/spell
+import retroui/spell
 
 proc words(t: string): seq[string] =
   for (a, b) in spellWords(t): result.add t[a ..< b]

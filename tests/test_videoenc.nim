@@ -1,4 +1,4 @@
-## Videos written and read back (retro/media): `beginVideo`, `addFrame`,
+## Videos written and read back (retroui/media): `beginVideo`, `addFrame`,
 ## `finish` make an MP4 of a made-up animation (each picture carrying its
 ## number in black and white squares); `videoInfo`, `videoFrameAt` and
 ## `videoFrames` read it back -- the right picture for each time, close to
@@ -6,8 +6,8 @@
 ## one. Without an encoder here (no ffmpeg), the writing part is skipped.
 
 import std/[os, strutils, math]
-import retro/[gfx, media, mediagst]
-import retro/uirelays/services
+import retroui/[gfx, media, mediagst]
+import retroui/uirelays/services
 
 const
   W = 322                          # (odd: written 322 x 182)

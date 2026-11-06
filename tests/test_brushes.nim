@@ -1,10 +1,10 @@
-## Brush presets (retro/photobrushes) and the brush engine's sizes and
+## Brush presets (retroui/photobrushes) and the brush engine's sizes and
 ## dynamics: every built-in brush paints, presets survive JSON, a brush up
 ## to 5000 pixels keeps a small mask, Fade, Direction, Flip, Build-up,
 ## Noise and Brush Pose do what they say.
 
 import std/[unittest, math, sets]
-import retro/[photo, photopaint, photobrushes]
+import retroui/[photo, photopaint, photobrushes]
 
 proc painted(px: openArray[uint32]; bg = 0xFFFFFFFF'u32): int =
   for p in px:

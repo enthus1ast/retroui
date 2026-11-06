@@ -1,4 +1,4 @@
-## Photoshop round trips of what stays editable (retro/psd, retro/photofiles):
+## Photoshop round trips of what stays editable (retroui/psd, retroui/photofiles):
 ## type layers (Latin and Arabic, point and box, styles mixed, warped) as
 ## Photoshop's type layers, Smart Objects (with Smart Filters, in
 ## perspective, one holding a document with layers) as placed layers with
@@ -12,7 +12,7 @@
 ## for other readers to look at (psd-tools, ag-psd).
 
 import std/[unittest, os, strutils]
-import retro/[photo, psd, photofiles, textengine, photowarp, imageformats, imaging, gfx]
+import retroui/[photo, psd, photofiles, textengine, photowarp, imageformats, imaging, gfx]
 
 let outDir = getTempDir() / "retro_psdround"
 createDir(outDir)
@@ -81,15 +81,15 @@ proc makeDoc(): Doc =
   let d = newDoc(240, 160, 0xFFFFFFFF'u32, name = "round")
   # Latin point text: styles mixed, escaped characters, a character beyond
   # 16 bits, two paragraphs, warped
-  var s1 = st("DejaVu Sans", "Book", 24, 0xFFCC0000'u32)
+  var s1 = st("FreeSans", "Regular", 24, 0xFFCC0000'u32)
   s1.tracking = 50
-  var s2 = st("DejaVu Sans", "Bold", 30, 0xFF0033CC'u32)
+  var s2 = st("FreeSans", "Bold", 30, 0xFF0033CC'u32)
   s2.fauxItalic = true
   s2.underline = true
   s2.baselineShift = 3
   s2.hScale = 1.25
   s2.leading = 40
-  var s3 = st("DejaVu Serif", "Book", 16.5, 0x80008000'u32)
+  var s3 = st("FreeSerif", "Regular", 16.5, 0x80008000'u32)
   s3.allCaps = true
   s3.strike = true
   s3.noKerning = true
@@ -103,8 +103,8 @@ proc makeDoc(): Doc =
   # Arabic text in a box: right to left (from its letters), ( ) and the
   # letters whose UTF-16 has their bytes (U+0628, U+0629), Arabic-Indic
   # digits
-  var a1 = st("DejaVu Sans", "Book", 20, 0xFF006600'u32)
-  var a2 = st("DejaVu Sans", "Bold", 18, 0xFF990099'u32)
+  var a1 = st("FreeSerif", "Regular", 20, 0xFF006600'u32)
+  var a2 = st("FreeSerif", "Bold", 18, 0xFF990099'u32)
   a2.digits = 1
   a2.fauxBold = true
   var t2 = TextData(spans: @[TextSpan(text: "مرحبا بالعالم (مدرسة)\n", style: a1),
@@ -168,7 +168,7 @@ suite "Photoshop documents: what stays editable":
         check e["EngineDict"]["Editor"]["Text"].text.endsWith("\r")
         var fonts: seq[string]
         for f in e["ResourceDict"]["FontSet"].items: fonts.add f["Name"].text
-        check "DejaVuSans-Bold" in fonts and "AdobeInvisFont" in fonts
+        check ("FreeSansBold" in fonts or "FreeSerifBold" in fonts) and "AdobeInvisFont" in fonts
     check n == 2
 
   test "type layers from EngineData alone (what Photoshop would leave)":

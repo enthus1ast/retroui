@@ -1,9 +1,9 @@
-## Tests of `retro/photoanim`: frames made from layers, shown, synced with
+## Tests of `retroui/photoanim`: frames made from layers, shown, synced with
 ## the layers, tweened, composited, flattened into layers, opened from
 ## frames, kept in a .rpd.
 
 import std/os
-import retro/[gfx, photo, photoanim]
+import retroui/[gfx, photo, photoanim]
 
 proc solid(d: Doc; L: Layer; c: uint32; x0, y0, w, h: int) =
   for y in y0 ..< y0 + h:

@@ -2,8 +2,8 @@
 ## finger -- headless, on the fake driver.
 
 import std/[math, monotimes, times, strutils]
-import retro/[core, gfx, widgets, mapview]
-import retro/uirelays/[coords, screen, input]
+import retroui/[core, gfx, widgets, mapview]
+import retroui/uirelays/[coords, screen, input]
 
 # (a fake driver of its own: the test needs only the map's modules)
 const W = 640

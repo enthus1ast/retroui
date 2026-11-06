@@ -3,8 +3,8 @@
 ##
 ##   nimble test
 
-import retro/uirelays/[coords, screen, input]
-import retro
+import retroui/uirelays/[coords, screen, input]
+import retroui
 
 const W = 320
 const H = 240

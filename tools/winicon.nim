@@ -13,7 +13,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, osproc, strutils]
-import retro/[gfx, imaging, core]
+import retroui/[gfx, imaging, core]
 
 proc le16(v: int): string = char(v and 255) & char((v shr 8) and 255)
 proc le32(v: int): string = le16(v and 0xFFFF) & le16((v shr 16) and 0xFFFF)

@@ -1,0 +1,19 @@
+# Retro Nim UI (retroui)
+
+> A Windows 3.1 style, immediate-mode UI toolkit for Nim by Sultan Al Isaiee (@foxoman): one code base for Windows, macOS, Linux/BSD, Android and iOS, with nothing to install (its own fonts, icons, PDF writer, image decoders). Install with `nimble install retroui`; apps start with `import retroui` and `app "Title", w, h: ...`.
+
+## Docs
+
+- [README](https://github.com/foxoman/retroui/blob/main/README.md): what is in the kit, how it works, every module
+- [Controls](https://github.com/foxoman/retroui/blob/main/docs/controls.md): every control with its signature, an example and pictures
+- [Building](https://github.com/foxoman/retroui/blob/main/BUILDING.md): desktop apps (Windows from any system, macOS, Linux AppImages), Android APKs without the SDK or NDK, iOS on a Mac, signing
+- [Changes](https://github.com/foxoman/retroui/blob/main/CHANGELOG.md): what changed in each release (newest first)
+
+## For AI agents
+
+- [Skill: building apps with Retro Nim UI](https://github.com/foxoman/retroui/blob/main/skills/retroui/SKILL.md)
+- [Rules for changing the kit](https://github.com/foxoman/retroui/blob/main/AGENTS.md)
+
+## Examples
+
+- [examples/](https://github.com/foxoman/retroui/tree/main/examples): Gallery (every control), Retro Photo, Retro Files, Retro Mail, Retro Board, HR Book, Notepad, Ledger, Charts, Invoice

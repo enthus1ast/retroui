@@ -3,7 +3,7 @@
 ## Mask, the composite again.
 
 import std/[os]
-import retro/uirelays/input
+import retroui/uirelays/input
 import harness
 
 const photoUnderTest = true

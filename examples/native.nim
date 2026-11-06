@@ -1,4 +1,4 @@
-## The system's own APIs from Nim (retro/native): what this device is, the
+## The system's own APIs from Nim (retroui/native): what this device is, the
 ## battery, dark mode, a beep, a buzz -- and on each system a call made
 ## straight to its API: Java on Android, Objective-C on macOS and iOS, Win32
 ## and COM on Windows, any C library on Linux.
@@ -6,7 +6,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/strutils
-import retro, retro/native
+import retroui, retroui/native
 
 var
   screenOn = false

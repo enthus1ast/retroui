@@ -1,13 +1,13 @@
 ## Chart Viewer: a CSV file as a chart -- pick the kind of chart and the
 ## columns, hover the chart for its numbers, save it as a PNG. All the work
-## is the kit's (`retro/charts`): this file only lays it out.
+## is the kit's (`retroui/charts`): this file only lays it out.
 ##
 ##   nim c -r -d:release examples/charts.nim [sales.csv]
 ##
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, strutils]
-import retro
+import retroui
 
 const sample = """Month,North,South,East,Target
 Jan,120,80,45,200

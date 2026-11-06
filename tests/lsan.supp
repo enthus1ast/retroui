@@ -1,0 +1,16 @@
+# LeakSanitizer: what Nim's own runtime and standard library keep when a
+# thread ends, not the toolkit's (LSAN_OPTIONS=suppressions=tests/lsan.supp).
+# The tests under the sanitizers:
+#
+#   ASAN_OPTIONS=detect_leaks=1 LSAN_OPTIONS=suppressions=tests/lsan.supp \
+#   nim c -r --hints:off --cc:clang -d:useMalloc --debugger:native \
+#     --passC:"-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize=function" \
+#     --passL:"-fsanitize=address,undefined" tests/test_widgets.nim
+
+# ORC's list of possible cycles, one for each thread (16 KB), is not freed
+# when the thread ends (Nim 2.2: lib/system/orc.nim, registerCycle)
+leak:registerCycle
+
+# std/times keeps the UTC time zone of each thread in a threadvar, never
+# freed (lib/pure/times.nim, utc)
+leak:newTimezone

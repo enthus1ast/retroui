@@ -8,7 +8,7 @@
 ##
 ## No dependencies but Nim and a C compiler.
 
-import std/[os, osproc, strutils, dynlib]
+import std/[os, osproc, strutils, dynlib, sequtils]
 
 const usage = """
 retrokit -- start, check and build Retro Nim UI apps
@@ -18,13 +18,14 @@ retrokit -- start, check and build Retro Nim UI apps
       and an icon
   retrokit doctor
       checks Nim, the C compiler, the screen libraries and the Android tools
+      (clang + lld or zig: APKs without the NDK)
   retrokit run APP.nim         build it (release) and run it
   retrokit small APP.nim       the smallest build: optimized for size, stripped
   retrokit apk APP.nim [...]   an Android APK (same options as retroapk)
 """
 
 const templates = [
-  ("hello", """import retro
+  ("hello", """import retroui
 
 var name = "World"
 var greeted = ""
@@ -39,7 +40,7 @@ app "$1", 360, 160:
     if button("E&xit"): quitApp()
   label greeted
 """),
-  ("form", """import retro
+  ("form", """import retroui
 
 var name, email, phone = ""
 var birthday = today()
@@ -62,7 +63,7 @@ app "$1", 520, 360:
     if button("Cancel"): quitApp()
   label saved
 """),
-  ("business", """import retro
+  ("business", """import retroui
 
 type Order = object
   customer: string
@@ -103,7 +104,7 @@ app "$1", 640, 420:
   statusbar($orders.len & " orders")
 """),
   ("files", """import std/os
-import retro
+import retroui
 
 var folder = newFolderModel(getHomeDir())
 var paneW = 280          # the details pane's width (beside) and height (under)
@@ -120,7 +121,7 @@ app "$1", 900, 600:
   do:
     discard filePreview(folder)
 """),
-  ("charts", """import retro
+  ("charts", """import retroui
 
 let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
 
@@ -136,7 +137,7 @@ proc nimbleFor(name: string): string =
   "# Package\n\nversion       = \"0.1.0\"\nauthor        = \"You\"\n" &
   "description   = \"" & name & ", made with Retro Nim UI\"\nlicense       = \"MIT\"\n" &
   "bin           = @[\"" & name & "\"]\n\n# Dependencies\n\nrequires \"nim >= 2.0.0\"\n" &
-  "requires \"retro\"\n\n# Tasks\n\n" &
+  "requires \"retroui\"\n\n# Tasks\n\n" &
   "task run, \"Build and run\":\n  exec \"nim c -r -d:release " & name & ".nim\"\n\n" &
   "task small, \"The smallest build\":\n  exec \"nim c -d:release -d:useMalloc --opt:size -d:lto --passL:-s " &
   name & ".nim\"\n\n" &
@@ -210,8 +211,8 @@ proc newApp(name, kind: string) =
   writeFile(name / name & ".nimble", nimbleFor(name))
   writeFile(name / "icon.png", tinyIcon())
   writeFile(name / "config.nims",
-    "# where the retro package is when it is not installed with nimble:\n" &
-    "# switch(\"path\", \"/path/to/retro/src\")\n" &
+    "# where the retroui package is when it is not installed with nimble:\n" &
+    "# switch(\"path\", \"/path/to/retroui/src\")\n" &
     "# (the system's malloc: memory let go of goes back to the system)\n" &
     "switch(\"define\", \"useMalloc\")\n" &
     "when defined(windows): switch(\"app\", \"gui\")\n")
@@ -255,7 +256,9 @@ proc doctor() =
     line(existsEnv("DISPLAY") or existsEnv("WAYLAND_DISPLAY"), "display",
          getEnv("DISPLAY", getEnv("WAYLAND_DISPLAY")),
          "run inside a desktop session (Wayland works through XWayland)")
-  # Android: Termux's clang, an NDK set up by hand, or the one retroapk fetches
+  # Android: Termux's clang, an NDK, or -- no NDK -- a clang that has lld,
+  # or zig, with the sysroot retroapk carries; with none of them retroapk
+  # fetches the NDK
   let termuxCC = existsEnv("TERMUX_VERSION") and found("clang").len > 0
   let ndk = getEnv("ANDROID_NDK_HOME", getEnv("ANDROID_NDK_ROOT"))
   let fetched = getEnv("RETRO_NDK_DIR", getHomeDir() / ".retro" / "ndk")
@@ -266,10 +269,43 @@ proc doctor() =
   elif dirExists(fetched):
     for kind, p in walkDir(fetched):
       if kind == pcDir and p.extractFilename.startsWith("android-ndk"): have = "NDK " & p
-  line(true, "Android APKs",
-       (if have.len > 0: have
-        elif existsEnv("TERMUX_VERSION"): "retroapk installs clang with pkg on first use"
-        else: "retroapk fetches the NDK once on first use (nimble ndk: now)"))
+  # (the same search as retroapk's: clang with ld.lld beside it or on the
+  # PATH -- Apple's clang has none --, then zig or pip's ziglang)
+  var clangs: seq[string]
+  when defined(macosx):
+    clangs.add ["/opt/homebrew/opt/llvm/bin/clang", "/usr/local/opt/llvm/bin/clang"]
+  clangs.add found("clang")
+  when defined(windows):
+    clangs.add getEnv("ProgramFiles", r"C:\Program Files") / "LLVM" / "bin" / "clang.exe"
+  for v in countdown(30, 14): clangs.add found("clang-" & $v)
+  var noNdk = ""
+  for c in clangs:
+    if c.len == 0 or not fileExists(c): continue
+    let ver = c.extractFilename.changeFileExt("").substr(5)    # "-18" of clang-18
+    var llds = @[c.parentDir / "ld.lld" & ExeExt, found("ld.lld"), found("ld.lld" & ver)]
+    when defined(macosx):
+      llds.add ["/opt/homebrew/opt/lld/bin/ld.lld", "/usr/local/opt/lld/bin/ld.lld"]
+    if llds.anyIt(it.len > 0 and fileExists(it)):
+      noNdk = "clang + lld (no NDK needed): " & c
+      break
+  if noNdk.len == 0 and found("zig").len > 0: noNdk = "zig (no NDK needed): " & found("zig")
+  if noNdk.len == 0:
+    for py in ["python3", "python", "py"]:
+      if found(py).len > 0 and execCmdEx(quoteShellCommand([found(py), "-c",
+                                         "import ziglang"])).exitCode == 0:
+        noNdk = "zig from pip's ziglang (no NDK needed)"
+        break
+  if have.len > 0 or noNdk.len > 0:
+    line(true, "Android APKs", (if have.len > 0: have else: noNdk))
+  elif existsEnv("TERMUX_VERSION"):
+    line(true, "Android APKs", "retroapk installs clang with pkg on first use")
+  else:
+    line(false, "Android APKs", "no clang with lld, no zig, no NDK",
+         (when defined(windows): "winget install LLVM.LLVM (or zig.zig)"
+          elif defined(macosx): "brew install llvm lld (or zig)"
+          elif defined(bsd): "clang and lld from packages or ports (or zig)"
+          else: "install clang and lld (apt install clang lld) or zig") &
+         "; without them retroapk fetches the NDK once (about 700 MB; nimble ndk: now)")
   line(true, "APK signing", "built in (no apksigner, no OpenSSL, no Java)")
   line(found("adb").len > 0 or existsEnv("TERMUX_VERSION"), "installing on a device",
        (if found("adb").len > 0: "adb" elif existsEnv("TERMUX_VERSION"): "Termux's installer" else: "no adb"),
@@ -316,7 +352,7 @@ proc main() =
     quit code
   of "apk":
     let tool = findExe("retroapk")
-    if tool.len == 0: quit "retrokit: retroapk is not installed (nimble install retro)"
+    if tool.len == 0: quit "retrokit: retroapk is not installed (nimble install retroui)"
     let p = startProcess(tool, args = args[1 .. ^1], options = {poParentStreams})
     let code = p.waitForExit()
     p.close()

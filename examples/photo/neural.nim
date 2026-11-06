@@ -4,7 +4,7 @@
 # large, the filters in a list beside it, each switched on with its own
 # settings, the result seen as it is set; the output to the layer, a new
 # layer or a new document. (Made here without a network: offline, on the
-# device -- see retro/photoneural.)
+# device -- see retroui/photoneural.)
 
 type NfKind = enum
   nfSkin = "Skin Smoothing", nfJpeg = "JPEG Artifacts Removal", nfRestore = "Photo Restoration",

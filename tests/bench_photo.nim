@@ -4,7 +4,7 @@
 ##   nim c -r -d:release tests/bench_photo.nim [picture.jpg]
 
 import std/[os, times, strutils, monotimes]
-import retro/[gfx, imaging, photo, photopaint, photofx, photodevelop]
+import retroui/[gfx, imaging, photo, photopaint, photofx, photodevelop]
 
 proc ms(t: MonoTime): string = formatFloat((getMonoTime() - t).inMicroseconds.float / 1000, ffDecimal, 1) & " ms"
 

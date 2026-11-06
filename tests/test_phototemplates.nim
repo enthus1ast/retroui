@@ -2,7 +2,7 @@
 ## of photoquick.
 
 import std/[math, strutils, sequtils, os, json]
-import retro/[gfx, photo, photofx, phototemplates, photoquick, textengine, assetstore, photobrushes, adobefiles,
+import retroui/[gfx, photo, photofx, phototemplates, photoquick, textengine, assetstore, photobrushes, adobefiles,
               imaging, photofiles]
 
 block presets:

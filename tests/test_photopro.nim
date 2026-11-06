@@ -2,7 +2,7 @@
 ## through and isolated), Blend If, mask density and feather, arranging.
 
 import std/[unittest, math, os]
-import retro/photo
+import retroui/photo
 
 proc px(d: Doc; x, y: int): uint32 =
   d.updateComposite()
@@ -243,7 +243,7 @@ suite "history":
     d.undo()
     check L.px[0] == 0xFF102030'u32
 
-import retro/[photofx, photowarp, textengine]
+import retroui/[photofx, photowarp, textengine]
 
 suite "warps and Smart Objects":
   proc pattern(w, h: int): seq[uint32] =

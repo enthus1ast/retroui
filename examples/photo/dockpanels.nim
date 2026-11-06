@@ -1,6 +1,6 @@
 # Retro Photo -- included by photo.nim
 #
-# The panels in the dock (retro/dock): what each draws, its menu, and what
+# The panels in the dock (retroui/dock): what each draws, its menu, and what
 # a panel brought up does. The dock itself (where each is, collapsed to
 # icons, floating) is the toolkit's; `panelList` and `defaultDock` in
 # photo.nim say which there are and where they start.

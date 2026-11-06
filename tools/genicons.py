@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draws Retro Nim UI's pixel icons and writes src/retro/pixelicons.nim.
+"""Draws Retro Nim UI's pixel icons and writes src/retroui/pixelicons.nim.
 
 Every icon has a 16 x 16 and a 32 x 32 drawing in the 16 VGA colors. The
 32 x 32 art is used for big icons and, on screens of 2x and more, for icons
@@ -4722,7 +4722,7 @@ def to_png(c, path, scale):
 
 
 def write_appicon(path):
-    """Writes the default app icon's pixels into src/retro/appicon.nim."""
+    """Writes the default app icon's pixels into src/retroui/appicon.nim."""
     src = open(path).read()
     start = src.index('proc iconPixels*()')
     end = src.index('proc iconPng*')

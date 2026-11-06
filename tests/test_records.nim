@@ -1,11 +1,11 @@
-## The business controls of retro/records: masked fields, the record
+## The business controls of retroui/records: masked fields, the record
 ## navigator, two lists, date ranges, the property grid, the tree grid and
 ## wizards -- by mouse, keyboard and finger, headless.
 
 import std/[strutils, unicode]
-import retro
-import retro/records
-import retro/uirelays/input
+import retroui
+import retroui/records
+import retroui/uirelays/input
 import harness
 
 fakeDriver()

@@ -7,9 +7,9 @@
 ##   tests/fuzz/fuzz_photo 2000 7        # steps, random seed
 
 import std/[random, strutils, os]
-import retro/uirelays/input
+import retroui/uirelays/input
 import ../harness
-import retro/psd
+import retroui/psd
 
 const photoUnderTest = true
 include ../../examples/photo

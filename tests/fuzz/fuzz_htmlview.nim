@@ -11,7 +11,7 @@
 ## Inputs that fail are saved as crash-html-*.html in the current folder.
 
 import std/[os, random, strutils, times, monotimes, sets]
-import retro, retro/htmlview
+import retroui, retroui/htmlview
 import ../harness
 
 let iters = if paramCount() >= 1: parseInt(paramStr(1)) else: 20000

@@ -1,9 +1,9 @@
-## Photoshop's preset files (retro/adobefiles): swatches (.aco, .ase),
+## Photoshop's preset files (retroui/adobefiles): swatches (.aco, .ase),
 ## curves (.acv), levels (.alv) written and read back; gradients (.grd) and
 ## patterns (.pat) made as Photoshop writes them, then read.
 
 import std/[unittest, strutils]
-import retro/[adobefiles, psd, photo]
+import retroui/[adobefiles, psd, photo]
 
 proc be16(o: var string; v: int) =
   o.add char((v shr 8) and 255); o.add char(v and 255)

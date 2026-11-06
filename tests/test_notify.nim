@@ -1,4 +1,4 @@
-## retro/notify: the Linux way through fake `gdbus`, `notify-send` and
+## retroui/notify: the Linux way through fake `gdbus`, `notify-send` and
 ## `termux-notification` programs that write down how they were called
 ## (quoting, Arabic text, tags replacing the notification before, a slow
 ## or broken service never holding up the caller); the Android way against
@@ -12,9 +12,9 @@
 ##   nim c --hints:off -d:mingw --cpu:amd64 -o:/tmp/test_notify.exe tests/test_notify.nim
 ##   WINEDEBUG=-all wine /tmp/test_notify.exe
 
-include retro/notify           # (its inner parts too: the Android way runs anywhere)
+include retroui/notify           # (its inner parts too: the Android way runs anywhere)
 import std/[monotimes, sequtils]
-import retro/uirelays/services
+import retroui/uirelays/services
 
 block text:
   doAssert cleanText("  a\tb\nc\x01d\x7F ", 50) == "a\tb\nc d"

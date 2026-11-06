@@ -12,8 +12,8 @@ putEnv("HOME", home)
 putEnv("XDG_DATA_HOME", home / ".local" / "share")
 putEnv("XDG_CACHE_HOME", home / ".cache")
 
-import retro
-import retro/uirelays/input
+import retroui
+import retroui/uirelays/input
 import harness
 import ../examples/filemanager
 

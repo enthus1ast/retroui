@@ -8,7 +8,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, osproc, json, strutils, times, net, exitprocs, sequtils]
-import retro/[http, db, oauth, secrets]
+import retroui/[http, db, oauth, secrets]
 import ../examples/mail/[store, api, ical, calendar, sync]
 
 proc freePort(): int =
@@ -33,7 +33,11 @@ putEnv("RETRO_MAIL_GTOKEN", base & "/g/token")
 
 let mock = startProcess("python3", args = [currentSourcePath().parentDir / "mailmock.py", $port],
                         options = {poUsePath, poParentStreams})
-addExitProc(proc () = mock.terminate())
+proc stopAtExit(p: Process) =
+  # (the exit proc keeps its own reference: the program's globals, `mock`
+  # too, are freed before the exit procs run)
+  addExitProc(proc () = p.terminate())
+stopAtExit(mock)
 for i in 0 .. 50:
   if httpRequest("GET", base & "/test/state").status == 200: break
   sleep(100)

@@ -7,7 +7,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[json, strutils, hashes, times]
-import retro/[db, mime, mailimport]
+import retroui/[db, mime, mailimport]
 import store
 
 const localClient* = "local"     ## (the client id that marks the Local Folders account)

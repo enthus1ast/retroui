@@ -1,7 +1,7 @@
-## RSA in plain Nim (retro/rsa): what signing an APK needs without OpenSSL.
+## RSA in plain Nim (retroui/rsa): what signing an APK needs without OpenSSL.
 
 import std/strutils
-import retro/rsa
+import retroui/rsa
 
 proc hex(b: openArray[byte]): string =
   for x in b: result.add x.toHex(2).toLowerAscii

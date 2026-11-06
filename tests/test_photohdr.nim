@@ -1,10 +1,10 @@
-## Tests of `retro/photohdr`: 32 bits a channel -- made from 8 bits and
+## Tests of `retroui/photohdr`: 32 bits a channel -- made from 8 bits and
 ## shown as it was, an exposure, Radiance and PFM files read and written,
 ## kept in a .rpd, HDR Toning down to 16 and 8 bits by each method; and
 ## the 24- and 32-bit BMP, PNG-24.
 
 import std/[os, math]
-import retro/[gfx, imaging, photo, photohdr, photofiles]
+import retroui/[gfx, imaging, photo, photohdr, photofiles]
 
 proc sample(w, h: int): Doc =
   result = newDoc(w, h, 0xFF808080'u32)

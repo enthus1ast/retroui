@@ -1,7 +1,7 @@
-## Tests of the work shared among the cores (retro/parallel).
+## Tests of the work shared among the cores (retroui/parallel).
 
 import std/[atomics]
-import retro/parallel
+import retroui/parallel
 
 block everyPieceOnce:
   for n in [0, 1, 2, 3, 7, 100, 1001, 100_000]:

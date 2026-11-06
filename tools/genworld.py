@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Makes src/retro/worlddata.nim, the countries of retro's map view, from the
+"""Makes src/retroui/worlddata.nim, the countries of retro's map view, from the
 Natural Earth 1:50m admin-0 countries as the npm package `world-atlas`
 (2.x) has them (countries-50m.json, TopoJSON).
 
@@ -11,7 +11,7 @@ The shared borders are simplified once (Douglas-Peucker), so neighbours
 still meet; rings are stored as 1/100 degree steps, zigzag varints.
 
 Natural Earth is in the public domain; world-atlas is (c) Mike Bostock,
-ISC licence (see src/retro/fonts/LICENSE-NaturalEarth.txt).
+ISC licence (see src/retroui/fonts/LICENSE-NaturalEarth.txt).
 """
 import json, math, os, sys
 

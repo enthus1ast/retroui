@@ -4,7 +4,7 @@
 ## trimmed to their limit), a long session staying inside its budget.
 
 import std/[os, strutils, times, random]
-import retro, retro/[memwatch, thumbcache]
+import retroui, retroui/[memwatch, thumbcache]
 import harness
 
 fakeDriver()

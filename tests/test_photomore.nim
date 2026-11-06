@@ -6,7 +6,7 @@
 ## are written there as pictures to look at.
 
 import std/[os, math, strutils, json]
-import retro/[gfx, imaging, photo, photopaint, photofx, photodevelop, photostyles, photoshapes, photofiles, photovector,
+import retroui/[gfx, imaging, photo, photopaint, photofx, photodevelop, photostyles, photoshapes, photofiles, photovector,
               psd, photoinks, filterfactory, imageformats, textengine]
 
 let dump = getEnv("PHOTO_DUMP")

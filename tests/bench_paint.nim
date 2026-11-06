@@ -4,7 +4,7 @@
 ##   nim c -r -d:release -d:useMalloc tests/bench_paint.nim
 
 import std/[strutils, monotimes, times, math]
-import retro/[photo, photopaint]
+import retroui/[photo, photopaint]
 
 proc ms(t: MonoTime): float = (getMonoTime() - t).inMicroseconds.float / 1000
 

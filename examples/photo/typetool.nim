@@ -6,7 +6,7 @@
 # edits it again.
 
 var
-  typeStyle = CharStyle(family: "DejaVu Sans", style: "Book", size: 48, color: 0xFF000000'u32,
+  typeStyle = CharStyle(family: defaultFamily, style: "Regular", size: 48, color: 0xFF000000'u32,
                         hScale: 1, vScale: 1)
     ## the Character palette's settings for the next text
   typePara: ParaStyle               ## ... the Paragraph palette's

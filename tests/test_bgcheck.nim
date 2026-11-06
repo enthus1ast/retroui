@@ -1,4 +1,4 @@
-## retro/bgcheck: a check registered, then run through the entry point the
+## retroui/bgcheck: a check registered, then run through the entry point the
 ## system's side calls (`retroBackgroundCheck`; on Android the job's own
 ## thread calls it, so here a thread the app did not make does too) -- once
 ## a call, `inBackgroundCheck` true only there, one check at a time, what it
@@ -12,9 +12,9 @@
 ##   nim c -r --hints:off tests/test_bgcheck.nim
 
 import std/[os, strutils, typedthreads]
-import retro/bgcheck {.all.}
-import retro/notify {.all.}
-import retro/[native, uirelays/services]
+import retroui/bgcheck {.all.}
+import retroui/notify {.all.}
+import retroui/[native, uirelays/services]
 
 var
   runs = 0                  # (the check's: one thread at a time writes them)

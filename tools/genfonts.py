@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Regenerate the embedded fonts and the tables made from them.
+"""Regenerate the icon font and the tables made from it.
 
 Maintainers only: users of the library never run this, the outputs are
-checked in. Needs Python 3 with fontTools (`pip install fonttools`), the
-DejaVu fonts (Debian/Ubuntu `fonts-dejavu-core`, `fonts-dejavu-extra`), and
+checked in. Needs Python 3 with fontTools (`pip install fonttools`) and
 two files from the Nerd Fonts project in the folder given as argument:
 
     SymbolsNerdFont-Regular.ttf   (release asset NerdFontsSymbolsOnly.zip)
@@ -12,24 +11,17 @@ two files from the Nerd Fonts project in the folder given as argument:
     python3 tools/genfonts.py ~/nerd
 
 Writes:
-    src/retro/fonts/*.ttf        subsets of DejaVu Sans, Sans Bold,
-                                   Sans Mono, Sans Mono Bold, Nerd symbols
-    src/retro/nerdicons.nim      a constant per icon: nfFolder = "\\uF07B"
-    src/retro/arabicdata.nim     Arabic letter forms and joining types
+    src/retroui/fonts/Icons.ttf    a subset of the Nerd symbols (+ .ttf.z)
+    src/retroui/nerdicons.nim      a constant per icon: nfFolder = "\\uF07B"
+    src/retroui/arabicdata.nim     Arabic letter forms and joining types
+
+(The text fonts, GNU FreeFont, are made by tools/genfreefont.py.)
 """
 import json, os, subprocess, sys, unicodedata
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUT = os.path.join(ROOT, "src", "retro")
-DEJAVU = "/usr/share/fonts/truetype/dejavu/"
-
-SANS = ("U+0020-007E,U+00A0-024F,U+0300-036F,U+0370-03FF,U+0400-04FF,"
-        "U+0600-06FF,U+0750-077F,U+2000-206F,U+20A0-20CF,U+2100-214F,"
-        "U+2190-21FF,U+2200-22FF,U+2500-257F,U+25A0-25FF,U+2610-2612,"
-        "U+2713-2718,U+FB50-FDFF,U+FE70-FEFF,U+FFFD")
-MONO = ("U+0020-007E,U+00A0-00FF,U+2010-2027,U+2190-2193,U+2500-257F,"
-        "U+25A0-25FF,U+FFFD")
 
 # name in Nim (nfName) = Nerd Fonts glyph name
 ICONS = """
@@ -229,10 +221,6 @@ def main():
     nerd = sys.argv[1]
     fonts = os.path.join(OUT, "fonts")
     os.makedirs(fonts, exist_ok=True)
-    subset(DEJAVU + "DejaVuSans.ttf", SANS, os.path.join(fonts, "Sans.ttf"))
-    subset(DEJAVU + "DejaVuSans-Bold.ttf", SANS, os.path.join(fonts, "SansBold.ttf"))
-    subset(DEJAVU + "DejaVuSansMono.ttf", MONO, os.path.join(fonts, "Mono.ttf"))
-    subset(DEJAVU + "DejaVuSansMono-Bold.ttf", MONO, os.path.join(fonts, "MonoBold.ttf"))
     table = icons(nerd)
     codes = ",".join("U+%04X" % c for _, _, c in table)
     subset(os.path.join(nerd, "SymbolsNerdFont-Regular.ttf"), codes,
@@ -241,7 +229,7 @@ def main():
     arabic()
     # what the apps carry: the fonts zlib-compressed (typeset.nim unpacks them)
     import zlib
-    for name in ["Sans", "SansBold", "Mono", "MonoBold", "Icons"]:
+    for name in ["Icons"]:
         path = os.path.join(fonts, name + ".ttf")
         with open(path, "rb") as f:
             data = f.read()

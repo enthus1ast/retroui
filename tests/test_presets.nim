@@ -1,10 +1,10 @@
-## Tests of `retro/photopresets`: the Adjustment Presets -- the built-in
+## Tests of `retroui/photopresets`: the Adjustment Presets -- the built-in
 ## ones, put on an image as a group of adjustment layers, their look on a
 ## picture, presets made from layers, kept in a file and read back, and a
 ## batch of files.
 
 import std/[os, strutils]
-import retro/[gfx, imaging, photo, photofx, photodevelop, photopresets]
+import retroui/[gfx, imaging, photo, photofx, photodevelop, photopresets]
 
 proc photo(w, h: int): Doc =
   result = newDoc(w, h)

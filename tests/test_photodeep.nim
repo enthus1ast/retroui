@@ -1,11 +1,11 @@
-## Tests of `retro/photodeep`: 16 and 32 bits a channel for real -- Levels
+## Tests of `retroui/photodeep`: 16 and 32 bits a channel for real -- Levels
 ## and Curves read between their tables, changes of each pixel through a
 ## table of them, the blurs and sharpening on floats, a tool's 8-bit change
 ## kept only where it changed, undo of the 16 bits, the .rpd keeping them,
 ## the image composited at 16 bits, the gradient at 16 bits.
 
 import std/[os, sets, math]
-import retro/[gfx, photo, photofx, photohdr, photodeep, photodevelop, photopaint]
+import retroui/[gfx, photo, photofx, photohdr, photodeep, photodevelop, photopaint]
 
 let S = getTempDir()
 

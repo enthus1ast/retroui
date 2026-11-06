@@ -1,10 +1,10 @@
 ## Bugs found by hard-testing the toolkit (sanitizers, random input, odd
 ## looks), kept fixed, headless.
 
-import std/[os, strutils]
-import retro
-import retro/zip
-import retro/uirelays/[input, screen]
+import std/[os, strutils, random]
+import retroui
+import retroui/[zip, photo, jxl, exr]
+import retroui/uirelays/[input, screen]
 import harness
 
 fakeDriver()
@@ -82,6 +82,39 @@ block damagedZipEntriesFreed:
   leaksNot("readEntry", 100):
     doAssertRaises(ZipError): discard readEntry(path, e)
   removeDir(dir)
+
+block mixedPictureFreed:
+  # a picture of two layers asked for its one plain layer (each frame):
+  # `return nil` over the first layer found kept that layer counted, and it
+  # was never freed with the picture (Nim 2.2's `return` does not destroy
+  # the `result` it replaces)
+  leaksNot("a picture of two layers", 30):
+    let d = newDoc(64, 64, 0xFFFFFFFF'u32)
+    discard d.addLayer("two")
+    d.updateComposite()
+    doAssert d.simpleLayer == nil
+
+block damagedPicturesFreed:
+  # damaged JPEG XL files and OpenEXR files cut short: what a reader had
+  # read before it failed, going into a field, was never freed
+  let data = currentSourcePath().parentDir / "data"
+  var r = initRand(7)
+  var damaged: seq[string]
+  for name in ["ll-graphic-e9.jxl", "vd-up2.jxl", "ll-16.jxl", "ll-patches.jxl", "md-lossy.jxl"]:
+    let f = readFile(data / "jxl" / name)
+    for _ in 0 ..< 40:
+      var d = f
+      for _ in 0 .. r.rand(4): d[r.rand(d.high)] = char(r.rand(255))
+      damaged.add d
+  leaksNot("damaged JPEG XL files", 4):
+    for d in damaged:
+      try: discard decodeJxlFrames(d)
+      except JxlError: discard
+  let exr = readFile(data / "exr" / "rgba_b44.exr")
+  leaksNot("OpenEXR files cut short", 4):
+    for n in 9 ..< 600:
+      try: discard readExr(exr[0 ..< n])
+      except ValueError: discard
 
 block listColumnsKeepApart:
   # a list's tab stops grow with the UI's size and a column's text stops

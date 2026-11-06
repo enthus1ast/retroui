@@ -1,4 +1,4 @@
-## Tests of `retro/webp`: WebP files read and written, checked against libwebp.
+## Tests of `retroui/webp`: WebP files read and written, checked against libwebp.
 ##
 ## tests/data/webp holds files libwebp 1.6.0 wrote -- the copy Pillow 12
 ## carries, through Pillow and, for the settings Pillow does not offer
@@ -17,7 +17,7 @@
 ## libwebp's decoding of astronaut-q75.webp, whole.
 
 import std/[os, math, monotimes, times, random, strutils]
-import retro/[gfx, codec, imaging, webp]
+import retroui/[gfx, codec, imaging, webp]
 
 const dir = currentSourcePath().parentDir / "data" / "webp"
 
@@ -88,21 +88,21 @@ const refs: seq[Ref] = @[
   ("anim-handmade.webp", 60, 40, @[
     (0xb84cff64'u32, 100), (0x5c39e109'u32, 50), (0xe13c180e'u32, 70), (0xc22bcbce'u32, 90),
     (0x84015a17'u32, 60), (0xac8b461f'u32, 40), (0x8223f560'u32, 30)]),
-  # VP8X: written by retro/webp
+  # VP8X: written by retroui/webp
   ("retro-alpha-q60.webp", 80, 60, @[(0xbea06d94'u32, 0)]),
-  # VP8X: written by retro/webp
+  # VP8X: written by retroui/webp
   ("retro-anim-ll.webp", 60, 40, @[
     (0xb84cff64'u32, 100), (0x5c39e109'u32, 50), (0xe13c180e'u32, 70), (0xc22bcbce'u32, 90),
     (0x84015a17'u32, 60), (0xac8b461f'u32, 40), (0x8223f560'u32, 30)]),
-  # VP8X: written by retro/webp
+  # VP8X: written by retroui/webp
   ("retro-anim-q70.webp", 60, 40, @[
     (0xbfc25060'u32, 100), (0xa60d79e0'u32, 50), (0x2ae152f6'u32, 70), (0xa51df5a0'u32, 90),
     (0x71b624bd'u32, 60), (0x11aa991a'u32, 40), (0x33d30766'u32, 30)]),
-  # VP8L: written by retro/webp
+  # VP8L: written by retroui/webp
   ("retro-ll-palette.webp", 77, 45, @[(0xfe408d3b'u32, 0)]),
-  # VP8L: written by retro/webp
+  # VP8L: written by retroui/webp
   ("retro-ll.webp", 96, 72, @[(0xbe7a5302'u32, 0)]),
-  # VP8: written by retro/webp
+  # VP8: written by retroui/webp
   ("retro-q75.webp", 120, 90, @[(0x616e4be3'u32, 0)]),
 ]
 

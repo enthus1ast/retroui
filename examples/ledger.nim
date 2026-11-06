@@ -10,7 +10,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[strutils, algorithm]
-import retro
+import retroui
 
 type
   Invoice = object

@@ -5,7 +5,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[json, strutils, times, tables, os]
-import retro/[http, mime]
+import retroui/[http, mime]
 import api, store
 
 const

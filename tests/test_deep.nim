@@ -3,7 +3,7 @@
 ## bits made 16.
 
 import std/[unittest, os]
-import retro/[photo, psd, photofiles, imaging, gfx]
+import retroui/[photo, psd, photofiles, imaging, gfx]
 
 proc ramp16(w, h: int): seq[uint16] =
   ## Values no 8-bit picture has (odd low bytes), and some transparency.

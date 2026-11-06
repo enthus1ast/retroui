@@ -19,6 +19,7 @@ tests/*
 !tests/*.nim
 !tests/*.nims
 !tests/*.py
+!tests/*.supp
 !tests/*/
 tests/fuzz/fuzz
 tests/fuzz/fuzzui

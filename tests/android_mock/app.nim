@@ -2,8 +2,8 @@
 
 {.compile: "mock_android.c".}
 
-import retro
-import retro/uirelays/drivers/android_driver
+import retroui
+import retroui/uirelays/drivers/android_driver
 
 # The fake Android's relays, in place of the desktop driver's.
 initAndroidDriver()

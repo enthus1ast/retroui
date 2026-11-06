@@ -1,4 +1,4 @@
-## Tests of `retro/jxl`: JPEG XL files read and written, checked against libjxl.
+## Tests of `retroui/jxl`: JPEG XL files read and written, checked against libjxl.
 ##
 ## tests/data/jxl holds files libjxl 0.12 wrote -- the copy the imagecodecs
 ## wheel carries, reached through ctypes (lj.py) -- and two from libjxl's own
@@ -19,7 +19,7 @@
 ## references (`make.py --refs`) are libjxl's reading of them.
 
 import std/[os, math, monotimes, times, random, strutils]
-import retro/[gfx, codec, imaging, jxl]
+import retroui/[gfx, codec, imaging, jxl]
 
 const dir = currentSourcePath().parentDir / "data" / "jxl"
 
@@ -71,19 +71,19 @@ const refs: seq[Ref] = @[
   ("splines-first-frame.jxl", 32, 32, true, @[(0x5a85f01b'u32, 0)]),
   # libjxl test data: many splines on 2048x2048
   ("splines.jxl", 2048, 2048, true, @[(0x71db92b5'u32, 0)]),
-  # written by retro/jxl (effort 5): libjxl reads ll-alpha.jxl's pixels back
+  # written by retroui/jxl (effort 5): libjxl reads ll-alpha.jxl's pixels back
   ("retro-alpha.jxl", 64, 48, false, @[(0x95e419c4'u32, 0)]),
-  # written by retro/jxl (effort 1): ll-photo-e7.jxl's pixels
+  # written by retroui/jxl (effort 1): ll-photo-e7.jxl's pixels
   ("retro-e1.jxl", 64, 48, false, @[(0x4663e083'u32, 0)]),
-  # written by retro/jxl (effort 3)
+  # written by retroui/jxl (effort 3)
   ("retro-e3.jxl", 64, 48, false, @[(0x4663e083'u32, 0)]),
-  # written by retro/jxl (effort 9)
+  # written by retroui/jxl (effort 9)
   ("retro-e9.jxl", 64, 48, false, @[(0x4663e083'u32, 0)]),
-  # written by retro/jxl (effort 7): ll-graphic-e9.jxl's pixels, a palette
+  # written by retroui/jxl (effort 7): ll-graphic-e9.jxl's pixels, a palette
   ("retro-graphic.jxl", 96, 64, false, @[(0xbb4c1337'u32, 0)]),
-  # written by retro/jxl (effort 4): ll-gray.jxl's pixels
+  # written by retroui/jxl (effort 4): ll-gray.jxl's pixels
   ("retro-gray.jxl", 64, 48, false, @[(0x5c99b166'u32, 0)]),
-  # written by retro/jxl (effort 2): ll-groups.jxl's pixels, four groups of 256x256
+  # written by retroui/jxl (effort 2): ll-groups.jxl's pixels, four groups of 256x256
   ("retro-groups.jxl", 300, 260, false, @[(0xd21e55b8'u32, 0)]),
 ]
 

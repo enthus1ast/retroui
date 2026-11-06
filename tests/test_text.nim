@@ -2,9 +2,9 @@
 ## helpers, the new widgets and Markdown -- headless, on the fake driver.
 
 import std/[strutils, tables, times, unicode, math, os]
-import retro
-import retro/[typeset, ttf, raster]
-import retro/uirelays/input
+import retroui
+import retroui/[typeset, ttf, raster]
+import retroui/uirelays/input
 import harness
 
 fakeDriver()
@@ -13,11 +13,28 @@ startApp("text", W, H)
 # ---- fonts -----------------------------------------------------------------------------
 
 block faces:
+  # FreeSans: 1000 units to the em, Latin and the rest, no Arabic of its
+  # own (FreeSerif's stands in); kerning from GPOS (the legacy table is
+  # gone from the subsets)
   let f = face(fSans)
-  doAssert f.unitsPerEm == 2048
-  doAssert f.glyphOf(ord('A')) != 0 and f.glyphOf(0x0628) != 0, "Latin and Arabic"
+  doAssert f.unitsPerEm == 1000 and f.family == "FreeSans"
+  doAssert f.glyphOf(ord('A')) != 0 and f.glyphOf(0x0628) == 0, "Latin, and no Arabic of its own"
+  doAssert face(fSerif).glyphOf(0x0628) != 0 and face(fSerif).glyphOf(0xFE91) != 0, "FreeSerif's Arabic"
   doAssert face(fIcons).glyphOf(0xF07B) != 0, "the folder icon"
-  doAssert f.kerning(f.glyphOf(ord('A')), f.glyphOf(ord('V'))) < 0, "A V kerns"
+  doAssert f.tableRange("kern").at < 0 and f.hasKerning
+  # (FreeSans 0412 kerns no Latin pairs; FreeSerif and the Oblique do)
+  for id in [fSerif, fSerifBold, fSerifItalic, fSansItalic]:
+    let k = face(id)
+    doAssert k.kerning(k.glyphOf(ord('A')), k.glyphOf(ord('V'))) < 0, "A V kerns in " & $id
+    doAssert k.kerning(k.glyphOf(ord('T')), k.glyphOf(ord('o'))) < 0, "T o kerns in " & $id
+  # (the values fontTools reads from GPOS)
+  let fs = face(fSerif)
+  doAssert fs.kerning(fs.glyphOf(ord('A')), fs.glyphOf(ord('V'))) == -70
+  doAssert fs.kerning(fs.glyphOf(ord('f')), fs.glyphOf(ord('f'))) == -50
+  doAssert fs.kerning(fs.glyphOf(ord('n')), fs.glyphOf(ord('n'))) == 0
+  let fi = face(fSansItalic)
+  doAssert fi.kerning(fi.glyphOf(ord('r')), fi.glyphOf(ord('n'))) == -10
+  doAssert widthEm("AV", fSerif) < widthEm("A", fSerif) + widthEm("V", fSerif)
   let m = f.render(f.glyphOf(ord('H')), 20)
   doAssert m.w > 5 and m.h > 10
   var full = 0
@@ -30,9 +47,7 @@ block widths:
   let a = textWidth("Hello")
   doAssert a > 20 and a < 60, $a
   let b = textWidth("Hello", style(size = 2.0))
-  # (big, MS W98 UI is drawn from its smooth outlines as big as the other
-  # fonts -- 12 to the em, not the pixel font's 11)
-  doAssert b >= 2 * a - 2 and b <= 2 * a * 12 div 11 + 3, $(a, b)
+  doAssert b >= 2 * a - 2 and b <= 2 * a + 2, $(a, b)
   doAssert textWidth("Hello", bold = true) >= a
   doAssert textWidth("WWW", style(mono = true)) == textWidth("iii", style(mono = true))
   doAssert lineHeight(style(size = 2.0)) > FontH * 3 div 2
@@ -40,10 +55,12 @@ block widths:
 
 block arabic:
   let r = shape("بب")                  # beh beh: initial + final
-  doAssert r.glyphs.len == 2 and r.rtl
-  let f = face(fSans)
+  doAssert r.glyphs.len == 2 and r.rtl and not r.missing
+  let f = face(fSerif)                  # (FreeSans has no Arabic: FreeSerif's)
   var gids: seq[int]
-  for g in r.glyphs: gids.add int(g.gid)
+  for g in r.glyphs:
+    gids.add int(g.gid)
+    doAssert g.face == fSerif, $g.face
   doAssert f.glyphOf(0xFE91) in gids and f.glyphOf(0xFE90) in gids, $gids
   # visual order: the first letter (initial form) is on the right
   doAssert r.glyphs[0].gid == uint16(f.glyphOf(0xFE90))
@@ -435,110 +452,207 @@ block hostileMarkdown:
     run(2)
     doAssert epochTime() - t0 < 5.0, "too slow: " & md[0 .. 20]
 
-# ---- Retro Sans, the Windows 3.1 font -----------------------------------------------------------
+# ---- GNU FreeFont, the UI's fonts ---------------------------------------------------------------
 
-block retroSans:
-  doAssert uiFont() == ufW98, "the default font"
+proc solidColumns(x0, y0, w, h: int): int =
+  ## Columns of the rectangle with half its height or more in pure black.
+  for x in x0 ..< x0 + w:
+    var col = 0
+    for y in y0 ..< y0 + h:
+      if px(x, y) == 0: inc col
+    if col >= h div 2: inc result
+
+proc darkColumns(x0, y0, w, h: int; limit = 0x50'u32): int =
+  ## Columns of the rectangle with half its height or more darker than
+  ## `limit` (a stem: gray text draws one a little over a pixel as it is,
+  ## on one column or shared by two).
+  for x in x0 ..< x0 + w:
+    var col = 0
+    for y in y0 ..< y0 + h:
+      if (px(x, y) and 0xFF) <= limit: inc col
+    if col >= h div 2: inc result
+
+proc colored(x0, y0, w, h: int): bool =
+  ## Some pixel of the rectangle is not gray (the screen's color strips).
+  for y in y0 ..< y0 + h:
+    for x in x0 ..< x0 + w:
+      let p = px(x, y)
+      if ((p shr 16) and 0xFF) != (p and 0xFF): return true
+
+block freeSans:
   view = proc () = discard
-  setUiFont(ufRetro)
+  setZoom(0)
+  setTextScale(100)
+  doAssert uiFont() == ufSans, "the default font"
+  doAssert $ufSans == "FreeSans" and $ufSerif == "FreeSerif" and $ufMono == "FreeMono"
+  doAssert builtinUiFonts == @[ufSans, ufSerif, ufMono]
+  doAssert fontName(faceOf(TextStyle())) == "FreeSans" and builtinFace(fSans)
   run(2)
-  doAssert textSize() == 12 and FontH == 16 and FontAscent == 12, $(textSize(), FontH, FontAscent)
-  # every Latin-1 and Latin Extended-A letter, in both weights, bitmaps and outlines
+  # the line from the font: FreeSans's ascent, descent and line gap
+  # (0.9 + 0.2 + 0.1 em), as a font file's always were
+  doAssert textSize() == 12
+  doAssert FontH == int(round(12 * (lineFactor(fSans, withGap = true) + 0.02))), $FontH
+  doAssert FontH == 15 and FontAscent == 12, $(FontH, FontAscent)
+  # every Latin-1 and Latin Extended-A letter in all four styles
   for cp in 0xA1 .. 0x17F:
     if cp == 0xAD: continue
-    let s = $Rune(cp)
-    doAssert textWidth(s) > 0 and textWidth(s, bold = true) > 0, "U+" & toHex(cp, 4)
-    doAssert face(fRetro).glyphOf(cp) != 0 and face(fRetroBold).glyphOf(cp) != 0, "U+" & toHex(cp, 4)
-  for s in ["€", "…", "•", "‹", "›", "„", "‚", "™", "✓", "→", "≤"]:
-    doAssert face(fRetro).hasGlyph(s.runeAt(0).int), s
-  # the outlines advance as the bitmaps do: the same widths either way
-  for s in ["Hello", "Grüße", "Łódź", "x"]:
-    doAssert textWidth(s) == int(round(widthEm(s, fRetro) * 12)), s
-  # sizes are whole bricks: twice the size, twice the width
-  doAssert textWidth("Hello", style(size = 2.0)) == 2 * textWidth("Hello")
-  doAssert lineHeight(style(size = 2.0)) == 2 * FontH
+    for id in [fSans, fSansBold, fSansItalic, fSansBoldItalic]:
+      doAssert face(id).glyphOf(cp) != 0, $id & " U+" & toHex(cp, 4)
+  for s in ["€", "…", "•", "‹", "›", "„", "‚", "™", "→", "≤", "Ω", "Ж", "ש", "■", "▸", "═"]:
+    doAssert face(fSans).hasGlyph(s.runeAt(0).int), s
+  # (what FreeSans lacks, FreeSerif or FreeMono has: ✓ ✗ ★)
+  for s in ["✓", "✗", "★", "☐", "♥"]:
+    doAssert not shape(s).missing and not shape(s, fSansBoldItalic).missing, s
+  # vector text: twice the size, twice the width (within a pixel or two)
+  let w1 = textWidth("Hello")
+  doAssert abs(textWidth("Hello", style(size = 2.0)) - 2 * w1) <= 2
 
-block retroPixels:
-  # at 100 % the text is the bitmaps: black and white only, no grays
+block realStyles:
+  # bold, italic and bold italic are FreeSans Bold, Oblique and Bold Oblique
+  # -- the fonts' own, not the regular thickened or slanted
+  doAssert faceOf(style(bold = true)) == fSansBold
+  doAssert faceOf(style(italic = true)) == fSansItalic
+  doAssert faceOf(style(bold = true, italic = true)) == fSansBoldItalic
+  doAssert faceOf(style(mono = true, italic = true)) == fMonoItalic
+  doAssert faceOf(style(serif = true, bold = true, italic = true)) == fSerifBoldItalic
+  for (id, st) in [(fSansBold, "Bold"), (fSansItalic, "Oblique"), (fSansBoldItalic, "Bold Oblique"),
+                   (fSerifItalic, "Italic"), (fMonoBoldItalic, "Bold Oblique")]:
+    doAssert face(id).style == st and face(id) != face(regularOf(id)), $id
+    doAssert fauxStyle(id) == (false, false), $id
+  doAssert face(fSansItalic).italic and face(fSansBold).weight >= 600
+  # an italic line has the italic's own widths
+  doAssert textWidth("Hello world", style(italic = true)) != textWidth("Hello world") or
+           widthEm("Hello world", fSansItalic) != widthEm("Hello world", fSans)
+  # drawn: the oblique's pixels are not the regular's
   view = proc () =
-    label "Program Manager"
-    label "مرحبا بالعالم Hello"
+    text(10, 10, "Hamburg", color(0, 0, 0))
+    text(10, 40, "Hamburg", color(0, 0, 0), style(italic = true))
+    text(10, 70, "Hamburg", color(0, 0, 0), style(bold = true, italic = true))
   run(3)
-  var black, gray = 0
-  for y in 0 ..< 60:
-    for x in 0 ..< 200:
-      let p = px(x, y)
-      if p == 0: inc black
-      elif p != 0xFFFFFF and (p and 0xFF) == ((p shr 8) and 0xFF) and
-           (p and 0xFF) == ((p shr 16) and 0xFF): inc gray
-  doAssert black > 100 and gray == 0, $(black, gray)
-  # Latin with a character only DejaVu has (Greek): the Latin letters are
-  # still the bitmaps, in the same places
-  var a, b: Rect
-  view = proc () =
-    text(10, 100, "Abc", color(0, 0, 0))
-    text(10, 130, "AbcΩ", color(0, 0, 0))
-  run(3)
-  for y in 0 ..< 16:
-    for x in 0 ..< textWidth("Abc"):
-      doAssert px(10 + x, 100 + y) == px(10 + x, 130 + y), "the same pixels at " & $(x, y)
+  var same = true
+  for y in 0 ..< FontH:
+    for x in 0 ..< 60:
+      if px(10 + x, 10 + y) != px(10 + x, 40 + y): same = false
+  doAssert not same
 
-block retroArabicMix:
-  # Arabic comes from Unifont on the same baseline, Latin after it in a
-  # right-to-left line
-  let w1 = textWidth("مرحبا")
-  let w2 = textWidth("Hello")
-  doAssert w1 > 0 and textWidth("مرحبا Hello") == w1 + w2 + textWidth(" "), $(w1, w2)
-  doAssert textWidth("بب", bold = true) == textWidth("بب"), "bold Arabic: the same advance"
-  view = proc () = label "ملف جديد (12)", bold = true
+block crisp:
+  # at 100 % the stems of H and l are dark columns (gray, as the font
+  # draws them), the baseline and cap height on whole rows
+  view = proc () = text(10, 10, "HlHl", color(0, 0, 0))
+  run(3)
+  doAssert darkColumns(10, 10, textWidth("HlHl"), FontH, 0x90) >= 6,
+           $darkColumns(10, 10, textWidth("HlHl"), FontH, 0x90)
+  doAssert not colored(10, 10, textWidth("HlHl"), FontH), "gray by default"
+  var bottom = -1
+  for y in 10 ..< 10 + FontH:
+    for x in 10 ..< 10 + textWidth("HlHl"):
+      if px(x, y) == 0: bottom = y
+  doAssert bottom == 10 + FontAscent - 1, $(bottom, FontAscent)
+  # and at 125 %, 150 % and 200 % (twice the pixels)
+  for (z, sc) in [(0, 125), (0, 150), (2, 100)]:
+    setZoom(z)
+    setTextScale(sc)
+    view = proc () = text(5, 5, "HlHl", color(0, 0, 0))
+    run(3)
+    let s = if z == 2: 2 else: 1
+    doAssert darkColumns(5 * s, 5 * s, textWidth("HlHl") * s, FontH * s, 0x90) >= 6, $(z, sc)
+  setZoom(0)
+  setTextScale(100)
+  run(2)
+  # Sharp text: the screen's color strips, the stems fitted to the pixels
+  doAssert not subpixelText()
+  setSubpixelText(true)
+  view = proc () = text(10, 10, "HlHl", color(0, 0, 0))
+  run(3)
+  doAssert colored(10, 10, textWidth("HlHl"), FontH), "in the color strips"
+  doAssert darkColumns(10, 10, textWidth("HlHl"), FontH) >= 6
+  setSubpixelText(false)
+  run(2)
+
+block arabicEverywhere:
+  # Arabic in every face draws real glyphs, joined: FreeSerif's for FreeSans
+  # (its bold for bold), FreeMono's own in its regular, FreeSerif's in its
+  # other styles
+  let word = "مرحبا بكم"
+  for (base, want) in [(fSans, fSerif), (fSansBold, fSerifBold), (fSansItalic, fSerif),
+                       (fSansBoldItalic, fSerifBold), (fSerif, fSerif), (fSerifBold, fSerifBold),
+                       (fSerifItalic, fSerif), (fMono, fMono), (fMonoBold, fSerifBold),
+                       (fMonoItalic, fSerif), (fMonoBoldItalic, fSerifBold)]:
+    let r = shape(word, base)
+    doAssert not r.missing and r.rtl, $base
+    for g in r.glyphs:
+      if g.gid == uint16(face(g.face).glyphOf(32)): continue
+      doAssert g.face == want and g.gid != 0, $base & ": " & $g.face
+    # joined: the beh of بكم is in its initial form, the meem final
+    let f = face(want)
+    var gids: seq[int]
+    for g in r.glyphs: gids.add int(g.gid)
+    doAssert f.glyphOf(0xFE91) in gids and f.glyphOf(0xFEE2) in gids, $base
+  # drawn, in bold and in a text box: ink, nothing measured as missing
+  view = proc () =
+    label "ملف جديد (12)", bold = true
+    var t = "تحرير النص"
+    discard edit(t, w = 200)
   run(3)
   var ink = 0
-  for y in 0 ..< 30:
-    for x in 0 ..< 200:
-      if px(x, y) == 0: inc ink
-  doAssert ink > 30
-
-block retroHD:
-  # at 2x the smooth outlines: the edges are anti-aliased, the stems solid
-  setZoom(2)
-  view = proc () = label "Program Manager VAWX"
-  run(3)
-  var black, gray = 0
   for y in 0 ..< 60:
-    for x in 0 ..< 400:
-      let p = px(x, y)
-      if p == 0: inc black
-      elif p != 0xFFFFFF: inc gray
-  doAssert black > 200 and gray > 20, $(black, gray)
-  setZoom(0)
-  run(2)
-  doAssert FontH == 16
+    for x in 0 ..< 220:
+      if px(x, y) == 0: inc ink
+  doAssert ink > 30, $ink
+  doAssert textWidth("بب", bold = true) > 0 and hasGlyphs("مرحبا", fSansBold)
 
 block switchFonts:
   let h = FontH
-  let c = CtrlH
-  setUiFont(ufSmooth)
+  setUiFont(ufMono)
   view = proc () = discard button("OK")
   run(2)
-  doAssert uiFont() == ufSmooth and FontH != h and CtrlH != c, $(FontH, CtrlH)
+  doAssert uiFont() == ufMono and faceOf(TextStyle()) == fMono
+  doAssert FontH == int(round(12 * (lineFactor(fMono) + 0.02))), "FreeMono's own line"
+  doAssert textWidth("iii") == textWidth("WWW"), "monospaced"
   var s: Settings
   storeAppearance(s)
-  doAssert s.getOrDefault("look.font") == "smooth"
-  setUiFont(ufRetro)
+  doAssert s.getOrDefault("look.font") == "mono" and s.getOrDefault("look.fontv") == "3"
+  setUiFont(ufSerif)
   run(2)
-  doAssert FontH == h and CtrlH == c
+  doAssert faceOf(TextStyle()) == fSerif and faceOf(style(mono = true)) == fMono
   restoreAppearance(s)
   run(2)
-  doAssert uiFont() == ufSmooth
-  # an old "look.pixelfont = false" (everyone's, before) does not turn it off
-  var old: Settings
-  old.put("look.pixelfont", false)
-  setUiFont(ufRetro)
-  restoreAppearance(old)
-  doAssert uiFont() == ufRetro
-  setPixelFont(false)
-  doAssert uiFont() == ufSmooth and not usesPixelFont()
-  setUiFont(ufRetro)
+  doAssert uiFont() == ufMono
+  setUiFont(ufSans)
+  run(2)
+  doAssert FontH == h
+
+block oldSettings:
+  # the fonts of before: their words still read (FreeSans or FreeMono) --
+  # and a store from before FreeFont ("look.fontv" under 3) is the default,
+  # FreeSans, whatever it named; a font from a file stays one
+  var f: UiFont
+  for (key, want) in [("w98", ufSans), ("retro", ufSans), ("smooth", ufSans), ("opensans", ufSans),
+                      ("kawkab", ufMono), ("fixedsys", ufMono), ("sans", ufSans), ("serif", ufSerif),
+                      ("mono", ufMono), ("system", ufSans)]:
+    doAssert uiFontOfKey(key, f) and f == want, key
+  doAssert not uiFontOfKey("file", f) and not uiFontOfKey("nonsense", f)
+  for u in UiFont:
+    if u != ufFile: doAssert uiFontOfKey(uiFontKey(u), f) and f == u, $u
+  for (font, v) in [("w98", "2"), ("kawkab", "2"), ("kawkab", ""), ("fixedsys", "2"), ("opensans", "2"),
+                    ("retro", ""), ("smooth", "2")]:
+    var old: Settings
+    old["look.font"] = font
+    if v.len > 0: old["look.fontv"] = v
+    setUiFont(ufSerif)
+    restoreAppearance(old)
+    doAssert uiFont() == ufSans, font & " " & v
+  var chosen: Settings
+  chosen["look.font"] = "serif"
+  chosen["look.fontv"] = "3"
+  restoreAppearance(chosen)
+  doAssert uiFont() == ufSerif, "a choice made now is kept"
+  setUiFont(ufSans)
+  # the old names compile (deprecated) as the fonts that took their place
+  {.push warning[Deprecated]: off.}
+  doAssert ufW98 == ufSans and ufRetro == ufSans and ufSmooth == ufSans and ufOpenSans == ufSans
+  doAssert ufKawkab == ufMono and ufFixedsys == ufMono
+  {.pop.}
   run(2)
 
 block wrappedLinesKeepTheParagraphDirection:
@@ -557,146 +671,66 @@ block wrappedLinesKeepTheParagraphDirection:
   run(1)
   for l in lines: doAssert textIsRtl(l), "line read from the left: " & l
 
-# ---- Kawkab Mono, the default UI font ------------------------------------------------------------
-
-block kawkabMono:
-  view = proc () = discard   # (the last block's view has its variables gone)
-  setZoom(0)
-  setTextScale(100)
-  setUiFont(ufKawkab)
-  run(2)
-  doAssert uiFont() == ufKawkab
-  var s: Settings
-  storeAppearance(s)
-  doAssert s.getOrDefault("look.font") == "kawkab"
-  # monospaced, a whole number of pixels a letter: every string is a multiple
-  let one = textWidth("x")
-  doAssert one >= 6 and one <= 10, $one
-  for t in ["iii", "WWW", "Hello", "a.b,c", "مرحبا", "Grüße"]:
-    doAssert textWidth(t) mod one == 0, t & " " & $textWidth(t)
-  doAssert textWidth("iii") == textWidth("WWW")
-  doAssert textWidth("Hello", bold = true) == textWidth("Hello"), "bold: the same advance"
-  # Arabic joins (presentation forms in the font) and lam-alef is one letter
-  let f = face(fKawkab)
-  doAssert f.glyphOf(0xFE91) != 0 and f.glyphOf(0xFEFB) != 0
-  doAssert textWidth("لا") == one
-  # crisp: at 100 % the stems of H and l are solid columns
-  view = proc () = text(10, 10, "HlHl", color(0, 0, 0))
-  run(3)
-  var solid = 0
-  for x in 10 ..< 10 + 4 * one:
-    var col = 0
-    for y in 10 ..< 10 + FontH:
-      if px(x, y) == 0: inc col
-    if col >= FontH div 2: inc solid
-  doAssert solid >= 4, $solid
-  # at 2x and 150 % too: the letters stay whole pixels apart
-  for z in [2, 0]:
-    setZoom(z)
-    for sc in [100, 125, 150]:
-      setTextScale(sc)
-      run(1)
-      let w = textWidth("x")
-      doAssert textWidth("Hello world") == 11 * w, $(z, sc, w)
-  setTextScale(100)
-  setZoom(0)
-  run(2)
-
 # ---- a font from a file ------------------------------------------------------------------------------------
 
 block fontFile:
   view = proc () = discard
-  let dir = currentSourcePath().parentDir.parentDir / "src" / "retro" / "fonts"
-  # a pixel font (Retro Sans's bitmaps as squares): on its grid
-  setUiFontFile(readFile(dir / "RetroSans.ttf"), readFile(dir / "RetroSansBold.ttf"))
+  let dir = currentSourcePath().parentDir.parentDir / "src" / "retroui" / "fonts"
+  # FreeSerif as the user's font, given as bytes: its own Arabic
+  setUiFontFile(readFile(dir / "FreeSerif.ttf"), readFile(dir / "FreeSerifBold.ttf"))
   run(2)
-  doAssert uiFont() == ufFile and hasUserFont()
-  let g = pixelGrid(fUser)
-  doAssert g > 0, "a pixel font"
-  # the size: a whole number of its pixels a pixel of the screen
-  doAssert abs(textSize() - 12) < 0.01
-  view = proc () = text(10, 10, "HHHH llll", color(0, 0, 0))
-  run(3)
-  var gray = 0
-  for y in 8 ..< 30:
-    for x in 8 ..< 120:
-      let p = px(x, y)
-      if p != 0 and p != 0xFFFFFF and (p and 0xFF) == ((p shr 8) and 0xFF): inc gray
-  doAssert gray == 0, "crisp: " & $gray
+  doAssert uiFont() == ufFile and hasUserFont() and faceOf(TextStyle()) == fUser
+  doAssert face(fUser).family == "FreeSerif" and fauxStyle(fUserBold) == (false, false)
+  doAssert fauxStyle(fUserItalic) == (false, true), "no italic given: the regular slanted"
+  doAssert fauxStyle(fUserBoldItalic) == (false, true), "made from its bold"
+  for g in shape("مرحبا", fUser).glyphs: doAssert g.face == fUser
   doAssert textWidth("Hello", bold = true) > 0
-  # an outline font: drawn smooth, no grid
-  setUiFontFile(readFile(dir / "Sans.ttf"))
-  doAssert pixelGrid(fUser) == 0
+  # a font without Arabic: FreeSerif's stands in, joined
+  setUiFontFile(readFile(dir / "FreeSans.ttf"))
+  doAssert fauxStyle(fUserBold) == (true, false), "no bold given: the regular thickened"
+  doAssert widthEm("Hello", fUserBold) > widthEm("Hello", fUser), "a little wider, as FreeType makes it"
+  let r = shape("بكم", fUser)
+  doAssert not r.missing
+  for g in r.glyphs: doAssert g.face == fSerif
+  for g in shape("بكم", fUserBold).glyphs: doAssert g.face == fSerifBold
+  view = proc () = text(10, 10, "مرحبا Hello", color(0, 0, 0), style(bold = true))
+  run(3)
+  var ink = 0
+  for y in 8 ..< 30:
+    for x in 8 ..< 150:
+      if px(x, y) == 0: inc ink
+  doAssert ink > 20
   # not a font
   var failed = false
   try: setUiFontFile("not a font at all, really not")
   except FontError: failed = true
   doAssert failed and uiFont() == ufFile
-  # kept, and found again (its bold beside it)
+  # kept, and found again -- its bold, italic and bold italic beside it
   let tmp = getTempDir() / "retro-fonts"
   createDir(tmp)
-  writeFile(tmp / "Pixel-Regular.ttf", readFile(dir / "RetroSans.ttf"))
-  writeFile(tmp / "Pixel-Bold.ttf", readFile(dir / "RetroSansBold.ttf"))
-  doAssert boldBeside(tmp / "Pixel-Regular.ttf") == tmp / "Pixel-Bold.ttf"
-  loadUiFontFile(tmp / "Pixel-Regular.ttf")
+  writeFile(tmp / "Mine-Regular.ttf", readFile(dir / "FreeSans.ttf"))
+  writeFile(tmp / "Mine-Bold.ttf", readFile(dir / "FreeSansBold.ttf"))
+  writeFile(tmp / "Mine-Italic.ttf", readFile(dir / "FreeSansOblique.ttf"))
+  writeFile(tmp / "Mine-BoldItalic.ttf", readFile(dir / "FreeSansBoldOblique.ttf"))
+  doAssert boldBeside(tmp / "Mine-Regular.ttf") == tmp / "Mine-Bold.ttf"
+  doAssert styleBeside(tmp / "Mine-Regular.ttf", false, true) == tmp / "Mine-Italic.ttf"
+  doAssert styleBeside(tmp / "Mine-Regular.ttf", true, true) == tmp / "Mine-BoldItalic.ttf"
+  loadUiFontFile(tmp / "Mine-Regular.ttf")
+  for id in [fUserBold, fUserItalic, fUserBoldItalic]: doAssert fauxStyle(id) == (false, false), $id
+  doAssert face(fUserBoldItalic).style == "Bold Oblique"
   var st: Settings
   storeAppearance(st)
-  doAssert st.getOrDefault("look.font") == "file" and st.getOrDefault("look.fontfile") == tmp / "Pixel-Regular.ttf"
-  setUiFont(ufKawkab)
+  doAssert st.getOrDefault("look.font") == "file" and st.getOrDefault("look.fontfile") == tmp / "Mine-Regular.ttf"
+  setUiFont(ufMono)
   restoreAppearance(st)
-  doAssert uiFont() == ufFile and pixelGrid(fUser) > 0
+  doAssert uiFont() == ufFile and face(fUser).family == "FreeSans"
+  # a font file stored before FreeFont stays a font file
+  st["look.fontv"] = "2"
+  setUiFont(ufMono)
+  restoreAppearance(st)
+  doAssert uiFont() == ufFile
   removeDir(tmp)
-  setUiFont(ufKawkab)
-  run(2)
-
-# ---- MS W98 UI, the default UI font ---------------------------------------------------------------
-
-block msW98:
-  view = proc () = discard
-  setZoom(0)
-  setTextScale(100)
-  setUiFont(ufW98)
-  run(2)
-  doAssert hasW98() and pixelGrid(fW98) == 11 and pixelGrid(fW98Bold) == 11
-  # MS Sans Serif's size: 11 pixels per em (8 points), a 13-pixel line
-  doAssert FontH == 13, $FontH
-  # every edge on a pixel: widths are whole pixels of the 11 grid
-  for t in ["Hello", "File  Edit  Image", "0123456789", "WWW iii"]:
-    let w = widthEm(t, fW98) * 11
-    doAssert abs(w - round(w)) < 0.1, t
-    doAssert textWidth(t) == int(round(w)), t & " " & $textWidth(t)
-  doAssert textWidth("Hello", bold = true) >= textWidth("Hello")
-  # Arabic from the font itself (joined forms); bold Arabic falls back to the regular
-  doAssert face(fW98).glyphOf(0x627) != 0 and face(fW98).glyphOf(0xFE8E) != 0
-  doAssert textWidth("مرحبا") > 0 and textWidth("مرحبا", bold = true) > 0
-  # monospaced text is DejaVu Sans Mono
-  doAssert textWidth("iii", style(mono = true)) == textWidth("WWW", style(mono = true))
-  # kept and brought back; the old default (Kawkab, stored before W98) becomes W98
-  var st: Settings
-  storeAppearance(st)
-  doAssert st.getOrDefault("look.font") == "w98"
-  setUiFont(ufSmooth)
-  restoreAppearance(st)
-  doAssert uiFont() == ufW98
-  var old: Settings
-  old["look.font"] = "kawkab"
-  setUiFont(ufSmooth)
-  restoreAppearance(old)
-  doAssert uiFont() == ufSmooth, "an old stored default changes nothing"
-  var chosen: Settings
-  chosen["look.font"] = "kawkab"
-  chosen["look.fontv"] = "2"
-  restoreAppearance(chosen)
-  doAssert uiFont() == ufKawkab, "a choice of Kawkab is kept"
-  # at 200 %, twice the pixels: still on the grid
-  setZoom(2)
-  run(2)
-  setUiFont(ufW98)
-  run(2)
-  let w2 = textWidth("Hello")
-  setZoom(0)
-  run(2)
-  doAssert w2 == textWidth("Hello"), "logical widths stay: " & $(w2, textWidth("Hello"))
+  setUiFont(ufSans)
   run(2)
 
 echo "text tests passed"

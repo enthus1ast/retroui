@@ -22,9 +22,9 @@ Thanks for helping. A few things keep the toolkit what it is:
 
 | Folder | What is there |
 |---|---|
-| `src/retro.nim` | the package: `import retro` brings everything |
-| `src/retro/` | the modules (see the table at the top of `retro.nim`) |
-| `src/retro/uirelays/` | the screen drivers: X11, Win32, Cocoa, Android, iOS -- the `uirelays` branch's code (`tools/uirelays.sh`, `RETRO.md` there) |
+| `src/retroui.nim` | the package: `import retroui` brings everything |
+| `src/retroui/` | the modules (see the table at the top of `retro.nim`) |
+| `src/retroui/uirelays/` | the screen drivers: X11, Win32, Cocoa, Android, iOS -- the `uirelays` branch's code (`tools/uirelays.sh`, `RETRO.md` there) |
 | `src/retroapk.nim`, `src/retroios.nim`, `src/retrokit.nim` | the APK and iOS builders, the helper |
 | `examples/` | the apps: gallery, Retro Files, Retro Photo, Ledger, Notepad, Charts... |
 | `tests/` | the tests, the fuzzers, benchmarks |

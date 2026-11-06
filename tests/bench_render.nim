@@ -6,8 +6,8 @@
 ##   nim c -d:release -r tests/bench_render.nim [WxH] [scale]
 
 import std/[os, strutils, monotimes, times, algorithm]
-import retro/uirelays/[coords, screen, input]
-import retro
+import retroui/uirelays/[coords, screen, input]
+import retroui
 
 var bw = 1920
 var bh = 1080

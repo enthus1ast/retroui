@@ -7,7 +7,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, strutils, json, times, tables, algorithm, sequtils]
-import retro/db
+import retroui/db
 
 type
   AccountKind* = enum

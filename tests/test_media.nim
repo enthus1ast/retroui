@@ -1,12 +1,12 @@
-## retro/media: WAV files, tones and the mixer, GIF animations, the calls
+## retroui/media: WAV files, tones and the mixer, GIF animations, the calls
 ## to Android's side (with a fake one), videos in the window (GStreamer,
 ## when the system has it) -- headless.
 
 import std/[os, strutils, math, tables, sequtils]
-import retro
-import retro/media
-import retro/mediaaudio except Sound
-import retro/uirelays/[input, services]
+import retroui
+import retroui/media
+import retroui/mediaaudio except Sound
+import retroui/uirelays/[input, services]
 import harness
 
 fakeDriver()

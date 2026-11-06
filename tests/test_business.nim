@@ -1,8 +1,8 @@
 ## Headless tests of the business widgets (grid, tree, dates, numbers...).
 
 import std/[os, sequtils, strutils]
-import retro/uirelays/[coords, input]
-import retro
+import retroui/uirelays/[coords, input]
+import retroui
 import harness
 
 # ---- pure helpers ----------------------------------------------------------------
@@ -315,6 +315,20 @@ block checksAndNumbers:
   typeText("12x3")
   run()
   doAssert qty == 123, "letters are not typed into a number field"
+  # a click gives the focus with the whole number selected: typing replaces it
+  amount = 0
+  run(2)
+  click(r2, 5)
+  run()
+  typeText("12.5")
+  run()
+  doAssert amount == 12.5, $amount
+  # the app clears it while it has the focus (a form after Add): it shows 0
+  amount = 0
+  run(2)
+  typeText("7")
+  run()
+  doAssert amount == 7, "typed after the clear: " & $amount
 
 block autocomplete:
   page = 4
@@ -554,7 +568,7 @@ block richGrid:
   let fy = r.y + r.h - 2 - (ItemH + 2) div 2
   var dark = 0
   for x in x0 .. x0 + 60:
-    if px(x, fy) == 0: inc dark
+    if (px(x, fy) and 0xFF) <= 0x60: inc dark       # (gray text: nearly black)
   doAssert dark > 5, "the totals row has text"
   # cell styles: the big amount in red (in a row not selected)
   osel = 2
@@ -598,7 +612,7 @@ block paneScrolls:
   let y0 = r2.y
   let paneX = r1.x + pos + 40
   move(paneX, 100)
-  queue.add Event(kind: MouseWheelEvent, x: paneX, y: -3)
+  queue.add Event(kind: MouseWheelEvent, x: 0, y: -3)          # (x: the sideways part)
   run(20)
   doAssert r2.y < y0, "the wheel scrolls a pane taller than it is: " & $r2.y & " " & $y0
   # the tree node with an icon of its own and an id

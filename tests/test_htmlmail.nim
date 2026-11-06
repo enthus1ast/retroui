@@ -9,9 +9,9 @@
 ##   nim c -r --hints:off -d:release tests/test_htmlmail.nim     # the timings that count
 
 import std/[os, strutils, monotimes, times, random, sequtils]
-import retro
-import retro/htmlview
-import retro/uirelays/input
+import retroui
+import retroui/htmlview
+import retroui/uirelays/input
 import harness
 
 fakeDriver()
@@ -416,21 +416,23 @@ block zoomLayout:
   # at 1.5 the text is half as large again, laid out again in the same width
   let one = htmlPageInfo(gmail, 560)
   let big = htmlPageInfo(gmail, 560, zoom = 1.5)
-  let a = one.word("the updated drill plan")
-  let b = big.word("the updated drill plan")
-  doAssert b.h * 10 >= a.h * 13 and b.w * 10 >= a.w * 13, $a & " -> " & $b
+  let a = one.word("Khalid")
+  let b0 = big.word("Khalid")
+  doAssert b0.h * 10 >= a.h * 13 and b0.w * 10 >= a.w * 13, $a & " -> " & $b0
+  # (the phrase may wrap before "plan" when larger)
+  let b = big.word("the updated drill")
   doAssert big.height * 10 >= one.height * 14, $one.height & " -> " & $big.height
   doAssert big.right <= 561 and big.text == one.text
   # its links are where their words are drawn now
   let l = big.links.filterIt(it.url == "https://intranet.example/safety/fire-2026.pdf")
   doAssert l.anyIt(it.r.contains(point(b.x + 5, b.y + 3))), $l & " " & $b
-  # a smooth font at every step (a bitmap one in its own sizes): smaller at 0.5
+  # smaller at 0.5, larger at 1.1
   let font = uiFont()
-  setUiFont(ufSmooth)
+  setUiFont(ufSans)
   let s1 = htmlPageInfo(gmail, 560)
   let sHalf = htmlPageInfo(gmail, 560, zoom = 0.5)
   doAssert sHalf.height * 10 <= s1.height * 7, $s1.height & " -> " & $sHalf.height
-  doAssert sHalf.word("the updated drill plan").w * 10 <= s1.word("the updated drill plan").w * 6
+  doAssert sHalf.word("the updated drill").w * 10 <= s1.word("the updated drill").w * 6
   doAssert htmlPageInfo(gmail, 560, zoom = 1.1).word("Khalid").h > s1.word("Khalid").h
   setUiFont(font)
   # the extremes do no harm (0 and NaN: 1; beyond 0.5 .. 3: those)

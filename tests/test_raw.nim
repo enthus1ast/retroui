@@ -1,8 +1,8 @@
-## Tests of retro/rawphoto: DNG raw photos read (uncompressed and lossless
+## Tests of retroui/rawphoto: DNG raw photos read (uncompressed and lossless
 ## JPEG), the mosaic filled in, developed as light.
 
 import std/[unittest, math, random]
-import retro/[rawphoto, photo, photofx, photodevelop]
+import retroui/[rawphoto, photo, photofx, photodevelop]
 
 proc w16(o: var string; v: int) = (o.add char(v and 255); o.add char((v shr 8) and 255))
 proc w32(o: var string; v: int) =

@@ -1,7 +1,7 @@
-## Arabic for Retro Photo: the words on screen, as `retro/core`'s `tr` finds them.
+## Arabic for Retro Photo: the words on screen, as `retroui/core`'s `tr` finds them.
 ##
 ## Keys: the text of the label exactly as the code literal has it, with the
-## mnemonic marks taken out the way `splitMnemonic` (retro/core) and `bare`
+## mnemonic marks taken out the way `splitMnemonic` (retroui/core) and `bare`
 ## (photo/menus, photo/pscc) do it: each single `&` is dropped and `&&` becomes
 ## `&` ("&File" -> "File", "Patter&n..." -> "Pattern...", "Black && &White..."
 ## -> "Black & White..."). A literal whose `&` stands before a space
@@ -16,9 +16,9 @@
 ## Translations carry no `&`, so they are safe to pass through `splitMnemonic`.
 ##
 ## Words the toolkit itself shows (OK, Cancel, Open, Save, Close, Copy, Paste,
-## Name, Size, Type, Color, Normal, ...) are in src/retro/lang_ar.nim and are
+## Name, Size, Type, Color, Normal, ...) are in src/retroui/lang_ar.nim and are
 ## not repeated here. Names from Retro Photo's engine (blend modes, layer
-## styles, presets, custom shapes in retro/photo*.nim) are here.
+## styles, presets, custom shapes in retroui/photo*.nim) are here.
 
 const photoArabic* = [
   # examples/photo.nim
@@ -1521,7 +1521,7 @@ const photoArabic* = [
   ("As:", "باسم:"),
   ("Merged Layers Only", "الطبقات المدمجة فقط"),
   ("An image editor in the manner of the paint programs of 1994: layers, channels, Quick Mask, paths, artboards, type with Arabic, forty filters and the color adjustments.", "محرر صور على طريقة برامج الرسم في 1994: طبقات وقنوات وقناع سريع ومسارات وألواح رسم ونص بالعربية وأربعون مرشحًا وتعديلات الألوان."),
-  ("Its engine is Retro Nim UI's own: retro/photo, retro/photopaint, retro/photofx.", "محركه خاص بـ Retro Nim UI: retro/photo وretro/photopaint وretro/photofx."),
+  ("Its engine is Retro Nim UI's own: retroui/photo, retroui/photopaint, retroui/photofx.", "محركه خاص بـ Retro Nim UI: retroui/photo وretroui/photopaint وretroui/photofx."),
   ("Not affiliated with any maker of image software.", "غير تابع لأي صانع لبرامج الصور."),
   ("Layers, type and filters -- as in 1994", "طبقات ونص ومرشحات -- كما في 1994"),
   ("32 Bits/Channel (HDR): Radiance .hdr and PFM files, 32-bit Preview, HDR Toning; PNG-24 and 32-bit BMP", "32 بت/قناة (HDR): ملفات Radiance ‏.hdr وPFM، ومعاينة 32 بت، وتدرج HDR؛ وPNG-24 وBMP بـ 32 بت"),
@@ -1541,7 +1541,6 @@ const photoArabic* = [
   ("Artboards, the Frame tool, the Triangle, the Magnetic Lasso", "ألواح الرسم، أداة الإطار، المثلث، الحبل المغناطيسي"),
   ("Type: right-to-left and left-to-right, Arabic kashida, dynamic text", "النص: من اليمين لليسار ومن اليسار لليمين، الكشيدة العربية، النص الديناميكي"),
   ("Google Fonts fixed; Spot Healing and Patch as they work today", "إصلاح Google Fonts؛ المعالجة الموضعية والرقعة كما تعملان اليوم"),
-  ("Fonts: Retro Sans, after lou's MS Sans Serif recreation (CC BY-SA 3.0); GNU Unifont's Arabic (OFL); DejaVu (Bitstream Vera licence); Kawkab Mono (OFL).", "الخطوط: Retro Sans، المستوحى من إعادة إنشاء lou لخط MS Sans Serif ‏(CC BY-SA 3.0)؛ العربية من GNU Unifont ‏(OFL)؛ DejaVu (ترخيص Bitstream Vera)؛ Kawkab Mono ‏(OFL)."),
   ("Icons: Nerd Fonts symbols (MIT / OFL) and Retro's own pixel icons.", "الأيقونات: رموز Nerd Fonts ‏(MIT / OFL) وأيقونات Retro النقطية الخاصة."),
   ("Written in Nim.", "مكتوب بلغة Nim."),
   ("Reading the brushes and presets...", "جارٍ قراءة الفرش والإعدادات المسبقة..."),
@@ -2608,7 +2607,7 @@ const photoArabic* = [
   ("Inflate", "نفخ"),
   ("Squeeze", "ضغط"),
   ("Twist", "التواء"),
-  ("Drawn in DejaVu Sans: ", "مرسوم بخط DejaVu Sans: "),
+  ("Drawn in FreeSans: ", "مرسوم بخط FreeSans: "),
   ("+ Google Fonts", "+ خطوط Google"),
   ("Get free fonts (Arabic ones too) from Google Fonts", "احصل على خطوط مجانية (والعربية منها) من Google Fonts"),
   ("Lead:", "التباعد بين الأسطر:"),
@@ -2721,7 +2720,7 @@ const photoArabic* = [
   ("\" is a group: pick one of its layers.", "\" مجموعة: اختر إحدى طبقاتها."),
   ("\" is locked (Layer > Unlock Layer).", "\" مقفلة (طبقة > إلغاء قفل الطبقة)."),
   ("\" has its pixels locked (the brush lock in Layers).", "\" بكسلاتها مقفلة (قفل الفرشاة في الطبقات)."),
-  # src/retro/photo.nim
+  # src/retroui/photo.nim
   ("Dissolve", "إذابة"),
   ("Behind", "خلف"),
   ("Multiply", "مضاعفة"),
@@ -2769,7 +2768,7 @@ const photoArabic* = [
   ("Vertical Spacing", "التباعد العمودي"),
   ("Untitled", "بلا عنوان"),
   ("Layer Comp", "تركيبة الطبقات"),
-  # src/retro/photowidgets.nim
+  # src/retroui/photowidgets.nim
   ("Orange", "برتقالي"),
   ("Purple", "بنفسجي"),
   ("Inches", "بوصة"),
@@ -2784,7 +2783,7 @@ const photoArabic* = [
   (" process colors", " ألوان معالجة"),
   ("! Cannot print", "! لا يمكن طباعته"),
   ("Out of the inks' gamut: it prints as the color beside it", "خارج نطاق ألوان الأحبار: يُطبع كاللون المجاور له"),
-  # src/retro/photofx.nim
+  # src/retroui/photofx.nim
   ("Warm", "دافئ"),
   ("Cool", "بارد"),
   ("Teal & Orange", "أزرق مخضر وبرتقالي"),
@@ -2798,7 +2797,7 @@ const photoArabic* = [
   ("Black & White Film", "فيلم أبيض وأسود"),
   ("High Contrast", "تباين عالٍ"),
   ("Soft Pastel", "ألوان باستيل ناعمة"),
-  # src/retro/photodevelop.nim
+  # src/retroui/photodevelop.nim
   ("Vivid", "حيوي"),
   ("Matte", "مطفأ"),
   ("Dramatic", "درامي"),
@@ -2815,11 +2814,11 @@ const photoArabic* = [
   ("Deep Emerald", "زمردي داكن"),
   ("Deep Yellow", "أصفر داكن"),
   ("Underwater", "تحت الماء"),
-  # src/retro/photostyles.nim
+  # src/retroui/photostyles.nim
   ("Inner Bevel", "شطب داخلي"),
   ("Outer Bevel", "شطب خارجي"),
   ("Pillow Emboss", "نقش وسادي"),
-  # src/retro/photopresets.nim
+  # src/retroui/photopresets.nim
   ("Portraits", "صور شخصية"),
   ("Landscapes", "مناظر طبيعية"),
   ("Photography", "التصوير الفوتوغرافي"),
@@ -2856,7 +2855,7 @@ const photoArabic* = [
   ("Red Filter B&W", "أبيض وأسود بمرشح أحمر"),
   ("Soft Matte B&W", "أبيض وأسود مطفأ ناعم"),
   ("Preset", "إعداد مسبق"),
-  # src/retro/photocc.nim
+  # src/retroui/photocc.nim
   ("Color Fill", "تعبئة بلون"),
   ("Brown", "بني"),
   ("Pink", "وردي"),
@@ -2866,11 +2865,11 @@ const photoArabic* = [
   ("Shadow", "ظل"),
   ("Artboard ", "لوح الرسم "),
   ("Page", "صفحة"),
-  # src/retro/photofiles.nim
+  # src/retroui/photofiles.nim
   ("Keep It", "الاحتفاظ به"),
   ("Ignore It", "تجاهله"),
   (", not kept)", "، غير محفوظ)"),
-  # src/retro/photoshapes.nim
+  # src/retroui/photoshapes.nim
   ("Banners & Awards", "لافتات وجوائز"),
   ("Frames", "إطارات"),
   ("Nature", "الطبيعة"),
@@ -2975,7 +2974,7 @@ const photoArabic* = [
   ("Signal", "إشارة"),
   ("Pause", "إيقاف مؤقت"),
   ("Shape ", "الشكل "),
-  # src/retro/photomerge.nim
+  # src/retroui/photomerge.nim
   ("Reposition", "إعادة التموضع"),
   ("Collage", "كولاج"),
   ("Blue Sky with Clouds", "سماء زرقاء بسحب"),
@@ -2984,14 +2983,14 @@ const photoArabic* = [
   ("Dusk", "الغسق"),
   ("Overcast", "غائم"),
   ("Starry Night", "ليلة مرصعة بالنجوم"),
-  # src/retro/photopdf.nim
+  # src/retroui/photopdf.nim
   ("Smallest File Size (screen, web)", "أصغر حجم ملف (الشاشة، الويب)"),
   ("High Quality Print", "طباعة عالية الجودة"),
   ("Press Quality (CMYK)", "جودة المطبعة (CMYK)"),
-  # src/retro/photoimport.nim
+  # src/retroui/photoimport.nim
   ("too big at that resolution", "كبيرة جدًا بهذه الدقة"),
   ("Text and Pictures", "النص والصور"),
-  # src/retro/photobrushes.nim
+  # src/retroui/photobrushes.nim
   ("Chalk", "طباشير"),
   ("Pastel", "باستيل"),
   ("Bristle", "شعيرات"),
@@ -3024,7 +3023,7 @@ const photoArabic* = [
   ("Gouache", "غواش"),
   ("Leaves", "أوراق شجر"),
   ("Stars", "نجوم"),
-  # src/retro/filterfactory.nim
+  # src/retroui/filterfactory.nim
   ("Sepia Tone", "درجة بني داكن"),
   ("An old photograph's brown.", "لون الصورة القديمة البني."),
   ("Warmth", "الدفء"),
@@ -3059,9 +3058,9 @@ const photoArabic* = [
   ("Depth", "العمق"),
   ("Noise Grain", "حبيبات التشويش"),
   ("Film grain.", "حبيبات الفيلم."),
-  # src/retro/abr.nim
+  # src/retroui/abr.nim
   ("GIMP Brush", "فرشاة GIMP"),
-  # src/retro/adobefiles.nim
+  # src/retroui/adobefiles.nim
   ("Web Safe Colors", "ألوان آمنة للويب"),
   ("CSS Named Colors", "ألوان CSS المسماة"),
   ("Process Tints (CMYK)", "تدرجات ألوان المعالجة (CMYK)"),
@@ -3071,9 +3070,9 @@ const photoArabic* = [
   ("Rich Black", "أسود غني"),
   ("Grays", "الرماديات"),
   ("Gray ", "رمادي "),
-  # src/retro/iccprofile.nim
+  # src/retroui/iccprofile.nim
   ("Embedded profile", "ملف التعريف المضمّن"),
-  # photo/newdoc.nim, retro/phototemplates.nim (4.5)
+  # photo/newdoc.nim, retroui/phototemplates.nim (4.5)
   ("New Document", "مستند جديد"),
   ("Recent", "الأخيرة"),
   ("Saved", "المحفوظة"),
@@ -3247,7 +3246,7 @@ const photoArabic* = [
   ("Eid Mubarak", "Eid Mubarak"),
   ("Wishing you and your family joy, peace and happiness", "نتمنى لكم ولعائلاتكم الفرح والسلام والسعادة"),
   ("From all of us", "من جميعنا"),
-  # photo/daily.nim, retro/photoquick.nim (4.5)
+  # photo/daily.nim, retroui/photoquick.nim (4.5)
   ("Quick Actions", "إجراءات سريعة"),
   ("Color Themes", "سمات الألوان"),
   ("Share...", "مشاركة..."),

@@ -1588,11 +1588,14 @@ proc aboutDialog() =
   aboutBox(aboutOpen, AppName, AppVersion,
            ["An image editor in the manner of the paint programs of 1994: layers, channels, " &
             "Quick Mask, paths, artboards, type with Arabic, forty filters and the color adjustments.",
-            "Its engine is Retro Nim UI's own: retro/photo, retro/photopaint, retro/photofx.",
+            "Its engine is Retro Nim UI's own: retroui/photo, retroui/photopaint, retroui/photofx.",
             "Not affiliated with any maker of image software."],
            tagline = "Layers, type and filters -- as in 1994",
            iconPng = AppIconPng, glyph = pxBrush,
-           whatsNew = ["The Line tool: arrowheads and other ends (open, stealth, circle, square, diamond, bar) " &
+           whatsNew = ["4.9.3: the menus answer at once -- a submenu waits only while the pointer heads for it; " &
+                       "the letters drawn as in 4.9 (FreeSans, its heights on whole pixels), Sharp text a choice; " &
+                       "the Windows 3.1 frame on every desktop; Arabic and other right-to-left text by the whole bidi rules",
+                       "The Line tool: arrowheads and other ends (open, stealth, circle, square, diamond, bar) " &
                        "at its start and end; the line stays a line -- its ends dragged with the Move tool, its " &
                        "ends and weight changed in the options bar or Properties",
                        "Image Size: the link keeps the proportions; pixels, percent, inches, centimeters, " &
@@ -1653,8 +1656,8 @@ proc aboutDialog() =
                        "macOS and Linux too",
                        "16 and 32 bits for real: Levels, Curves, the adjustments, blurs, sharpening and the " &
                        "Gradient at 16 bits; the 16 bits kept through undo, crops, resizing and .rpd files",
-                       "OpenType: Arabic set by the font (Amiri bundled: its ligatures, marks placed by the " &
-                       "font), the OpenType panel (stylistic sets, ligatures), variable fonts' axes",
+                       "OpenType: Arabic set by the font (FreeSerif built in: its ligatures, marks placed by " &
+                       "the font), the OpenType panel (stylistic sets, ligatures), variable fonts' axes",
                        "Color management for print: load a press's ICC profile (FOGRA, GRACoL, SWOP); CMYK, " &
                        "Proof Colors and PDF/X follow it",
                        "The Arabic interface: menus, panels and dialogs in Arabic, right to left",
@@ -1691,9 +1694,7 @@ proc aboutDialog() =
            credits = ["Retro Photo and Retro Nim UI: " & RetroCredit & " -- " & RetroWebsite & " -- " & RetroEmail,
                       "Assets: Openverse, Wikimedia Commons, Iconify and its icon sets, Poly Haven (Powered by " &
                       "Poly Haven), ambientCG, Pixabay -- each item's own licence and credit kept with it.",
-                      "Fonts: Retro Sans, after lou's MS Sans Serif recreation (CC BY-SA 3.0); " &
-                      "GNU Unifont's Arabic (OFL); DejaVu (Bitstream Vera licence); Kawkab Mono (OFL); " &
-                      "Amiri by Khaled Hosny (OFL).",
+                      RetroFontCredit,
                       "Icons: Nerd Fonts symbols (MIT / OFL) and Retro's own pixel icons.",
                       "Written in Nim."])
 

@@ -1,16 +1,16 @@
 #!/bin/sh
-# src/retro/uirelays and the `uirelays` branch hold the same code: the
+# src/retroui/uirelays and the `uirelays` branch hold the same code: the
 # branch is nim-lang/uirelays with my commits on top, ready for a pull
-# request; retro uses it from src/retro/uirelays.
+# request; retroui uses it from src/retroui/uirelays.
 #
-#   tools/uirelays.sh push "message"  src/retro/uirelays -> a commit on the branch
-#   tools/uirelays.sh pull            the branch's src/uirelays -> src/retro/uirelays
+#   tools/uirelays.sh push "message"  src/retroui/uirelays -> a commit on the branch
+#   tools/uirelays.sh pull            the branch's src/uirelays -> src/retroui/uirelays
 #   tools/uirelays.sh diff            what differs between the two
 #
 # RETRO.md, VERSION and LICENSE.md stay in retro only.
 set -e
 root=$(git rev-parse --show-toplevel)
-here=$root/src/retro/uirelays
+here=$root/src/retroui/uirelays
 branch=${UIRELAYS_BRANCH:-uirelays}
 work=$(mktemp -d)
 trap 'git -C "$root" worktree remove --force "$work/tree" 2>/dev/null; rm -rf "$work"' EXIT
@@ -40,7 +40,7 @@ case "$1" in
     git -C "$root" archive "$branch" src/uirelays | tar -x -C "$work"
     find "$here" -type f ! -name RETRO.md ! -name VERSION ! -name LICENSE.md -delete
     copy "$work/src/uirelays" "$here"
-    echo "src/retro/uirelays is the branch's now"
+    echo "src/retroui/uirelays is the branch's now"
     ;;
   diff)
     git -C "$root" archive "$branch" src/uirelays | tar -x -C "$work"

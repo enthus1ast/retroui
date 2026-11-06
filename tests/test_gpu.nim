@@ -4,7 +4,7 @@
 ## screen (EGL, a pbuffer); skipped where there is no OpenGL.
 
 import std/[os, strutils]
-import retro/uirelays/[input, eglload, screen]
+import retroui/uirelays/[input, eglload, screen]
 import harness
 
 const photoUnderTest = true

@@ -7,9 +7,9 @@
 ##   nim c -d:release -r tests/bench_big.nim [WxH of the picture] [screen scale]
 
 import std/[os, strutils, monotimes, times, algorithm, math]
-import retro/uirelays/[coords, screen, input]
-import retro
-import retro/[photofiles, jpeg]
+import retroui/uirelays/[coords, screen, input]
+import retroui
+import retroui/[photofiles, jpeg]
 
 var iw = 10000
 var ih = 7000

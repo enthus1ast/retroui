@@ -7,7 +7,7 @@
 
 import std/[os, osproc, json, strutils, times, net, exitprocs, sequtils]
 from std/unicode import validateUtf8
-import retro/[http, mime]
+import retroui/[http, mime]
 import ../examples/mail/[store, api, graph, gmail, ical, invites, autoreply, assist, rules, forward]
 
 proc freePort(): int =
@@ -29,7 +29,11 @@ putEnv("RETRO_MAIL_AI", base & "/ai")
 
 let mock = startProcess("python3", args = [currentSourcePath().parentDir / "mailmock.py", $port],
                         options = {poUsePath, poParentStreams})
-addExitProc(proc () = mock.terminate())
+proc stopAtExit(p: Process) =
+  # (the exit proc keeps its own reference: the program's globals, `mock`
+  # too, are freed before the exit procs run)
+  addExitProc(proc () = p.terminate())
+stopAtExit(mock)
 for i in 0 .. 50:
   if httpRequest("GET", base & "/test/state").status == 200: break
   sleep(100)

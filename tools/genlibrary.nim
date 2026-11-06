@@ -8,7 +8,7 @@
 ##   nim c -r -d:release tools/genlibrary.nim          # writes library/
 
 import std/[os, math, json, random, strutils]
-import retro/[gfx, photo, photoshapes, photobrushes, photopaint, photostyles, adobefiles, imaging, phototemplates]
+import retroui/[gfx, photo, photoshapes, photobrushes, photopaint, photostyles, adobefiles, imaging, phototemplates]
 
 const Out = "library"
 

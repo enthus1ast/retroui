@@ -3,9 +3,9 @@
 ## and with thousands of items.
 
 import std/[monotimes, times, strutils]
-import retro
-import retro/planning
-import retro/uirelays/input
+import retroui
+import retroui/planning
+import retroui/uirelays/input
 import harness
 
 fakeDriver()

@@ -4,8 +4,8 @@
 ## its colors (`lutAt`).
 
 import std/random
-import retro/photo {.all.}
-import retro/[gfx, photodevelop]
+import retroui/photo {.all.}
+import retroui/[gfx, photodevelop]
 
 var r = initRand(7)
 

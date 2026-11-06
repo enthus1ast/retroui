@@ -9,8 +9,13 @@
 ## * Termux on the phone or tablet itself: its clang (installed with `pkg`
 ##   when missing)
 ## * a desktop with the Android NDK ($ANDROID_NDK_HOME, the SDK's ndk/)
-## * neither: the NDK is downloaded once into ~/.retro/ndk (`--fetch-ndk`
-##   does it ahead; `RETRO_NDK_URL` points elsewhere)
+## * no NDK: any clang with lld (LLVM's installer on Windows, Homebrew's
+##   llvm and lld on macOS, the system's on Linux and the BSDs) or zig, with
+##   the Android sysroot that retroapk carries inside itself (headers, crt
+##   objects, stub libraries, compiler-rt; about 1.2 MB, unpacked once into
+##   ~/.retro/android-sysroot; tools/android/mksysroot.sh makes it)
+## * none of these: the NDK is downloaded once into ~/.retro/ndk
+##   (`--fetch-ndk` does it ahead; `RETRO_NDK_URL` points elsewhere)
 ##
 ## Usage:
 ##   retroapk app.nim [--name:"My App"] [--id:org.me.myapp] [--install]
@@ -18,7 +23,7 @@
 ## Run `retroapk --help` for every option.
 
 import std/[os, osproc, strutils, parseopt, algorithm, unicode, sequtils]
-import retro/[appicon, androiddex, rsa, zip]
+import retroui/[appicon, androiddex, rsa, zip, codec]
 
 const Usage = """
 retroapk -- build an Android APK from a retro app
@@ -30,21 +35,24 @@ Options:
   --id:PACKAGE       package id, e.g. org.me.myapp (default: org.retro.<file>)
   --version:X.Y      version name (default 1.0); --code:N version code (default 1)
   --icon:FILE.png    launcher icon (default: a drawn 3.1 window)
-  --abi:LIST         arm64-v8a (default), armeabi-v7a, x86_64, x86; comma separated
+  --abi:LIST         arm64-v8a (default), x86_64; comma separated (armeabi-v7a
+                     and x86, 32-bit, build with the NDK only)
   --orientation:O    any (default), portrait, landscape
   --permission:NAME  add a permission, e.g. INTERNET (repeatable)
   --query:PACKAGE    an app this one needs to see installed (Android 11+;
                      repeatable; --storage adds com.termux)
   --storage          the app works with all the user's files (a file
                      manager): asks for "All files access"
-  --background       the app checks while it is closed (retro/bgcheck): its
+  --background       the app checks while it is closed (retroui/bgcheck): its
                      job service, kept across reboots
   --min-sdk:N        lowest Android API level (default 24, Android 7)
   --target-sdk:N     API level the app is made for (default 35)
   --debuggable       allow debugging (run-as, logcat of the app)
   --cc:PATH          C compiler for Android (default: found, see below)
+  --toolchain:T      auto (default), ndk, clang (clang + lld, no NDK) or zig
+                     (zig cc, no NDK); also $RETRO_ANDROID_TOOLCHAIN
   --fetch-ndk        download the Android NDK into ~/.retro/ndk now (it is
-                     fetched by itself the first time none is found)
+                     fetched by itself the first time nothing else is found)
   --key:FILE.pem --cert:FILE.der   sign with your own key (default: a
                      debug key made once in ~/.retro/android)
   --signer:S         builtin (default: signed here, nothing needed) or apksigner
@@ -59,8 +67,12 @@ Options:
 
 Compilers, in this order: --cc, $RETRO_ANDROID_CC, Termux's clang (installed
 with pkg when missing), the NDK in $ANDROID_NDK_HOME / $ANDROID_NDK_ROOT /
-$ANDROID_HOME/ndk/*, the NDK fetched into ~/.retro/ndk -- downloaded there
-the first time none of these is found ($RETRO_NDK_URL, $RETRO_NDK_DIR).
+$ANDROID_HOME/ndk/* or one fetched before into ~/.retro/ndk; then, with no
+NDK, a clang that has lld (on the PATH; LLVM's folder on Windows; Homebrew's
+llvm on macOS) or zig (on the PATH, or pip's ziglang) with the Android sysroot
+in retroapk (arm64-v8a, x86_64; unpacked once into
+~/.retro/android-sysroot, or $RETRO_SYSROOT_DIR); last, the NDK downloaded into
+~/.retro/ndk ($RETRO_NDK_URL, $RETRO_NDK_DIR).
 """
 
 var verbose = false
@@ -507,14 +519,26 @@ proc neededLibs(path: string): seq[string] =
 
 # ---- toolchain ----------------------------------------------------------------------------
 
-type Abi = object
-  name, cpu, triple: string
+type
+  Abi = object
+    name, cpu, triple: string
+    dir: string          ## its folder in a sysroot's usr/lib and usr/include
+    rt: string           ## compiler-rt's name for it
+    zig: string          ## zig's target (the API level is added: .24)
+  Toolchain = object
+    cc, ld: string       ## what Nim runs to compile, and to link
+    kind: string         ## cc, termux, ndk, clang or zig: each its own nimcache
+    what: string         ## (shown when compiling)
 
 const Abis = [
-  Abi(name: "arm64-v8a", cpu: "arm64", triple: "aarch64-linux-android"),
-  Abi(name: "armeabi-v7a", cpu: "arm", triple: "armv7a-linux-androideabi"),
-  Abi(name: "x86_64", cpu: "amd64", triple: "x86_64-linux-android"),
-  Abi(name: "x86", cpu: "i386", triple: "i686-linux-android")]
+  Abi(name: "arm64-v8a", cpu: "arm64", triple: "aarch64-linux-android",
+      dir: "aarch64-linux-android", rt: "aarch64", zig: "aarch64-linux-android"),
+  Abi(name: "armeabi-v7a", cpu: "arm", triple: "armv7a-linux-androideabi",
+      dir: "arm-linux-androideabi", rt: "arm", zig: "arm-linux-androideabi"),
+  Abi(name: "x86_64", cpu: "amd64", triple: "x86_64-linux-android",
+      dir: "x86_64-linux-android", rt: "x86_64", zig: "x86_64-linux-android"),
+  Abi(name: "x86", cpu: "i386", triple: "i686-linux-android",
+      dir: "i686-linux-android", rt: "i686", zig: "x86-linux-android")]
 
 proc inTermux(): bool =
   getEnv("PREFIX").contains("com.termux") or getEnv("TERMUX_VERSION").len > 0
@@ -559,7 +583,8 @@ proc download(url, file: string) =
   ## (with what the system has: curl -- Windows 10, macOS and Linux have it --,
   ## wget, or PowerShell)
   if url.startsWith("file://"):
-    copyFile(url[7 .. ^1], file)
+    try: copyFile(url[7 .. ^1], file)
+    except OSError as e: die "cannot copy " & url & ": " & e.msg
     return
   if findExe("curl").len > 0:
     runShown(quoteShellCommand(["curl", "-fL", "--retry", "3", "-o", file, url]), "downloading " & url)
@@ -619,31 +644,267 @@ proc fetchNdk*(): string =
   if result.len == 0: die "the NDK fetched from " & url & " has no toolchains/ folder"
   echo "The NDK is in ", result
 
-proc compilerFor(abi: Abi; minSdk: int; explicit: string): string =
-  if explicit.len > 0: return explicit
-  let env = getEnv("RETRO_ANDROID_CC")
-  if env.len > 0: return env
-  if inTermux():
-    let hostAbi = when defined(arm64): "arm64-v8a"
-                  elif defined(arm): "armeabi-v7a"
-                  elif defined(amd64): "x86_64"
-                  else: "x86"
-    if abi.name != hostAbi:
-      die "Termux's clang builds for this device only (" & hostAbi &
-          "); for " & abi.name & " use the Android NDK"
-    var cc = findExe("clang")
-    if cc.len == 0 or not dirExists(getEnv("PREFIX") / "lib" / "android"):
-      # (Termux: its clang and the NDK's headers, installed here)
-      echo "Installing clang and the NDK's headers (pkg install clang ndk-sysroot)..."
-      runShown("pkg install -y clang ndk-sysroot", "pkg install")
-      cc = findExe("clang")
-    if cc.len == 0: die "no clang: pkg install clang ndk-sysroot"
-    return cc
-  var ndk = ndkRoot()
-  if ndk.len == 0: ndk = findNdkIn(fetchedNdkHome())
-  if ndk.len == 0:
-    # none: fetched (once)
-    ndk = fetchNdk()
+# ---- no NDK: the Android sysroot in retroapk -----------------------------------------
+#
+# Android's headers, the crt objects, stubs of the system libraries (libc,
+# libm, libdl, liblog, libandroid) and LLVM's compiler-rt builtins, for
+# arm64-v8a (phones) and x86_64 (the emulator) at API 24: made by
+# tools/android/mksysroot.sh from AOSP's and LLVM's sources, carried inside
+# retroapk (staticRead) and unpacked once. With it any clang that has lld,
+# or zig, builds an app's libmain.so as the NDK's clang does.
+
+const
+  SysrootApi = 24
+    ## the API level of the sysroot's libraries (the kit's minSdk)
+  SysrootAbis = ["arm64-v8a", "x86_64"]
+    ## (armeabi-v7a and x86, 32-bit, need the NDK)
+  SysrootFile = currentSourcePath().parentDir.parentDir / "tools" / "android" /
+                "sysroot.tar.gz"
+  SysrootPacked = when fileExists(SysrootFile): staticRead(SysrootFile) else: ""
+
+proc sysrootArchive(): string =
+  ## (inside retroapk; else the file, if it is where retroapk was built from)
+  if SysrootPacked.len > 0: return SysrootPacked
+  try: readFile(SysrootFile) except IOError: ""
+
+proc gunzip(z: string): Bytes =
+  ## The content of a gzip file (its one member).
+  if z.len < 18 or ord(z[0]) != 0x1f or ord(z[1]) != 0x8b or ord(z[2]) != 8:
+    raise newException(ValueError, "not a gzip file")
+  let flags = ord(z[3])
+  var p = 10
+  if (flags and 4) != 0: p += 2 + (ord(z[p]) or (ord(z[p + 1]) shl 8))  # extra
+  for bit in [8, 16]:                                                    # name, comment
+    if (flags and bit) != 0:
+      while p < z.len and z[p] != '\0': inc p
+      inc p
+  if (flags and 2) != 0: p += 2                                          # header CRC
+  var used = 0
+  result = inflate(z.toOpenArrayByte(0, z.high), p, addr used)
+  let q = p + used
+  if q + 8 > z.len: raise newException(ValueError, "the gzip file ends too soon")
+  var crc = 0'u32
+  for i in 0 .. 3: crc = crc or (uint32(ord(z[q + i])) shl (8 * i))
+  if crc32(result) != crc: raise newException(ValueError, "the gzip file is damaged")
+
+proc untar(t: Bytes; dest: string) =
+  ## The files and folders of a tar archive (ustar) under `dest`.
+  proc field(at, n: int): string =
+    for i in at ..< at + n:
+      if t[i] == 0: break
+      result.add char(t[i])
+  var p = 0
+  while p + 512 <= t.len:
+    let name = field(p, 100)
+    if name.len == 0: break                      # the end (zero blocks)
+    let prefix = if field(p + 257, 5) == "ustar": field(p + 345, 155) else: ""
+    let size = parseOctInt(field(p + 124, 12).strip)
+    let kind = char(t[p + 156])
+    let target = safeTarget(dest, (if prefix.len > 0: prefix & "/" else: "") & name)
+    p += 512
+    if size < 0 or p + size > t.len: raise newException(ValueError, "the tar file ends too soon")
+    case kind
+    of '0', '\0':
+      createDir(target.parentDir)
+      writeFile(target, t.toOpenArray(p, p + size - 1))
+    of '5': createDir(target)
+    else: discard                                # (links: the sysroot has none)
+    p += (size + 511) div 512 * 512
+
+proc sysrootDir(): string =
+  ## The sysroot, unpacked once into ~/.retro/android-sysroot/api24-<crc>
+  ## (or into $RETRO_SYSROOT_DIR; a sysroot already there is used as it is).
+  ## "" when retroapk carries none.
+  let own = getEnv("RETRO_SYSROOT_DIR")
+  if own.len > 0 and fileExists(own / "usr" / "include" / "stdio.h"): return own
+  let packed = sysrootArchive()
+  if packed.len == 0: return ""
+  let id = "api" & $SysrootApi & "-" &
+           toHex(crc32(packed.toOpenArrayByte(0, packed.high)), 8).toLowerAscii
+  result = if own.len > 0: own else: getHomeDir() / ".retro" / "android-sysroot" / id
+  if fileExists(result / ".retro-sysroot"): return
+  echo "Unpacking the Android sysroot (", packed.len div 1024, " KB: headers and ",
+       "libraries, no NDK) into ", result
+  # (into a folder of its own, renamed when complete: two builds at once
+  # never see half a sysroot)
+  let part = if own.len > 0: own else: result & ".part" & $getCurrentProcessId()
+  try:
+    if part != own: removeDir(part)
+    untar(gunzip(packed), part)
+    writeFile(part / ".retro-sysroot", id & "\n")
+  except CatchableError as e:
+    die "unpacking the Android sysroot into " & part & ": " & e.msg
+  if part != result:
+    try: moveDir(part, result)
+    except OSError:
+      try: removeDir(part) except OSError: discard
+      if not fileExists(result / ".retro-sysroot"): die "cannot make " & result
+
+proc clangCandidates(): seq[tuple[clang, lld: string]] =
+  ## Every clang found that has an lld to link with: next to it, on the
+  ## PATH, or (macOS) Homebrew's lld. Apple's clang has none.
+  var clangs: seq[string]
+  proc add(p: string) =
+    if p.len > 0 and fileExists(p) and p notin clangs: clangs.add p
+  when defined(macosx):
+    for d in ["/opt/homebrew/opt/llvm/bin", "/usr/local/opt/llvm/bin"]: add(d / "clang")
+  add(findExe("clang"))
+  when defined(windows):
+    for v in ["ProgramFiles", "ProgramW6432"]:
+      if getEnv(v).len > 0: add(getEnv(v) / "LLVM" / "bin" / "clang.exe")
+    add(r"C:\Program Files\LLVM\bin\clang.exe")
+  for v in countdown(30, 14): add(findExe("clang-" & $v))   # (Debian's clang-18...)
+  for c in clangs:
+    let name = c.extractFilename.changeFileExt("")
+    let ver = if name.startsWith("clang-"): name[5 .. ^1] else: ""
+    var llds = @[c.parentDir / "ld.lld" & ExeExt]
+    if ver.len > 0: llds.add c.parentDir / "ld.lld" & ver & ExeExt
+    llds.add findExe("ld.lld")
+    if ver.len > 0: llds.add findExe("ld.lld" & ver)
+    when defined(macosx):
+      llds.add ["/opt/homebrew/opt/lld/bin/ld.lld", "/usr/local/opt/lld/bin/ld.lld"]
+    for l in llds:
+      if l.len > 0 and fileExists(l):
+        result.add (c, l)
+        break
+
+proc findZig(): string =
+  ## zig on the PATH, or the one pip installs (pip install ziglang).
+  result = findExe("zig")
+  if result.len > 0: return
+  for py in ["python3", "python", "py"]:
+    let exe = findExe(py)
+    if exe.len == 0: continue
+    let (dir, code) = execCmdEx(quoteShellCommand([exe, "-c",
+      "import os, sys, ziglang; sys.stdout.write(os.path.dirname(ziglang.__file__))"]))
+    if code == 0 and fileExists(dir.strip / "zig" & ExeExt): return dir.strip / "zig" & ExeExt
+
+proc writeWrapper(path: string; env: openArray[(string, string)];
+                  cmd, before, after: openArray[string]): bool =
+  ## A script that runs `cmd before... <its own arguments> after...`: Nim
+  ## runs one program to compile and one to link (a sh script; a .cmd on
+  ## Windows, as the NDK's own). True when it is new or changed.
+  var s = ""
+  when defined(windows):
+    proc q(a: string): string = "\"" & a.replace("%", "%%") & "\""
+    s = "@echo off\r\nrem made by retroapk for each build (Android without the NDK)\r\n"
+    for (k, v) in env: s.add "set \"" & k & "=" & v.replace("%", "%%") & "\"\r\n"
+    for a in cmd: s.add q(a) & " "
+    for a in before: s.add q(a) & " "
+    s.add "%*"
+    for a in after: s.add " " & q(a)
+    s.add "\r\nif errorlevel 1 exit /b 1\r\n"
+  else:
+    proc q(a: string): string = "'" & a.replace("'", "'\\''") & "'"
+    s = "#!/bin/sh\n# made by retroapk for each build (Android without the NDK)\n"
+    for (k, v) in env: s.add k & "=" & q(v) & "; export " & k & "\n"
+    s.add "exec"
+    for a in cmd: s.add " " & q(a)
+    for a in before: s.add " " & q(a)
+    s.add " \"$@\""
+    for a in after: s.add " " & q(a)
+    s.add "\n"
+  if fileExists(path) and readFile(path) == s: return false
+  writeFile(path, s)
+  when not defined(windows):
+    setFilePermissions(path, {fpUserRead, fpUserWrite, fpUserExec, fpGroupRead,
+                              fpGroupExec, fpOthersRead, fpOthersExec})
+  true
+
+proc probe(t: Toolchain; dir, tag: string; changed: bool): string =
+  ## "" when `t` compiles and links a small library for Android, else what
+  ## went wrong (tried once for each new set of wrappers).
+  let stamp = dir / tag & ".ok"
+  if not changed and fileExists(stamp): return ""
+  let c = dir / tag & "-probe.c"
+  writeFile(c, "#include <stdio.h>\n#include <android/log.h>\n" &
+               "int retro_probe(void) {\n  __android_log_print(ANDROID_LOG_INFO, \"retro\", \"probe\");\n" &
+               "  return printf(\"%d\", __ANDROID_API__);\n}\n")
+  let o = dir / tag & "-probe.o"
+  let so = dir / tag & "-probe.so"
+  removeFile(stamp)
+  for cmd in [quoteShellCommand([t.cc, "-O2", "-c", c, "-o", o]),
+              quoteShellCommand([t.ld, "-shared", "-o", so, o])]:
+    if verbose: echo "+ ", cmd
+    let (output, code) = execCmdEx(cmd)
+    if code != 0: return (if output.strip.len > 0: output.strip else: "exit code " & $code)
+  writeFile(stamp, "")
+  ""
+
+proc firstError(output: string): string =
+  ## (the line of a compiler's output that says what is wrong)
+  for l in output.splitLines:
+    if "error" in l.toLowerAscii: return l.strip
+  output.strip.splitLines[^1]
+
+proc noNdkToolchain(abi: Abi; minSdk: int; work, choice: string): Toolchain =
+  ## The sysroot in retroapk with a clang that has lld ("clang"), or with
+  ## zig ("zig"), or the first of them that works ("auto"); kind "" when
+  ## there is none.
+  if abi.name notin SysrootAbis or minSdk < SysrootApi: return
+  let sys = sysrootDir()
+  if sys.len == 0: return
+  let api = $max(minSdk, SysrootApi)
+  let lib = sys / "usr" / "lib" / abi.dir / $SysrootApi
+  let rt = sys / "usr" / "lib" / abi.dir / "libclang_rt.builtins-" & abi.rt & "-android.a"
+  let dir = work / "toolchain"
+  createDir(dir)
+  let ext = when defined(windows): ".cmd" else: ""
+  # as the NDK's clang: position-independent; 16 KB pages; the library's
+  # own name (DT_SONAME)
+  let linking = @["-Wl,-z,max-page-size=16384", "-Wl,-z,noexecstack",
+                  "-Wl,-soname,libmain.so", "-L" & lib]
+  # Android before 10 (API 29) has no ELF TLS: emulated TLS, also for the
+  # code an LTO link makes
+  let tls = if parseInt(api) < 29: @["-Wl,-plugin-opt=-emulated-tls"] else: @[]
+  if choice in ["auto", "clang"]:
+    for (clang, lld) in clangCandidates():
+      let target = @["--target=" & abi.triple & api, "--sysroot=" & sys, "-fPIC", "-DANDROID"]
+      let useLld = if lld == clang.parentDir / "ld.lld" & ExeExt: "-fuse-ld=lld"
+                   else: "--ld-path=" & lld
+      let t = Toolchain(cc: dir / abi.name & "-clang-cc" & ext,
+                        ld: dir / abi.name & "-clang-ld" & ext, kind: "clang",
+                        what: "clang + lld, no NDK: " & clang)
+      var changed = writeWrapper(t.cc, [], [clang], target, [])
+      # the crt objects, the stubs and compiler-rt as the NDK's clang adds
+      # them; nothing of the system the build runs on
+      changed = writeWrapper(t.ld, [], [clang],
+        target & @[useLld, "-nostdlib"] & linking & tls & @[lib / "crtbegin_so.o"],
+        [rt, "-lc", "-lm", "-ldl", "-llog", "-landroid", rt, lib / "crtend_so.o"]) or changed
+      let why = probe(t, dir, abi.name & "-clang", changed)
+      if why.len == 0: return t
+      echo "(", clang, " cannot build for ", abi.name, ": ", firstError(why), ")"
+  if choice in ["auto", "zig"]:
+    let zig = findZig()
+    if zig.len > 0:
+      # zig cc reads the sysroot from a "libc paths" file (and adds the crt
+      # objects and libc, libm, libdl itself, and its own compiler-rt)
+      let libc = dir / abi.name & "-zig-libc.txt"
+      let paths = "include_dir=" & sys / "usr" / "include" & "\n" &
+                  "sys_include_dir=" & sys / "usr" / "include" / abi.dir & "\n" &
+                  "crt_dir=" & lib & "\ngcc_dir=" & lib & "\n" &
+                  "msvc_lib_dir=\nkernel32_lib_dir=\ndarwin_sdk_dir=\n"
+      var changed = not fileExists(libc) or readFile(libc) != paths
+      if changed: writeFile(libc, paths)
+      let target = @["-target", abi.zig & "." & api, "-fno-sanitize=all", "-fPIC", "-DANDROID"]
+      let t = Toolchain(cc: dir / abi.name & "-zig-cc" & ext,
+                        ld: dir / abi.name & "-zig-ld" & ext, kind: "zig",
+                        what: "zig cc, no NDK: " & zig)
+      let env = [("ZIG_LIBC", libc)]
+      # (zig's LTO link makes native TLS whatever it is told: no LTO with
+      # zig below API 29, -fno-lto after Nim's -flto)
+      let noLto = if tls.len > 0: @["-fno-lto"] else: @[]
+      changed = writeWrapper(t.cc, env, [zig, "cc"], target, noLto) or changed
+      changed = writeWrapper(t.ld, env, [zig, "cc"], target & linking,
+                             noLto & @["-llog", "-landroid"]) or changed
+      if changed or not fileExists(dir / abi.name & "-zig.ok"):
+        echo "Trying zig for ", abi.name, " (the first time, zig builds its compiler-rt: ",
+             "a minute or two)"
+      let why = probe(t, dir, abi.name & "-zig", changed)
+      if why.len == 0: return t
+      echo "(", zig, " cannot build for ", abi.name, ": ", firstError(why), ")"
+
+proc ndkToolchain(ndk: string; abi: Abi; minSdk: int): Toolchain =
   let host = when defined(windows): "windows-x86_64"
              elif defined(macosx): "darwin-x86_64"
              else: "linux-x86_64"
@@ -653,8 +914,58 @@ proc compilerFor(abi: Abi; minSdk: int; explicit: string): string =
   # the lowest one above it
   for api in max(minSdk, 21) .. 40:
     let cc = bin / abi.triple & $api & "-clang" & ext
-    if fileExists(cc): return cc
+    if fileExists(cc): return Toolchain(cc: cc, ld: cc, kind: "ndk", what: "NDK " & ndk)
   die "no " & abi.triple & "-clang in " & bin
+
+proc compilerFor(abi: Abi; minSdk: int; explicit, choice, work: string): Toolchain =
+  ## The C compiler for `abi`: --cc, $RETRO_ANDROID_CC, Termux's clang, an
+  ## NDK that is there, the sysroot in retroapk with clang + lld or zig,
+  ## else the NDK fetched.
+  if explicit.len > 0: return Toolchain(cc: explicit, ld: explicit, kind: "cc", what: explicit)
+  let env = getEnv("RETRO_ANDROID_CC")
+  if env.len > 0: return Toolchain(cc: env, ld: env, kind: "cc", what: env)
+  if choice notin ["auto", "ndk", "clang", "zig"]:
+    die "unknown toolchain " & choice & " (auto, ndk, clang or zig)"
+  if choice == "auto" and inTermux():
+    let hostAbi = when defined(arm64): "arm64-v8a"
+                  elif defined(arm): "armeabi-v7a"
+                  elif defined(amd64): "x86_64"
+                  else: "x86"
+    if abi.name != hostAbi:
+      # (Termux's clang and lld, with the sysroot in retroapk)
+      let t = noNdkToolchain(abi, minSdk, work, "auto")
+      if t.kind.len > 0: return t
+      die "Termux's clang builds for this device only (" & hostAbi &
+          "); for " & abi.name & " install lld (pkg install lld) or use the Android NDK"
+    var cc = findExe("clang")
+    if cc.len == 0 or not dirExists(getEnv("PREFIX") / "lib" / "android"):
+      # (Termux: its clang and the NDK's headers, installed here)
+      echo "Installing clang and the NDK's headers (pkg install clang ndk-sysroot)..."
+      runShown("pkg install -y clang ndk-sysroot", "pkg install")
+      cc = findExe("clang")
+    if cc.len == 0: die "no clang: pkg install clang ndk-sysroot"
+    return Toolchain(cc: cc, ld: cc, kind: "termux", what: "Termux's clang")
+  if choice in ["auto", "ndk"]:
+    var ndk = ndkRoot()
+    if ndk.len == 0: ndk = findNdkIn(fetchedNdkHome())
+    if ndk.len > 0: return ndkToolchain(ndk, abi, minSdk)
+  if choice != "ndk":
+    let t = noNdkToolchain(abi, minSdk, work, choice)
+    if t.kind.len > 0: return t
+    let why =
+      if abi.name notin SysrootAbis: "the sysroot in retroapk has no " & abi.name
+      elif minSdk < SysrootApi: "the sysroot in retroapk starts at API " & $SysrootApi &
+                                " (--min-sdk:" & $minSdk & ")"
+      elif sysrootArchive().len == 0 and getEnv("RETRO_SYSROOT_DIR").len == 0:
+        "this retroapk was built without tools/android/sysroot.tar.gz"
+      elif choice == "zig": "no zig found (pip install ziglang, or zig on the PATH)"
+      elif choice == "clang": "no clang with lld found"
+      else: "no clang with lld and no zig found"
+    if choice != "auto": die "no NDK-less build for " & abi.name & ": " & why
+    echo "No Android NDK found, and ", why, ": fetching the NDK instead.",
+         (if why.startsWith("no "): " (To build without it: install clang and lld, " &
+                                    "or zig -- see BUILDING.md.)" else: "")
+  ndkToolchain(fetchNdk(), abi, minSdk)
 
 # ---- keys -------------------------------------------------------------------------------
 
@@ -685,11 +996,12 @@ proc main() =
     debuggable, install, runIt, storage, background, clean = false
     signer = "auto"
     workDir = ""
+    toolchain = getEnv("RETRO_ANDROID_TOOLCHAIN", "auto").toLowerAscii
   for kind, key, val in getopt(commandLineParams()):
     case kind
     of cmdArgument: src = key
     of cmdLongOption, cmdShortOption:
-      case key.normalize
+      case key.normalize.replace("-", "")   # (--min-sdk, --fetch-ndk: as minsdk, fetchndk)
       of "name": name = val
       of "id": id = val
       of "version": version = val
@@ -706,6 +1018,7 @@ proc main() =
       of "targetsdk": targetSdk = parseInt(val)
       of "debuggable": debuggable = true
       of "cc": cc = val
+      of "toolchain": toolchain = val.toLowerAscii
       of "key": keyPem = val
       of "cert": certDer = val
       of "signer": signer = val
@@ -749,21 +1062,31 @@ proc main() =
     for a in Abis:
       if a.name == an.strip: (abi = a; found = true)
     if not found: die "unknown ABI " & an
-    let compiler = compilerFor(abi, minSdk, cc)
+    let tc = compilerFor(abi, minSdk, cc, toolchain, work)
+    let ltoLink =
+      if nimFlags.anyIt(it.toLowerAscii.endsWith(":lto_incremental")): " -flto=thin"
+      elif nimFlags.anyIt(it.toLowerAscii.endsWith(":lto")): " -flto"
+      else: ""
     let lib = work / "lib" / abi.name / "libmain.so"
     createDir(lib.parentDir)
-    echo "Compiling ", src, " for ", abi.name, " ..."
+    echo "Compiling ", src, " for ", abi.name, " (", tc.what, ") ..."
     var args = @[nim, "c", "--os:android", "--cpu:" & abi.cpu, "--app:lib",
                  "--noMain", "-d:noSignalHandler", "-d:release", "--cc:clang",
-                 "--clang.exe:" & compiler, "--clang.linkerexe:" & compiler,
+                 "--clang.exe:" & tc.cc, "--clang.linkerexe:" & tc.ld,
                  # replaces Termux's "-landroid-glob" (an app cannot load
                  # Termux's libraries), strips the library and aligns it for
-                 # phones with 16 KB memory pages
-                 "--clang.options.linker:-s -Wl,-z,max-page-size=16384",
-                 "--nimcache:" & work / "nimcache-" & abi.name,
+                 # phones with 16 KB memory pages -- and keeps the -flto that
+                 # Nim's -d:lto puts there: without it lld still links the
+                 # LTO objects, but with native TLS, which Android before 10
+                 # cannot load (emulated TLS below API 29)
+                 "--clang.options.linker:-s -Wl,-z,max-page-size=16384" & ltoLink,
+                 # (a nimcache for each compiler: Nim reuses an object whose
+                 # C is unchanged, whatever made it -- zig's LTO objects are
+                 # not clang 18's)
+                 "--nimcache:" & work / "nimcache-" & abi.name & "-" & tc.kind,
                  "--hints:off", "-o:" & lib]
     # (the system's malloc, unless the program asks for Nim's allocator:
-    # with it the app's memory would only grow -- see retro/memwatch)
+    # with it the app's memory would only grow -- see retroui/memwatch)
     if not nimFlags.anyIt("retroNimAlloc" in it): args.add "-d:useMalloc"
     args.add nimFlags
     args.add src

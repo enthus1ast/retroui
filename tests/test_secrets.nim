@@ -1,4 +1,4 @@
-## Tests of retro/secrets: round trips, missing names, overwriting,
+## Tests of retroui/secrets: round trips, missing names, overwriting,
 ## deleting, odd names and bytes, files that were changed or moved, and
 ## threads at once -- in a folder of their own (RETRO_SECRETS_DIR): the
 ## encrypted files on Linux, DPAPI on Windows:
@@ -9,7 +9,7 @@
 ##   WINEDEBUG=-all wine /tmp/test_secrets.exe
 
 import std/[os, strutils, typedthreads]
-import retro/secrets
+import retroui/secrets
 
 let root = getTempDir() / "retro-secrets-test"
 removeDir(root)

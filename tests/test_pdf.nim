@@ -1,4 +1,4 @@
-## retro/pdf: the file's structure (the cross-reference table, the objects),
+## retroui/pdf: the file's structure (the cross-reference table, the objects),
 ## pages of any size, drawing, pictures, text in every style with Arabic,
 ## links, the document's information, the same bytes every time, speed --
 ## and, when Python's pypdf is there (PYTHONPATH), that a PDF reader gets
@@ -7,8 +7,8 @@
 
 import std/[os, osproc, strutils, times, json]
 import std/unicode except splitWhitespace
-import retro/[gfx, imaging]
-import retro/pdf
+import retroui/[gfx, imaging]
+import retroui/pdf
 
 let outDir = getTempDir() / "retro-test-pdf"
 createDir(outDir)
@@ -58,7 +58,7 @@ let arabic = "مرحبا بالعالم"
 
 proc sample(): PdfDoc =
   result = newPdf("Test document", "Retro tests")
-  result.subject = "Everything retro/pdf draws"
+  result.subject = "Everything retroui/pdf draws"
   result.keywords = "pdf, test"
   let d = result
   # page 1: A4, text in every style

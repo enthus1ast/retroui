@@ -1,0 +1,78 @@
+# uirelays in retro
+
+`src/retroui/uirelays` is [uirelays](https://github.com/nim-lang/uirelays)
+with my changes for phones, tablets, pens and the GPU, so retro needs no
+other package. Import it as `retroui/uirelays`.
+
+It is the same code as `src/uirelays` on the **`uirelays` branch** of this
+repository: upstream's history up to the commit in `VERSION`, then my
+commits on top, ready to go upstream as a pull request. Nothing in it
+knows about retro -- it stays a library for any Nim program.
+
+## Keeping the two the same
+
+    tools/uirelays.sh push "X11: what changed"   # src/retroui/uirelays -> a commit on the branch
+    tools/uirelays.sh pull                       # the branch -> src/retroui/uirelays
+    tools/uirelays.sh diff                       # what differs between them
+
+## Sending it upstream
+
+    git push https://github.com/foxoman/uirelays.git uirelays:android-ios-pens-gpu
+
+then open the pull request on nim-lang/uirelays from that branch; its text
+is in `docs/uirelays-pr.md`.
+
+## What it adds to upstream
+
+- `drivers/android_driver.nim`, `drivers/android_glue.c` -- Android: a
+  NativeActivity, the app on its own thread, input through the activity's
+  input queue (touch, mouse, pens, two-finger gestures, keys with the
+  keyboard's own characters), the frame put in the window with
+  `ANativeWindow_lock`, clipboard, links, system-font text (Arabic shaped),
+  OpenGL ES through EGL. `drivers/android/UiRelaysActivity.java` is an
+  optional activity for text without key codes, the keyboard, insets and the
+  system bars; retro's own is `tools/android/RetroActivity.java`, which also
+  answers `uirelaysCall` (documents of other apps, media, printing...).
+- `drivers/uikit_driver.nim`, `drivers/uikit_backend.m` -- iOS with UIKit.
+- `drivers/surface_driver.nim` -- the relays both phone drivers share.
+- `services.nim` -- `systemRelays`: data folder, links, files, places,
+  storage access, photo decoding, `systemCall`.
+- Files dropped on the window (`FileDropEvent`: WM_DROPFILES, XDND) and
+  dragged out of it (`startFileDragOut`, `fileDragRelays`: OLE's DoDragDrop
+  with CF_HDROP and the shell's IDList Array, XDND as the source with
+  `text/uri-list`, a Cocoa dragging session with file URLs);
+  `filesOfUriList`, `uriListOfFiles`, `hdropOfFiles`.
+- A window without the system's frame, for an app that draws its own
+  (`frameRelays`, `windowPartAt`, `canDrawFrame`, `setSystemFrame`,
+  `startWindowMove`, `startWindowResize`, `maximizeWindow`,
+  `windowActive`, `setFrameMenuItem`): WinAPI (the system menu's item),
+  Cocoa (the menu bar's Window menu), X11 (EWMH, or the driver's own
+  moving, sizing and maximizing without a window manager), GTK 4 (Wayland
+  too), SDL 3 and SDL 2 (the hit test), Siwin; minimize for SDL and GTK.
+- `eglload.nim` -- EGL loaded at run time; `gpuRelays` in `screen.nim`.
+- `drivers/penaxes.nim` -- a pen's pressure, lean and turn from what each
+  system reports.
+- `input.nim`, `screen.nim`: more keys, the mouse's side buttons,
+  `hasMods`, pens, `AppPauseEvent` / `AppResumeEvent`, `GestureEvent`, the
+  safe area and `touch`, diagonal and move cursors, `pointerHeight`,
+  `OutsideWindow` (the pointer left the window).
+- The same input on every system: Cmd reported as Ctrl on macOS and iOS
+  (Control as the Gui key, Control + click a right click); AltGr neither
+  Ctrl nor Alt on Windows; X11's keys of a non-Latin layout (Ctrl+C with a
+  Cyrillic, Greek or Hebrew one, Ctrl+1 on AZERTY) by the Latin layout's;
+  the keypad's keys everywhere; the sideways wheel (`x`) everywhere, the
+  wheel's and touch pads' fractions of a notch kept; clicks counted for
+  each button, with the system's double-click time and distance; the
+  modifiers on every event of the phones; `setTextCaret` for the input
+  methods of Windows and macOS.
+- `services.nim`: `standardFolder` (XDG's user-dirs, Windows' Known
+  Folders), `folderName`, the BSDs' names in `platformName`.
+- Driver fixes: WinAPI (Alt shortcuts, mouse capture, signed coordinates,
+  surrogate pairs, the client size, the size Windows suggests at a change
+  of density, CR LF in the clipboard, 64-bit ticks), X11 (the scale
+  without `Xft.dpi`, the first window's size at the scale, only the
+  pictures' part copied, `_NET_WM_NAME`, large pastes (INCR) and Latin-1,
+  the monotonic clock, the BSDs' library names), Cocoa (the app's name in
+  the title and the menus, Hide, Minimize, Close, files dropped from the
+  Finder, the system's cursors), SDL3 (safe area, text input on demand,
+  TTF_SetFontStyle linked).

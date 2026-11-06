@@ -1,10 +1,10 @@
-## Retro Script (retro/rscript): the language feature by feature, errors
+## Retro Script (retroui/rscript): the language feature by feature, errors
 ## with their line and column, closures and scopes, the host's objects and
 ## functions, the step budget and cancel, JSON, a few classic programs, and
 ## how fast it runs.
 
 import std/[unittest, strutils, monotimes, times]
-import retro/rscript
+import retroui/rscript
 
 proc ev(src: string): string =
   ## The script's last value, as console.log shows it.

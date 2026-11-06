@@ -8,8 +8,8 @@ Nerd Fonts symbols font (release asset NerdFontsSymbolsOnly.zip).
 
     python3 tools/genlineicons.py ~/nerd/SymbolsNerdFont-Regular.ttf
 
-Writes src/retro/lineicons.nim (the twins, by pixel icon) and adds the
-glyphs it needs to src/retro/fonts/Icons.ttf (and Icons.ttf.z), keeping
+Writes src/retroui/lineicons.nim (the twins, by pixel icon) and adds the
+glyphs it needs to src/retroui/fonts/Icons.ttf (and Icons.ttf.z), keeping
 every glyph that is there already.
 """
 import os, sys, zlib, re

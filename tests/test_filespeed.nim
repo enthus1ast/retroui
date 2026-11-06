@@ -3,8 +3,8 @@
 ## filtering as the user types, sorting -- and the memory they keep.
 
 import std/[os, strutils, times, monotimes]
-import retro
-import retro/uirelays/input
+import retroui
+import retroui/uirelays/input
 import harness
 
 fakeDriver()

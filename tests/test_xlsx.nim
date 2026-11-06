@@ -1,7 +1,7 @@
-## Tests of the Excel reader and writer (retro/xlsx).
+## Tests of the Excel reader and writer (retroui/xlsx).
 
 import std/[os, strutils]
-import retro/xlsx
+import retroui/xlsx
 
 let dir = currentSourcePath().parentDir / "data" / "xlsx"
 

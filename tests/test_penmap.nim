@@ -4,8 +4,8 @@
 ## without a tablet.
 
 import std/math
-import retro/uirelays/input
-import retro/uirelays/drivers/penaxes
+import retroui/uirelays/input
+import retroui/uirelays/drivers/penaxes
 
 proc near(a, b: float; eps = 1e-4): bool = abs(a - b) <= eps
 

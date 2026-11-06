@@ -1,13 +1,13 @@
-## Tests of retro/oauth (and retro/sha2): SHA-256 and HMAC vectors, PKCE
+## Tests of retroui/oauth (and retroui/sha2): SHA-256 and HMAC vectors, PKCE
 ## as RFC 7636 shows it, the providers' addresses, and whole sign-ins
 ## against a fake sign-in service of the test's own (its authorize page
 ## sends the browser back to the app's loopback address with a code; its
 ## token endpoint checks the PKCE pair) -- with `openBrowser` doing the
-## browser's part through retro/http. Also: a wrong state refused, other
+## browser's part through retroui/http. Also: a wrong state refused, other
 ## pages and repeated hits, a refused sign-in, cancelling, refreshing.
 
 import std/[net, os, strutils, times, json, locks, typedthreads, nativesockets, base64]
-import retro/[http, oauth, sha2]
+import retroui/[http, oauth, sha2]
 
 # ---- SHA-256 ------------------------------------------------------------------------------
 

@@ -11,9 +11,9 @@
 ##   tests/fuzz/fuzzui 1000 7        # rounds, random seed
 
 import std/[random, strutils, os]
-import retro
-import retro/[typeset, textfile]
-import retro/uirelays/input
+import retroui
+import retroui/[typeset, textfile]
+import retroui/uirelays/input
 import ../harness
 
 randomize(if paramCount() >= 2: parseInt(paramStr(2)) else: 7)

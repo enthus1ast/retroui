@@ -27,7 +27,7 @@
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, osproc, strutils]
-import retro/[gfx, imaging]
+import retroui/[gfx, imaging]
 
 const
   ToolUrl = "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$1.AppImage"

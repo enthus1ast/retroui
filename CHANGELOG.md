@@ -2,6 +2,127 @@
 
 ## 0.20.0
 
+- **The package is `retroui`** (github.com/foxoman/retroui): `nimble install
+  retroui`, `import retroui`, `import retroui/report`... (`retroui.nimble`,
+  `src/retroui.nim`, `src/retroui/`). An app of before changes `retro` to
+  `retroui` in its imports; the tools keep their names (`retroapk`,
+  `retroios`, `retrokit`), and so do the settings folders (`~/.retro`).
+- **The examples are built only when asked**, one at a time: `nimble
+  photo`, `nimble photoexe`, or any app of the table with `RETRO_APP=...
+  nimble exe` / `appapk` / `appimage` / `macapp`; GitHub's Release
+  workflow builds the one app chosen, by hand, and CI compiles the examples
+  only when run by hand. **HR Book** joins them: employee records of
+  several hotels, sealed with a PIN, smart Excel import, letters, charts.
+- **For AI agents and their users:** `skills/retroui/SKILL.md` (building
+  apps with the kit), `AGENTS.md` and `CLAUDE.md` (rules for changing it),
+  `llms.txt`.
+- **Menus answer at once.** A row under the pointer takes over the moment
+  the pointer moves down or up the menu; only on its way to an open
+  submenu (inside the triangle from the pointer to the submenu's edge) do
+  the rows it crosses wait, and a rest of 300 ms there gives the row the
+  menu. Long menus (Retro Photo's) no longer feel slow.
+- **CSV written as well as read:** `writeCsv(path, table)`, `toCsv`,
+  `csvLine`, `csvField` (`retroui/charts`): quoted only where needed,
+  CRLF lines; `parseCsv` reads them back to the same table.
+- **`numberEdit` and `intEdit`:** clicking or tabbing into one selects its
+  text, so typing replaces the number; a value the app changes while the
+  box has the focus shows at once.
+- **BUILDING.md** covers the desktop too: Windows from Windows, Linux or
+  macOS (MinGW), its icon and version, macOS `.app`s, Linux AppImages.
+- Fixed: `retrokit new` made apps that imported `retro` (now `retroui`).
+- **The apps, with the new text, menus and frame:** Retro Photo 4.9.3,
+  Retro Files 3.3.3, Retro Mail 1.0.4, Retro Board 1.3.2 (its About box
+  no longer shows the credit twice), HR Book 0.1.
+
+- **GNU FreeFont is the kit's text: FreeSans the default, FreeSerif and
+  FreeMono beside it, each in its regular, bold, italic (oblique) and bold
+  italic.** `UiFont` is now `ufSans` (the default), `ufSerif`, `ufMono`
+  and `ufFile`; `TextStyle.italic` and bold italic draw the
+  fonts' own italics (no slanted copies), `mono` text is FreeMono,
+  `TextStyle.serif` (and serif families in HTML, the canvas and
+  documents) FreeSerif. **Arabic everywhere:** FreeSans's Arabic is
+  FreeSerif's (bold: FreeSerif Bold's), FreeMono draws its own in its
+  regular, a font file without Arabic gets FreeSerif's; joined, lam-alef,
+  bidi and mirroring as before -- in text boxes, the rich editor,
+  `htmlView`, the canvas, PDF and reports. Documents (`retroui/textengine`)
+  set Arabic by FreeSerif's OpenType tables instead of Amiri's; a document
+  naming a font the kit had before is drawn in its FreeFont like (Amiri:
+  FreeSerif, DejaVu Sans: FreeSans).
+  - **Gone:** MS W98 UI (+HD), Retro Sans (+Arabic, HD, its bitmaps:
+    `font.nim`, `unifontar.nim`), Kawkab Mono, Fixedsys Excelsior (+HD),
+    Open Sans, DejaVu Sans and Mono, Amiri, their generators and licences,
+    and `-d:retroNoW98`, `-d:retroNoKawkab`, `-d:retroNoFixedsys`,
+    `-d:retroNoOpenSans`. The icon font and Retro Board's handwriting
+    fonts stay. `ufW98`, `ufRetro`, `ufSmooth`, `ufOpenSans` (FreeSans) and
+    `ufKawkab`, `ufFixedsys` (FreeMono) compile for this release as
+    deprecated aliases; `setPixelFont` and `usesPixelFont` are deprecated;
+    `setHdText` now only smooths pixel icons and small marks on HD screens.
+    Retro Board's "Retro" font slot is FreeSerif Italic (the name kept for
+    saved boards).
+  - **The look of a font file of before:** the letters are drawn in gray
+    as Retro Photo 4.9 drew FreeSans from a file -- the heights on whole
+    pixels, the strokes as the font has them (not narrowed to a pixel:
+    FreeSans keeps its weight), the font's line gap in every line, small
+    text's light gamma (1.2); FreeMono's thin strokes darkened at small
+    sizes. **Sharp text** is a choice (`setSubpixelText`, "Text edges" in
+    `appearanceSettings`, `RETRO_TEXT=sharp`): the screen's red, green and
+    blue strips, three times as fine across, as ClearType, the stems fitted
+    to the pixels (CPU and GPU; off by default everywhere).
+  - **Size:** `tools/genfreefont.py` cuts the twelve fonts to what an app
+    needs (Latin, Greek, Cyrillic, Hebrew, Arabic, punctuation and
+    symbols; no TrueType hinting): 0.94 MB compressed in every app, where
+    the fonts before took 0.96 MB (a "hello" grows 16 KB); apps with
+    `retroui/textengine` lose Amiri's 0.21 MB (Retro Board: 4.92 to 4.69 MB).
+  - **Crisp at every scale:** the zones (baseline, x-height, cap height)
+    on whole pixels for every face (stems fitted to the pixels too in
+    Sharp text), thin faces darkened at small sizes (FreeMono), kerning
+    read from GPOS (most fonts of today kern only there; FreeFont's legacy
+    `kern` tables are dropped), a style a font lacks made bold or slanted
+    as FreeType does (its outline emboldened, the letters wider). Line
+    height, baseline and the controls' sizes come from FreeSans with its
+    line gap (a 15-pixel line at 12).
+  - Settings: "look.fontv" is 3; a font stored before (MS W98 UI, Kawkab
+    Mono...) is FreeSans now, a font file stays one; `uiFontKey` words are
+    "sans", "serif", "mono", "file" (the old ones still read).
+    `RetroFontCredit` is the About box's credit for the fonts.
+- **A font file of the user's, more kinds.** `appearanceSettings` offers
+  FreeSans, FreeSerif, FreeMono and a font file. `.ttc` collections are
+  read (`sfntOf` gives one face as a file), a font file's italic and bold
+  italic are found beside it (`styleBeside`), `setUiFontFile` takes all
+  four styles; documents draw variable fonts at the weight asked for.
+- Fixed: `noKerning` in `retroui/textengine` turned off only the legacy
+  kerning, not a font's GPOS kerning.
+- **Right-to-left text, by the whole Unicode bidi algorithm.** The
+  explicit embeddings, overrides and isolates (U+202A..202E,
+  U+2066..2069) work, and every case of Unicode's conformance tests
+  passes (BidiTest.txt, BidiCharacterTest.txt; 40 % and 99.7 % before);
+  more of Unicode's classes, brackets and mirror images. The zero width
+  non-joiner and joiner, the word joiner and the byte order mark no
+  longer split a run (a Persian می‌خواهم in Latin text reads as one word),
+  and joining follows Unicode (the direction marks let it through, the
+  isolates break it). New: `plainLetters`, `joinsAt`, `shownRtl`.
+  - **Text boxes and the rich editor:** the caret goes through a line as
+    it reads (Left goes on in an Arabic line), a letter and its vowels are
+    one step (Backspace takes a vowel off, Delete a letter with its
+    vowels), and it sits where the next letter typed goes when Latin and
+    Arabic meet; a selection of mixed text is drawn where its parts are;
+    pasted joined shapes come in as letters; a word styled in its middle
+    keeps its letters joined. `htmlView` keeps the joiners in its words.
+  - **The Arabic interface** mirrors the frame, menus, lists and scroll
+    bars, not the text being read or typed: text boxes, the rich editor,
+    Markdown and HTML views keep their own directions, and charts, the
+    map and the media controls their sides (they were mirrored: a caret
+    at the wrong end, a chart's months backwards, a map's mouse across).
+  - **PDF:** a line with right-to-left text carries its text as written
+    (`/ActualText`: reading order, the letters, a zero width non-joiner
+    kept), and every glyph maps to its letters, not their joined shapes;
+    `lang` (BCP 47; "ar" by itself when the first text is Arabic) and
+    right-to-left page order. `pageText` honours `/ActualText` and reads
+    Arabic in reading order from other files too, whether they have its
+    glyphs as they stand or as they read.
+  - **Excel:** `XlsxSheet.direction` -- a sheet whose first letters are
+    Arabic opens right to left (`sdAuto`), or as said; `readXlsx` gives a
+    sheet's own.
 - **The window's frame is always the user's choice.** In every app, with
   nothing to write: the Windows 3.1 frame's control menu has **Windows' Own
   Frame** (elsewhere **Desktop's Own Frame**), and on Windows the system's
@@ -10,6 +131,26 @@
   folder) and wins over the frame it was built with. `chooseClassicFrame`,
   `keptFrame`, `userFrameChoice`, `appIdent`; `storeAppearance` no longer
   keeps the frame (a kept one is brought over once).
+- **The 3.1 frame on every desktop, and the way back from the system's:**
+  - macOS: **Windows 3.1 Frame** in the menu bar's **Window** menu (there
+    with either frame); the control menu's Move and Size with the arrow
+    keys (Return keeps, Esc puts back).
+  - X11 (Linux, the BSDs, Wayland desktops through XWayland): with no
+    window manager, or one without EWMH, the driver itself moves, sizes
+    (the pointer or the arrow keys) and maximizes the window. The window
+    manager keeps its own menu: `appearanceSettings` (**Window**) is the
+    way back to the 3.1 frame there.
+  - Wayland's own windows: the GTK 4 driver (undecorated; moved and sized
+    by the compositor from the press; the arrow keys on X11 only) and the
+    SDL 3 and SDL 2 drivers (borderless; SDL's hit test, from
+    `windowPartAt`: no arrow keys, and a double click on the title bar
+    maximizes on Windows only). Siwin too (not on macOS; on Windows the
+    frame chosen is the next window's). Minimize for SDL and GTK 4.
+  - The system menu's item is checked while the 3.1 frame is on; a window
+    that cannot have the system's frame back keeps the 3.1 one;
+    `appearanceSettings` leaves the choice out with `userFrame = false`.
+  - X11: focus moving to a window inside the app's no longer draws its
+    title bar inactive.
 - **`app` takes every option by name:** `theme`, `frame` (`wfAsBuilt`,
   `wfSystem`, `wfClassic`), `userFrame`, `gpu`, `zoom`, `scale`, `font`,
   `id`, `icon`, `look` (the look the user picks kept in those settings:
@@ -25,6 +166,36 @@
   - About 60 % fewer allocations a frame; text measured without copies;
     shapes' buffers reused.
   - A fast wheel (a notch every frame) scrolls at once instead of stalling.
+  - Small changes -- a lit button, a letter typed, a slider -- take half the
+    time or less on the CPU (800 x 600: a hover 227 to 98 µs, a value 224 to
+    94 µs; a whole frame 343 to 249 µs): each command's box is worked out
+    once a frame, tiles are 64 pixels wide (were 256), and a change under
+    96 K pixels is drawn on the app's own thread (waking the other cores
+    cost more).
+  - On the GPU, only what changed is drawn, in up to eight rectangles:
+    straight onto the window where it keeps its pixels (EGL's buffer age 1:
+    X11 with Mesa), through the kept frame where it holds an older one;
+    the system is told what changed (`eglSwapBuffersWithDamage`). Hovering,
+    typing, a value: 2.8 to 3.9 times faster with Mesa's software GPU.
+  - No memory taken by a frame of the kit's own drawing: rows, labels with
+    their `&`, text, fills, the tiles drawn and sent (`tests/test_drawalloc`);
+    `idOfLabel` makes a widget's id from its kind and label without a string.
+  - Apps built for size (`--opt:size`: `nimble apps`, the packages) compile
+    the drawing for speed: their frames twice as fast, for about 50 KB.
+- **Linux needs only libX11.** Xft and XRender are loaded when the system
+  has them (the system's fonts for scripts the kit's lack, translucent
+  fills); without them the app starts and draws as before.
+- **Memory:** `dropDrawingCaches` lets go of the glyphs, magnified icons and
+  frame buffers the drawing keeps (called when memory is critical and when
+  the app goes to the background); glyphs of a size or font no longer used
+  are let go of at once. `wakeInShown(rect, ms)`: an animation asks for
+  frames only while it can be seen.
+- **New in uirelays:** `GpuRelays.gpuBufferAge` and `swapGpuDamage` (X11's
+  EGL gives both).
+- **Fixed:** keys and letters typed while a frame worked (a picture decoded,
+  anything calling `busyTick`) were lost; they are kept for the next
+  frames until the busy box shows. The GPU's 3.1 dither (scroll bar
+  tracks) could be a pixel off in a frame drawn into the kept texture.
 - **Fixed, found with AddressSanitizer, UBSan and LeakSanitizer, the
   fuzzers and Wine:**
   - X11: every app crashed on exit (libXrandr was unloaded too early);
@@ -44,12 +215,31 @@
     starts after its icon at any scale.
   - `$RETRO_SCALE` wins over a kept size; `$RETRO_GPU` takes `auto`,
     `gpu`, `cpu` (and `1`, `0`).
+- **Hardening** (the tests under AddressSanitizer, UBSan and
+  LeakSanitizer again, before the release):
+  - Retro Photo's engine: a picture of several layers kept its first
+    layer when it was closed (`simpleLayer`, asked each frame: Nim 2.2's
+    `return nil` over a `result` already set does not free it) -- the
+    layer's pixels stayed in memory for good.
+  - Retro Board: a flowchart's next shape (`addConnected`) read its
+    arrow's look from memory already freed.
+  - JPEG XL and OpenEXR: a damaged file left what was read before it
+    failed in memory (readers' results going into fields).
+  - The rich editor leaked the pieces of each right-to-left paragraph
+    laid out; GIF: the bits after the end code shifted further than a
+    number holds (undefined in C).
+  - Tests: `test_hardening` keeps the leaks fixed; the mail tests' mock
+    server is stopped at exit without touching what was freed;
+    `tests/lsan.supp` holds what Nim's runtime keeps for each thread.
 - **New:** `readOnly` for `edit` and `editArea` (selected and copied, not
   changed); `peekId` (a widget's id without counting a use). uirelays: an
-  item of the app's in the system frame's menu (`setFrameMenuItem`,
-  `frameMenuItemChosen`; Windows).
+  item of the app's in the system's menu (`setFrameMenuItem`,
+  `frameMenuItemChosen`; Windows, macOS); `windowPartAt`, the app's frame
+  for drivers whose system asks before a press (SDL's hit test);
+  `frameRelays` for GTK 4, SDL 3, SDL 2 and Siwin.
 - Tests: `test_widgetfixes`, `test_hardening`, `test_x11close`;
-  `test_frame` and `test_scroll` cover the above.
+  `test_frame` (the hit test's parts, the menu item's check mark, a frame
+  that cannot come back) and `test_scroll` cover the above.
 - The examples are 0.20.0; the gallery keeps its look, its Drawing tab grows
   with the UI's scale, and its tabs' Alt letters no longer clash with the
   menus.
@@ -215,7 +405,7 @@
   a message swipes right to archive and left to delete. Pictures from the
   web wait until asked. `tests/test_mail.nim` runs the engine against
   `tests/mailmock.py`, a stand-in for both sign-ins, Graph and Gmail.
-- **New modules** (imported on their own: `import retro/http`):
+- **New modules** (imported on their own: `import retroui/http`):
   - `http`: requests from any thread -- WinHTTP on Windows, libcurl (or the
     curl command) elsewhere, Java's HTTP on Android (PATCH too).
   - `oauth`: OAuth 2.0 in the system browser with PKCE and a loopback
@@ -275,7 +465,7 @@
   it was on tablets and phones (and sharp desktop screens), as the zoom box
   says.
 - **Retro Board 1.3: the panels as Retro Photo's.** The properties panel
-  is now `retro/dock`'s docked panels down the right, in tabs grouped by
+  is now `retroui/dock`'s docked panels down the right, in tabs grouped by
   what they are about: Color, Stroke and Fill (how a shape looks); Text,
   Arrow and Shapes (what it is); Arrange, Board and Info (where it goes,
   the pages and the canvas, the memory). Dragged by their tabs into other
@@ -301,7 +491,7 @@
   adds a flowchart's next shape with an arrow, Edit > Find (Ctrl+F, F3),
   Arrange > Position and Size, View > Stats (the board, the memory used,
   Free Memory), Zen mode (Alt+Z) and View mode (Alt+R), export in the dark
-  colors. The engine (`retro/board`): `fillColor`, `roughness`, `round`,
+  colors. The engine (`retroui/board`): `fillColor`, `roughness`, `round`,
   `elbow`, `link`, `Board.paper`; `fillLines`, `roundCorners`,
   `elbowPath`, `addConnected`, `findText`, `paperOf`.
 - **Shapes stay in their clip when the GPU draws** (`gfxgpu`): a path was
@@ -320,12 +510,12 @@
   screen, zoomed in) was drawn as nothing -- the atlas said "too big" in a
   field the caller did not look at. It is now drawn with a texture of its
   own, what came before it drawn first.
-- **Memory** (`retro/board`): pictures are kept once per board
+- **Memory** (`retroui/board`): pictures are kept once per board
   (`assets`, `addAsset`, `assetOf`; files keep them once too, older ones
   are read) -- a 3 MB photo moved 60 times took 354 MB, now 3 MB; the
   steps to undo keep at most `undoBudget` bytes (16 MB), the drawings
   `drawingBudget`; Retro Board lets them go when memory is short.
-- `addFontData(family, style, data, packed)` (`retro/textengine`): a font
+- `addFontData(family, style, data, packed)` (`retroui/textengine`): a font
   the program carries, offered by name and read when first drawn.
 - `fontSpans`: text set in a board font, letters it lacks in another.
 
@@ -339,12 +529,12 @@
   tap) to type in a shape; pinch and two-finger pan on phones, a long
   press for the menu; tldraw's keyboard shortcuts; a dark mode; saved as
   you go; `.board` files; PNG, SVG and PDF export, shared from a phone.
-- **`retro/board`**, the whiteboard's document: pages of shapes, styles,
+- **`retroui/board`**, the whiteboard's document: pages of shapes, styles,
   bound arrows, undo and redo of changes (`change`, `begin` / `commit` /
   `cancelChange`), hit-testing, snapping guides, groups, clipboard,
   align / distribute / flip, the drawing of each shape as outlines (kept
   till it changes), `.board` JSON, `renderBitmap`, `toSvg`, `toPdf`.
-- **`retro/freehand`**: the outline of a stroke drawn with a pen, a finger
+- **`retroui/freehand`**: the outline of a stroke drawn with a pen, a finger
   or the mouse -- thinner where it went fast or was pressed lightly,
   streamlined, tapered and capped -- as one polygon.
 - **Two-finger gestures** on Android: a pinch and a two-finger drag come as
@@ -383,7 +573,7 @@
   top and size grips; its menu bar a Window menu (`mdiWindowMenu`) and
   Insert > Field, a long submenu; its folder tree room inside its frame
   and a menu on a right click.
-- **Lines with arrowheads** (`retro/photoshapes`): a shape's open lines
+- **Lines with arrowheads** (`retroui/photoshapes`): a shape's open lines
   get an end at their start and their end (`ShapeData.startEnd`,
   `endEnd`: `LineEnd` -- an arrow, an open arrow, a stealth arrow, a
   circle, a square, a diamond, a bar; `endW`, `endL` their size), drawn in
@@ -395,7 +585,7 @@
   widget's own width now takes its room from the shared ones (as wide as
   last frame) -- the shared column took all of it and pushed the rest out
   of the row (Retro Photo's Libraries panel: its New... button cut off).
-- **The ink tables made once, by one thread** (`retro/photoinks`): a CMYK
+- **The ink tables made once, by one thread** (`retroui/photoinks`): a CMYK
   or grayscale picture separated on all the cores asked for them at once
   -- each thread made them over the others' and freed tables still being
   read (a crash now and then saving a CMYK TIFF; AddressSanitizer found it).
@@ -408,7 +598,7 @@
   menu and in `mdiWindowMenu`; a pinned window stays over the other
   documents (the palettes still over it), and clicking one under it makes
   that one the active window without hiding the pinned one.
-- **The whole side panel sized from its edge** (`retro/dock`): a split bar
+- **The whole side panel sized from its edge** (`retroui/dock`): a split bar
   between the documents and the dock -- dragged, the first open column
   widens or narrows (up to what leaves the documents room); with every
   column collapsed to icons, dragged out it opens the main one again.
@@ -426,7 +616,7 @@
 - **Pointers for sizing and moving** (`CursorKind`): `curSizeNWSE`,
   `curSizeNESW` and `curMove` in every driver (X11, Windows, GTK, SDL,
   macOS; the others their nearest).
-- **`retro/edgetrace`** (new): the edges of a picture found (as Canny's
+- **`retroui/edgetrace`** (new): the edges of a picture found (as Canny's
   detector: the color channel that changes most, alpha too) and linked
   into ordered lines -- `newEdgeMap`, `chainAt`, `chainPoints`,
   `chainPart`, `chainClosed`, `simplify`; pictures over 6 MP traced on a
@@ -887,7 +1077,7 @@ X11.
 
 **Toolkit**
 
-- `retro/photohdr`: 32-bit light (`Layer.hdr`), `toHdr`, `setExposure`,
+- `retroui/photohdr`: 32-bit light (`Layer.hdr`), `toHdr`, `setExposure`,
   `toneMap`, `flattenedHdr`, `readHdr`/`writeHdr` (Radiance RGBE, run
   length), `readPfm`/`writePfm`; `encodeBmp32`, `decodeBmp` keeps alpha;
   `ExportFormat` `efHdr`, `efPfm`; `ExportOptions.bmpBits`.
@@ -941,7 +1131,7 @@ X11.
 
 **Toolkit**
 
-- `retro/photoartistic`: the 36 filters above, built on Kuwahara filters
+- `retroui/photoartistic`: the 36 filters above, built on Kuwahara filters
   made of box sums, Voronoi cells and value noise, on all the cores.
 - `photoshapes`: `CustomShape.category`, `ShapeCategories`, the shapes
   built from polygons, stars, circles and bands (`CustomShapes` is a seq).
@@ -991,7 +1181,7 @@ X11.
   the panels in the same face color, tabs as the docked panels' in every
   dialog; the dock's header in the title bar's blue.
 - **Panels docked as today's Photoshop has them** (the toolkit's new
-  `retro/dock`): down the right, Color / Swatches / Gradients / Patterns,
+  `retroui/dock`): down the right, Color / Swatches / Gradients / Patterns,
   Properties / Adjustments / Libraries and Layers / Channels / Paths open,
   the rest as a strip of icons beside them (a click shows that panel
   beside the strip). Drag the bars between groups to share the height,
@@ -1077,15 +1267,15 @@ X11.
 
 **Toolkit**
 
-- `retro/dock`: docked panels (groups of tabs, columns collapsed to icons,
+- `retroui/dock`: docked panels (groups of tabs, columns collapsed to icons,
   fly-outs, floating palettes, drag and drop of panels, kept as JSON).
-- `retro/photocc`: Layer Cleanup, Harmonize with a shadow, Colorize from
+- `retroui/photocc`: Layer Cleanup, Harmonize with a shadow, Colorize from
   color hints, Content-Aware Expand, artboards; `photosmart`: Spot Healing
   types, the Patch's options; `photodevelop`: Dehaze; the composite:
   Clarity and Grain layers; `textengine`: Dynamic Text (`fit`,
   `fitScale`); `photowidgets`: the on-canvas color picker
   (`hudPickerRects`, `drawHudPicker`, `hudPick`); `canvasSizeAt`.
-- `retro/photopresets`: Adjustment Presets -- 36 built in, put on an image
+- `retroui/photopresets`: Adjustment Presets -- 36 built in, put on an image
   as adjustment layers, their look on pixels, files, batches.
 - `aboutBox`: a banner (the icon from a PNG or a glyph, name, version,
   tagline, a rainbow), pages of What's New and Credits, Copy Info
@@ -1190,7 +1380,7 @@ X11.
 
 - `fileColumns` and `fvColumns`; `batchNames`, `renameAll` (names that swap
   places too), `selectMatching`, `globMatch`; `FileListEvent.preview`.
-- **`retro/pdfview`**: `openPdfView`, `pdfView` (pages drawn on workers at
+- **`retroui/pdfview`**: `openPdfView`, `pdfView` (pages drawn on workers at
   the size shown, zoom, page in view), `pdfPage`, `pdfPreview`,
   `addPdfPreviews`. `pageAsync` and `addPageReader` draw pages of documents
   on the worker threads.
@@ -1284,7 +1474,7 @@ X11.
   a taller bar for text below), `buttonAt` placed by hand; a picture is an
   `Icon` or a glyph of the icon font (`glyphPic`); `labeledSize`,
   `drawLabeled` for your own. Tool buttons fill a taller bar.
-- **`retro/morecontrols`:** `rangeSlider` (two thumbs; drag the band to move
+- **`retroui/morecontrols`:** `rangeSlider` (two thumbs; drag the band to move
   both), `menuButton`, `splitButton`, `tagInput` (chips with ×; Enter or a
   comma adds, Backspace takes the last off), `autocomplete` (a text box
   whose matches drop under it), `knob`, `led`, `accordionHeader`,
@@ -1343,13 +1533,13 @@ X11.
   arguments were expressions.
 - `panel`: a framed white area with padding that scrolls when what it
   holds is taller (the content area of a business app).
-- **Excel files:** `retro/xlsx` reads .xlsx workbooks (shared strings,
+- **Excel files:** `retroui/xlsx` reads .xlsx workbooks (shared strings,
   numbers, dates from their styles, both date systems) and writes plain
   ones (`readXlsx`, `writeXlsx`).
-- **Sealed files:** `retro/vault` seals data with a password or PIN
+- **Sealed files:** `retroui/vault` seals data with a password or PIN
   (Monocypher, vendored: Argon2id and XChaCha20-Poly1305): `newVaultKey`,
   `seal`, `unseal`, `isSealed`, `vaultKeyFor`, `wipe`.
-- `retro/templates`: `#[tags]#` filled from a table (`fillTags`, with
+- `retroui/templates`: `#[tags]#` filled from a table (`fillTags`, with
   filters: `|words`, `|words-ar`, `|long`, `|long-ar`, `|n3`,
   `|ar-digits`, `|upper`...), blanks to ask (`#[?Purpose]#`), and amounts
   in words in English and Arabic (`amountWords`, `numberWords`,
@@ -1370,22 +1560,22 @@ X11.
   selected, so the next tap opens again instead of adding to a
   selection; `filePicker` forgets what was selected the last time it was
   open, and starts on the file it was given.
-- **Image editing:** `retro/photo` (documents of layers with 16 blend
+- **Image editing:** `retroui/photo` (documents of layers with 16 blend
   modes, a soft selection, alpha channels, Quick Mask, paths, tile-based
   undo of pixels, selections and paths, transforms by four corners
   (`warpedPixels`: scale, skew, perspective, distort, rotate), Apply Image
   and Calculations, .rp3 / PNG / JPEG / BMP files, size limits
-  `sizeOk`), `retro/photopaint` (brushes, the painting tools with Erase to
+  `sizeOk`), `retroui/photopaint` (brushes, the painting tools with Erase to
   Saved and the stamp From Snapshot / From Saved, bucket, gradients, lines
   with arrowheads, type, paths filled, stroked and edited point by
-  point), `retro/photofx` (over 45 filters with Shear and Extrude, Levels,
+  point), `retroui/photofx` (over 45 filters with Shear and Extrude, Levels,
   Curves, Color Balance, Hue/Saturation by color range, Selective Color,
   Variations, Color Range, previews; a quick median for any radius) and
-  `retro/photowidgets` (the document view with zoom, rulers, marching ants
+  `retroui/photowidgets` (the document view with zoom, rulers, marching ants
   and a Quick Mask of any color; the color picker, the curves, levels and
   shear editors, brush, swatch and layer rows). `examples/photo.nim` is
   Retro Photo 3, an image editor of 1994 made with them.
-- **Warps:** `retro/photowarp` -- Liquify on a mesh (`LiquifyMesh`:
+- **Warps:** `retroui/photowarp` -- Liquify on a mesh (`LiquifyMesh`:
   `push` for the Forward Warp, `reconstruct`, `twirl`, `pucker` / bloat,
   `reconstructAll`; `liquifyImg` of the whole, a part or a preview), Lens
   Correction (`LensCorrection`: distortion, red/cyan and blue/yellow
@@ -1394,7 +1584,7 @@ X11.
   Straighten (`straighten`: turned and cut to the biggest upright
   rectangle it fills, `innerRect`). Retro Photo has Filter > Liquify...,
   Filter > Lens Correction... and the crop tool's Straighten.
-- **Styled type:** `retro/textengine` sets text as an image editor does:
+- **Styled type:** `retroui/textengine` sets text as an image editor does:
   any TrueType font of the system (`systemFontDirs`, `addFontDir`,
   `scanFonts`, `fontFamilies`, `fontStyles`, `fontFace` with faux bold
   and italic for the styles a family lacks) or the built-in ones; per
@@ -1415,11 +1605,11 @@ X11.
   slant (`family`, `style`, `weight`, `italic`, `faceInfo` without loading
   it), .ttc collections (`fontCount`, `parseFace(data, index)`), the
   underline's place and the outlines (`contours`).
-- `retro/textwidgets`: `fontCombo` (each family shown in its own letters),
+- `retroui/textwidgets`: `fontCombo` (each family shown in its own letters),
   `fontStyleCombo`, `fontSample`. `combo` takes `preview` to draw its
   items (`ItemPreview`). Fills and polygons of a see-through color are
   drawn see-through (a selection's highlight over a picture).
-- **Type layers and layer styles** (`retro/photo`): `Layer.text` (a type
+- **Type layers and layer styles** (`retroui/photo`): `Layer.text` (a type
   layer: `isText`, `addTextLayer`, `setText`, `drawText`,
   `rasterizeText`, `rasterizeAllText`), kept editable through undo
   (`touchLayers`), Image Size (set again, sharp), Crop and Canvas Size,
@@ -1427,7 +1617,7 @@ X11.
   `LayerFx`, `Effect`, Fill Opacity `fill`): Drop Shadow, Outer Glow,
   Gradient and Color Overlay, Satin, Inner Glow, Inner Shadow, Stroke
   (outside, inside, centered), Bevel and Emboss (inner, outer, emboss,
-  pillow) -- made by `retro/photostyles` (`defaultEffect`,
+  pillow) -- made by `retroui/photostyles` (`defaultEffect`,
   `renderFx`, distance fields and blurs on all the cores), kept until the
   layer or the style changes, merged down, scaled by Image Size, saved.
   `layerRows`: a "T" for type layers (`thumbGlyph`) and an "fx" mark
@@ -1443,7 +1633,7 @@ X11.
   on it asks to rasterize it first.
 - `pictureBox` (photowidgets): a framed box with a picture fitted in it,
   where the mouse goes (`toPicture`) and whether it is dragged.
-- **Layer masks and adjustment layers** (`retro/photo`): a layer's
+- **Layer masks and adjustment layers** (`retroui/photo`): a layer's
   `mask` (gray: white shows, black hides; `maskOff`), painted on when
   `editMask` is on (`layer` gives it; `current` the layer itself);
   `addLayerMask` (Reveal All, Hide All, Reveal / Hide Selection),
@@ -1452,7 +1642,7 @@ X11.
   under them where their own pixels -- their mask -- let: Levels, Curves,
   Brightness/Contrast, Color Balance, Hue/Saturation, Selective Color,
   Vibrance, Exposure, Photo Filter, Black & White, Channel Mixer,
-  Threshold, Posterize, Invert (`adjustmentFn` in `retro/photodevelop`;
+  Threshold, Posterize, Invert (`adjustmentFn` in `retroui/photodevelop`;
   composited through a 33^3 color table). Masks follow Image Size, Canvas
   Size, Crop, Flip, Rotate and Content-Aware Scale (`pixelLayers`), merge
   down with their layer and are kept in .rp3 files. Painting on any mask
@@ -1467,7 +1657,7 @@ X11.
   painted on, crossed out when off) and an icon (`LayerRow.maskThumb`,
   `maskActive`, `maskOff`, `icon`; `LayerRowsEvent.maskClicked`,
   `thumbClicked`). Pixel icons for adjustment layers and layer masks.
-- **Smart tools, on the device:** `retro/photosmart` -- Content-Aware
+- **Smart tools, on the device:** `retroui/photosmart` -- Content-Aware
   Fill (PatchMatch from a small copy up, lines that meet the hole carried
   into it, its colors made to meet the surroundings), healing (`heal`:
   another place's texture with the light and color of where it goes), the
@@ -1477,12 +1667,12 @@ X11.
   a guided filter) and Select Sky, Content-Aware Scale (seams of least
   detail on a small copy, the subject and skin spared) and enlarging with
   Preserve Details (`enlarge`; Lanczos resampling, `rsLanczos`, in
-  `retro/photo`). Also a minimum cut of a graph (`CutGraph`, `maxflow`,
+  `retroui/photo`). Also a minimum cut of a graph (`CutGraph`, `maxflow`,
   Boykov-Kolmogorov). Retro Photo has them as tools (J), in Edit (Content-
   Aware Fill, Content-Aware Scale...), Select (Subject, Sky) and Image Size.
 - `photopaint`: a stroke tells its document, layer, coverage and stamp
   offset (`strokeDoc`, `strokeLayer`, `coverage`, `stampOffset`).
-- **Develop:** `retro/photodevelop` makes a photo's everyday corrections in
+- **Develop:** `retroui/photodevelop` makes a photo's everyday corrections in
   one go, as camera raw programs do: white balance (temperature, tint),
   exposure, contrast, highlights, shadows, whites, blacks, clarity,
   dehaze, vibrance, saturation, noise reduction (of the light, edges
@@ -1496,7 +1686,7 @@ X11.
   filters), Black & White (with a tint), Channel Mixer, and Reduce Noise
   (`detailImg`). Retro Photo has them in Image > Adjust and
   Filter > Develop... (Ctrl+Shift+A).
-- **All the cores:** `retro/parallel` shares work out among the
+- **All the cores:** `retroui/parallel` shares work out among the
   processor's cores (`parallelFor`, `parallelRows`, `parallelChunks`;
   `threadCount`, `setThreadCount`, $RETRO_THREADS). The image engine uses
   it everywhere: compositing, the filters and adjustments, resampling,
@@ -1533,7 +1723,7 @@ X11.
   the app's own folder.
 - `filePicker`: several pickers in one program (Open, Save As, Place) no
   longer reset each other; saving puts the focus in the file name.
-- **Photoshop documents:** `retro/psd` reads .psd and .psb (8, 16 and 32
+- **Photoshop documents:** `retroui/psd` reads .psd and .psb (8, 16 and 32
   bits; RGB, grayscale, CMYK, Lab, indexed, duotone, bitmap,
   multichannel; RLE and ZIP data, with or without prediction): the
   layers, groups (`lsct` with the group's own blend mode), masks (with
@@ -1544,7 +1734,7 @@ X11.
   picture, the resolution and the light's angles. `writePsd` writes them
   back (RGB, grayscale or CMYK; .psb when big) with any extra blocks
   (`PsdLayer.extra`, `vectorMaskData`).
-- `retro/photofiles`: any picture in, any picture out. `openPicture`
+- `retroui/photofiles`: any picture in, any picture out. `openPicture`
   (Retro Photo, Photoshop, PNG, JPEG, BMP, GIF, TIFF, Targa), `docOfPsd`
   (groups that pass through give their opacity and masks to their
   layers, others are merged into one; shape layers stay shapes; clipping
@@ -1558,7 +1748,7 @@ X11.
   and GIF with a palette and dither, TIFF compression -- CMYK
   separations for a CMYK image --, Targa RLE, BMP, transparency or a
   matte, scaled). All 316 files of psd-tools' test set open.
-- **Shape layers** (`retro/photoshapes`): `rectPath` (rounded),
+- **Shape layers** (`retroui/photoshapes`): `rectPath` (rounded),
   `ellipsePath`, `polygonPath` (stars, smooth corners), `linePath` (with
   arrowheads), `svgPath` (SVG path data), 19 `CustomShapes`
   (`customPath`), `combine` with the path operations (`PathOp`: combine,
@@ -1572,13 +1762,13 @@ X11.
   `edge` (outlines past the sides), `accumulate`, `clear`.
 - **Clipping masks:** `Layer.clipped` -- a layer shows only where the
   layer under it does (its effects too), composited directly.
-- **Printing inks, Lab, duotones:** `retro/photoinks` models how cyan,
+- **Printing inks, Lab, duotones:** `retroui/photoinks` models how cyan,
   magenta, yellow and black print on paper (Neugebauer's mixing of the
   inks and their overprints, dot gain, black generation, the total ink
   and black limits: `InkSetup`, `setInks`): `inkOf`, `printed`,
   `printedFast`, `proofOf`, `inGamut`, `gamutDistance`; Lab (`labOf`,
   `fromLab`, `labBytes`) and duotones (`DuotoneInk`, `duotoneTable`,
-  `defaultDuotone`). `retro/photo` has the CMYK Color, Lab Color and
+  `defaultDuotone`). `retroui/photo` has the CMYK Color, Lab Color and
   Duotone modes (`toCMYK`, `toLab`, `toDuotone`; `channelCount`,
   `channelNames`, `channelGray`, `showChannel`; one channel edited keeps
   the others in its own space), Proof Colors and the gamut warning
@@ -1591,7 +1781,7 @@ X11.
   dual axis, radial and mandala with up to 16 axes; `symmetric`). A
   stroke's own buffers are made in 64-pixel tiles only where it paints
   (a stroke on a 96 megapixel image no longer takes 576 MB).
-- **Filter Factory plug-ins:** `retro/filterfactory` runs filters written
+- **Filter Factory plug-ins:** `retroui/filterfactory` runs filters written
   as four formulas in the language of Adobe's Filter Factory (the
   channels, the place, eight sliders, `src`, `rad`, `cnv`, `sin`, `mix`,
   `scl`, `rnd`, `? :`...; `compileFormula`, `compileFilter`, `filterFn`
@@ -1662,12 +1852,12 @@ X11.
     balance and exposure on the light itself). Brushes from .abr and .gbr
     files, and saved as .abr.
   - Big images are saved in the background; Edit > Purge > Everything.
-- New in the toolkit for it: `retro/photomerge` (corners matched,
+- New in the toolkit for it: `retroui/photomerge` (corners matched,
   RANSAC, `photomerge`, `exposureFusion`, `focusStackMasks`, Surface Blur,
-  Skin Smoothing, skies), `retro/photowarp` (`drawMesh`, Warp,
+  Skin Smoothing, skies), `retroui/photowarp` (`drawMesh`, Warp,
   `puppetWarp`, `renderSmart`, `variableBlur` and the Blur Gallery's
-  radii), `retro/iccprofile`, `retro/rawphoto` (DNG, lossless JPEG,
-  demosaicing, `developRaw`), `retro/abr`, `retro/photosave` (saving on
+  radii), `retroui/iccprofile`, `retroui/rawphoto` (DNG, lossless JPEG,
+  demosaicing, `developRaw`), `retroui/abr`, `retroui/photosave` (saving on
   a thread of its own), `popupSlider`, `filePicker(fmFolder)` (a folder),
   pixel icons for the selection modes and gradient kinds.
 - **MS W98 UI**, the new default font of every app: martyr—'s outline
@@ -1686,15 +1876,15 @@ X11.
 - `tabStrip`: tabs torn off (dragged out) and moved (`tornOff`, `moved`).
 - MDI: a window docked behind the floating ones (`docked`), the chosen one
   of them, `mdiTitleDragged`.
-- **Keymaps** (`retro/desktop`): commands' keys with defaults and the
+- **Keymaps** (`retroui/desktop`): commands' keys with defaults and the
   user's own over them (`keyFor`, `setKey`, `keymapPressed`,
   `storeKeymap`, `restoreKeymap`, `keymapEditor`).
-- `recentFiles` / `addRecentFile` (`retro/platform`).
+- `recentFiles` / `addRecentFile` (`retroui/platform`).
 - `busy`: `lastBusy` and `busyNow`, what the last long command took.
-- `retro/adobefiles`: Photoshop's swatches (.aco v1/v2, .ase: read and
+- `retroui/adobefiles`: Photoshop's swatches (.aco v1/v2, .ase: read and
   written), curves (.acv) and levels (.alv) (read and written), gradients
   (.grd v5) and patterns (.pat) (read).
-- `retro/photobrushes`: brush presets in folders, tips (round, square,
+- `retroui/photobrushes`: brush presets in folders, tips (round, square,
   chalk, bristles, star, leaf, grass, splatter... and sampled), saved as
   JSON, `strokePreview`, `tipPreview`.
 - Painting: brushes from 1 to 5000 pixels (tips over 1024 kept at 1024 and
@@ -1779,9 +1969,9 @@ X11.
   Docked MDI windows can be `sizable` (their right and bottom edges, a grip
   at the corner; `userSized`). `scrubLabel` -- Photoshop's scrubby
   sliders: a label dragged sideways changes its number.
-- `retro/adobefiles`: color books (.acb: `readAcb`, `writeAcb`,
+- `retroui/adobefiles`: color books (.acb: `readAcb`, `writeAcb`,
   `ColorBook`, `builtinBooks` -- the web's colors, CSS's, process tints,
-  grays); `retro/photosmart`: `refineHair`, `segment` / `regionAt` /
+  grays); `retroui/photosmart`: `refineHair`, `segment` / `regionAt` /
   `findObject` (an Object Finder), `removeBackground`.
 - **Retro Photo 3.7**:
   - The canvas on the GPU when there is one (Preferences > Performance >
@@ -1937,47 +2127,47 @@ the system's own APIs, and a full reference of every control.
   and background colours and bold; `rowHeaders` adds the record indicator,
   `footer` a totals row. Clicks, Space and F4 work on the cells
   (`ev.toggled`, `ev.clicked`, `ev.edited`).
-- **Records and forms** (`retro/records`): `maskedEdit` (phone numbers,
+- **Records and forms** (`retroui/records`): `maskedEdit` (phone numbers,
   codes, dates; Arabic-Indic digits), `recordNav` (|< < 3 of 20 > >| New
   Delete Save, Ctrl+Home / End / PageUp / PageDown), `dateRange` with
   presets (this month, last quarter...), `dualList`, `propertyGrid`,
   `treeGrid`, `wizard`.
-- **Desktop apps** (`retro/desktop`): windows in the window (`mdiArea`,
+- **Desktop apps** (`retroui/desktop`): windows in the window (`mdiArea`,
   `mdiWindow`: move, size, minimize, maximize, the control menu, Ctrl+F6,
   Ctrl+F4, cascade, tile, the Window menu), `findBar` with `findIn` and
   `replaceAllIn`, hot keys the user picks (`hotkeyEdit`,
   `hotkeyPressed`), `aboutBox`.
-- **Charts** (`retro/charts`): 21 kinds -- bars (grouped, stacked, 100 %,
+- **Charts** (`retroui/charts`): 21 kinds -- bars (grouped, stacked, 100 %,
   sideways), lines, areas, combo with a second axis, pies, donuts,
   scatter, bubbles, waterfalls, funnels, gauges, candlesticks,
   histograms, heat maps, radars, tree maps, bullets -- with legends that
   hide series, tooltips by mouse, finger and keys, click events, money /
   percent / 1.2K formats, CSV tables (`readCsv`, `chart(..., table, ...)`)
   and PNG export. `examples/charts.nim` is a ready chart viewer.
-- **Reports, PDF and printing** (`retro/report`, `retro/pdf`,
-  `retro/templates`): reports from Nim code or from HTML templates with
+- **Reports, PDF and printing** (`retroui/report`, `retroui/pdf`,
+  `retroui/templates`): reports from Nim code or from HTML templates with
   data (Mustache style), laid out in pages with headers, footers, page
   numbers, repeated table headers and totals; on screen (`reportView`),
   as PDF (real text, the built-in fonts, Arabic), PNG pages, or printed
   through the system. `examples/invoice.nim`.
-- **Planning views** (`retro/planning`): `kanbanBoard`, `ganttView`,
+- **Planning views** (`retroui/planning`): `kanbanBoard`, `ganttView`,
   `agendaView`, `orgChart`, `kpiTile`, `statCard`, `kpiRow`.
-- **Maps** (`retro/mapview`): a world map with the countries of Natural
+- **Maps** (`retroui/mapview`): a world map with the countries of Natural
   Earth built in -- values by country, markers, routes, zoom and pan, no
   network.
-- **3D** (`retro/view3d`): scenes of boxes, spheres, cylinders, cones,
+- **3D** (`retroui/view3d`): scenes of boxes, spheres, cylinders, cones,
   OBJ and STL models, 3D bar charts; turn, move, zoom, pick; no GPU.
-- **Canvas** (`retro/canvas2d`): the HTML5 Canvas 2D API -- paths,
+- **Canvas** (`retroui/canvas2d`): the HTML5 Canvas 2D API -- paths,
   curves, gradients, patterns, dashes, transforms, text, pictures,
   shadows, compositing, hit tests -- drawn anti-aliased by the kit.
-- **HTML and the web** (`retro/htmlview`): `htmlView` / `htmlBlock` show a
+- **HTML and the web** (`retroui/htmlview`): `htmlView` / `htmlBlock` show a
   safe subset of HTML (no scripts, no network), `htmlToMarkdown`;
   `webView` is the system's WebView on Android and local HTML elsewhere.
-- **Sound and video** (`retro/media`): WAV and tones made and mixed by the
+- **Sound and video** (`retroui/media`): WAV and tones made and mixed by the
   kit and played through the system's own audio (PulseAudio / ALSA,
   waveOut, AudioQueue, MediaPlayer), other formats through the system's
   player, `videoView`, animated GIFs (`loadGif`, `animation`), `uiSound`.
-- **The system's own APIs** (`retro/native`): any shared library
+- **The system's own APIs** (`retroui/native`): any shared library
   (`nativeLib`, `nativeProc`), any Java API on Android by reflection
   (`javaStatic`, `javaCall`...), Objective-C on macOS and iOS (`objcSend`),
   Win32 and COM, Termux:API; `vibrate`, `deviceName`, `osVersion`,
@@ -2019,7 +2209,7 @@ the system's own APIs, and a full reference of every control.
 
 ## 0.6.0
 
-- **Windows 3.1 pixel icons everywhere** (`retro/pixelicons`): 78 icons
+- **Windows 3.1 pixel icons everywhere** (`retroui/pixelicons`): 78 icons
   drawn pixel by pixel in the manner of 3.1 (folders, drives, the
   computer, file kinds, tool bar actions, message box signs, the
   hourglass...), each in 16x16 and 32x32, used as text like the icon font
@@ -2052,7 +2242,7 @@ the system's own APIs, and a full reference of every control.
   and a finger, reports `ev.menu`; chips, steps, banners, the bottom bar
   and the floating button take the focus and keys; `tabStop`,
   `takePanX`, `heldFor`, `lifted`.
-- **Other apps' files** (`retro/docfs`): folders that another app shares
+- **Other apps' files** (`retroui/docfs`): folders that another app shares
   through Android's documents providers -- Termux's home -- are listed,
   opened, copied, moved, zipped, renamed and deleted like folders on
   disk (`vIsDir`, `vOpen`, `vMove`... and the file jobs use them).
@@ -2112,7 +2302,7 @@ the system's own APIs, and a full reference of every control.
 - The gallery has a **Files** tab (two lists on a sandbox folder, tabs,
   path bars, views, the details pane, "This device", the trash, undo) and
   is built as an APK too.
-- **File widgets in the toolkit** (`retro/filewidgets`): `FolderModel`
+- **File widgets in the toolkit** (`retroui/filewidgets`): `FolderModel`
   (listing on a worker thread, filter, natural sort, search through
   subfolders, history, selection, make / rename, watching for changes),
   `fileList` (details or icons with thumbnails), `filePreview` (the
@@ -2158,11 +2348,11 @@ the system's own APIs, and a full reference of every control.
   cache; kerning of ASCII text from a table; cheaper alpha blending.
   Android keeps its frame in the window's pixel format, so showing it is
   a copy.
-- **Work off the UI thread** (`retro/background`): `folderAsync`,
+- **Work off the UI thread** (`retroui/background`): `folderAsync`,
   `pictureAsync`, `finished`, `cancelTasks`, `busy`, `toBitmap`. Android
   decodes pictures with the system decoder, scaled straight to the size
   asked for (and turned by EXIF), from any thread.
-- **Files of any size** (`retro/textfile`): `TextFile` (lines found in
+- **Files of any size** (`retroui/textfile`): `TextFile` (lines found in
   slices, read as shown) and `HexFile`; zip listings read only the
   archive's directory; listings ask the file system once per file;
   `cmpNatural` and natural sorting; `pictureSize` from the file header.
@@ -2224,7 +2414,7 @@ the system's own APIs, and a full reference of every control.
 
 ## 0.2.0
 
-- uirelays is included (`retro/uirelays`); retro needs only Nim.
+- uirelays is included (`retroui/uirelays`); retro needs only Nim.
 - Android: a NativeActivity driver in C (touch, soft keyboard including
   Arabic text, Back, pause/resume, system-bar and keyboard insets,
   clipboard, links, system-font text) and `retroapk`, which builds,
