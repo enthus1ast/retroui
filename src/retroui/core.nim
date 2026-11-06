@@ -209,12 +209,13 @@ const
                     (name: "Hot Dog", theme: HotDog), (name: "Paper", theme: Paper)]
     ## The color schemes that come with the toolkit, by name.
 
-  DesktopMetrics* = Metrics(pad: 8, gap: 6, ctrlH: 23, editH: 20,
-                            itemH: 15, menuH: 20, sbW: 17)
-    ## The sizes of Windows 3.1 dialogs.
-  TouchMetrics* = Metrics(pad: 8, gap: 8, ctrlH: 32, editH: 30,
-                          itemH: 28, menuH: 30, sbW: 22)
-    ## The same look with targets a finger can hit.
+  DesktopMetrics* = Metrics(pad: 8, gap: 6, ctrlH: 25, editH: 22,
+                            itemH: 18, menuH: 22, sbW: 17)
+    ## The sizes of Windows 3.1 dialogs (at the default text size: a
+    ## 16-pixel line; `fitMetrics` makes them from the text in use).
+  TouchMetrics* = Metrics(pad: 8, gap: 8, ctrlH: 36, editH: 34,
+                          itemH: 32, menuH: 34, sbW: 22)
+    ## The same look with targets a finger can hit (a 20-pixel line).
   LayerBase* = 0         ## the window's content and its bars
   LayerDialog* = 1       ## dialogs (over the content)
   LayerPopup* = 2        ## menus, drop-down lists, calendars (over dialogs)
@@ -450,10 +451,19 @@ proc fingers*(): bool {.inline.} =
   of csDesktop: false
   of csAuto: ui.touch and not ui.roomy
 
+const
+  DesktopTextEm* = 13.5
+    ## The UI's text size at 100 % on desktops and tablets, logical pixels
+    ## per em: about the size of Windows 3.1's System font (10 points), so
+    ## the letters (FreeSans: capitals 10 pixels, small letters 7) hold their
+    ## own beside the controls and icons.
+  TouchTextEm* = 16.5
+    ## The UI's text size at 100 % with finger-sized controls (phones).
+
 proc fitMetrics() =
   ## Every size from the text size: a bigger font makes bigger controls.
   let em = (if ui.baseEm > 0: ui.baseEm
-            elif fingers(): 15.0 else: 12.0) * ui.k * float(ui.textScale) / 100
+            elif fingers(): TouchTextEm else: DesktopTextEm) * ui.k * float(ui.textScale) / 100
   setTextSize(em)
   if ui.metricsSet: return
   let L = FontH
@@ -1849,8 +1859,8 @@ proc textScale*(): int = ui.textScale
   ## The user's text size in percent (see `setTextScale`).
 
 proc setBaseTextSize*(em: float) =
-  ## The text size at 100%, logical pixels per em (default 12 on desktops,
-  ## 15 on touch screens).
+  ## The text size at 100%, logical pixels per em (default `DesktopTextEm`,
+  ## 13.5, on desktops and tablets; `TouchTextEm`, 16.5, on phones).
   ui.baseEm = em
   fitMetrics()
   ui.force = true

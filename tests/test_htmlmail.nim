@@ -289,7 +289,7 @@ block linksAndSelection:
   let cw = r.w - SbW - 1 - 2 * dp(12)
   let info = htmlPageInfo(gmail, cw)
   # the link under the pointer, then clicked
-  let l = info.word("the updated drill plan")
+  let l = info.word("updated")   # (the link: "the updated drill plan", wherever its line breaks)
   move(o.x + l.x + 5, o.y + l.y + 3)
   run(2)
   doAssert hovered == "https://intranet.example/safety/fire-2026.pdf", hovered
@@ -500,7 +500,7 @@ block zoomInTheView:
   let cw = r.w - SbW - 1 - 2 * dp(12)
   let info = htmlPageInfo(gmail, cw, zoom = 1.5)
   # at 1.5 the link is clicked where it is drawn now
-  let l = info.word("the updated drill plan")
+  let l = info.word("updated")   # (the link: "the updated drill plan", wherever its line breaks)
   state(id).scrollY = max(0, l.y - 40)
   run(2)
   let o = contentOrigin(r)

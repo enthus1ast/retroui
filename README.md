@@ -166,10 +166,12 @@ has lld, or zig; with neither they fetch the NDK once (about 700 MB, into
 `~/.retro/android` (`RETRO_KEYS` another folder), and need no Java, Gradle, SDK, OpenSSL or apksigner. In
 Termux the compiler is installed with `pkg` the first time.
 
-GitHub builds them too: **CI** runs the tests and compiles every example on
-Linux, Windows and macOS for each push; **Release** (by hand, or a `v...`
-tag, which also makes a GitHub release) makes every app as an AppImage, a
-Windows .exe, an APK and a macOS .app. Its APKs are signed with the key in
+GitHub builds them too: **CI** runs the tests on each push and compiles
+the tools on Linux, Windows and macOS (the examples when run by hand);
+**Release** -- a `v...` tag pushed, or by hand -- makes the apps I use
+every day, Retro Gallery, Retro Files, Retro Photo, Retro Board and Retro
+Mail, as an AppImage, a Windows .exe, an APK and a macOS .app, and puts
+them on the GitHub release of that tag. Its APKs are signed with the key in
 the secrets `ANDROID_KEY_PEM` and `ANDROID_CERT_DER` (base64 of the files in
 `~/.retro/android`), so a new one installs over the one before.
 
@@ -410,8 +412,9 @@ get the same with `scrollWheel`, `scrollPan`, `scrollTo` / `scrollBy` /
 sharp (2x, 3x) and the text and controls make up the rest (a 1.33x tablet
 gets 1x lines and 1.33x text). `setUiScale(125)` (and Ctrl + / - / 0, and
 the phone title bar's menu) scales everything; `setTextScale(120)` only
-the text (controls grow with it); `setBaseTextSize(13)` changes the 100%
-size. Try layouts on a desktop with `RETRO_SIZE=420x840`, `RETRO_TOUCH=1`,
+the text (controls grow with it); `setBaseTextSize(15)` changes the 100%
+size (13.5 pixels per em on desktops and tablets, about Windows 3.1's
+10-point System font; 16.5 on phones). Try layouts on a desktop with `RETRO_SIZE=420x840`, `RETRO_TOUCH=1`,
 `RETRO_CAPTION=1` (the phone title bar), `RETRO_SCALE=150`, `RETRO_ZOOM=2`.
 
 ## Text and icons

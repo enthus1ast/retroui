@@ -1,11 +1,18 @@
 #!/bin/sh
-# Runs the Android driver on a fake Android on this (Linux) machine.
-# Needs the NDK headers: NDK_INCLUDE=.../sysroot/usr/include
+# Runs the Android driver on a fake Android on a Linux computer. Android's
+# headers come from the sysroot retroapk carries (tools/android), or from
+# an NDK: NDK_INCLUDE=.../sysroot/usr/include
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
-inc=${NDK_INCLUDE:?set NDK_INCLUDE to the NDK sysroot include directory}
 work=${TMPDIR:-/tmp}/retro-android-mock
 mkdir -p "$work/include"
+if [ -n "$NDK_INCLUDE" ]; then
+  inc=$NDK_INCLUDE
+else
+  mkdir -p "$work/sysroot"
+  tar xzf "$here/../../tools/android/sysroot.tar.gz" -C "$work/sysroot" usr/include
+  inc=$work/sysroot/usr/include
+fi
 cp -r "$inc/android" "$work/include/"
 cp "$inc/jni.h" "$work/include/"
 cat > "$work/include/mockdefs.h" <<'EOF'

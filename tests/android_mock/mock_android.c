@@ -160,6 +160,8 @@ float AMotionEvent_getY(const AInputEvent *e, size_t i) { (void)i; return e->y; 
 size_t AMotionEvent_getPointerCount(const AInputEvent *e) { (void)e; return 1; }
 int32_t AMotionEvent_getPointerId(const AInputEvent *e, size_t i) { (void)e; return (int32_t)i; }
 int32_t AMotionEvent_getButtonState(const AInputEvent *e) { (void)e; return 0; }
+/* (the modifier keys held with a click or a wheel: those the event has) */
+int32_t AMotionEvent_getMetaState(const AInputEvent *e) { return e->meta; }
 float AMotionEvent_getAxisValue(const AInputEvent *e, int32_t a, size_t i) {
   (void)e; (void)a; (void)i; return 1;
 }

@@ -186,6 +186,10 @@ costs what its visible rows cost.
 ## 8. Looks, text and the window
 
 - Themes: `ui.theme = Dark` (`builtinThemes`), or the `theme` option.
+- Text size: 13.5 pixels per em at 100 % on desktops and tablets, 16.5 on
+  phones; controls grow with the text. `setTextScale(120)` (the user's text
+  size), `setUiScale(125)` (everything), `setBaseTextSize(15)` (your app's
+  100 %).
 - Fonts: FreeSans (default), FreeSerif, FreeMono, built in with Arabic;
   `loadUiFontFile(path)` for a font of your own; `appearanceSettings` lets
   the user choose (theme, font, text size, Sharp text, window frame) and

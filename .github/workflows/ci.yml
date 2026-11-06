@@ -26,9 +26,8 @@ jobs:
           nim c -r -d:release --hints:off tests/fuzz/fuzz.nim tests/fuzz/seeds 2000
           nim c -r -d:release --hints:off tests/fuzz/fuzzui.nim 200
       - name: Android driver on a fake Android
-        run: |
-          ndk=${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}
-          NDK_INCLUDE=$ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include sh tests/android_mock/run.sh
+        # (Android's headers from the sysroot retroapk carries: no NDK)
+        run: sh tests/android_mock/run.sh
 
   build:
     # the tools compile on the three desktops; the examples too, but only

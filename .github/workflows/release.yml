@@ -1,11 +1,19 @@
 name: Release
 
-# One app of the examples (the table in retroui.nimble), for the systems you
-# tick: an AppImage for Linux, an .exe for Windows, an APK for Android, a
-# zipped .app for macOS. Only by hand: Actions > Release > Run workflow,
-# choose the app; give a tag (v0.20.0) to also make a GitHub release with
-# the files. Nothing builds the examples on its own -- not a push, not a
-# tag, not `nimble install`.
+# The example apps I use and work on every day -- Retro Gallery, Retro
+# Files, Retro Photo, Retro Board and Retro Mail -- built for every system
+# and put on a GitHub release, so users find them ready to run:
+#
+#   Linux    an AppImage (one file, runs on most distributions)
+#   Windows  an .exe (with its icon and version)
+#   Android  an APK (arm64)
+#   macOS    the .app, zipped
+#
+# It runs when a version tag is pushed (git push origin v0.20.0: the release
+# of that tag), or by hand: Actions > Release > Run workflow, with a tag to
+# release and, if you like, only some of the apps. The other examples are
+# built only when asked, from a clone (RETRO_APP=ledger nimble exe...); a
+# push to a branch and `nimble install` build none of them.
 #
 # APKs are signed with the key in the secrets ANDROID_KEY_PEM and
 # ANDROID_CERT_DER (base64 of ~/.retro/android/debug-key.pem and
@@ -13,33 +21,18 @@ name: Release
 # each run makes a key of its own.
 
 on:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
-      app:
-        description: "The app to build"
-        required: true
-        type: choice
-        options: [photo, files, board, mail, gallery, hrbook, notepad, ledger, charts]
-      linux:
-        description: "Linux (AppImage)"
-        type: boolean
-        default: true
-      windows:
-        description: "Windows (.exe)"
-        type: boolean
-        default: true
-      android:
-        description: "Android (APK)"
-        type: boolean
-        default: true
-      macos:
-        description: "macOS (.app)"
-        type: boolean
-        default: false
       tag:
-        description: "Make a GitHub release with this tag (empty: no release)"
+        description: "The release's tag (v0.20.0); empty: build only, no release"
         required: false
         default: ""
+      apps:
+        description: "The apps, by their keys in retroui.nimble"
+        required: false
+        default: "gallery files photo board mail"
 
 # Retro Mail's app registrations (examples/mail/appids.nim): repository
 # secrets, so the packages sign in with one click
@@ -49,9 +42,28 @@ env:
   RETRO_MAIL_GOOGLE_SECRET: ${{ secrets.RETRO_MAIL_GOOGLE_SECRET }}
 
 jobs:
-  linux:
-    if: inputs.linux
+  plan:
+    # which apps, and which tag (a pushed tag, or the one given by hand)
     runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.plan.outputs.apps }}
+      tag: ${{ steps.plan.outputs.tag }}
+    steps:
+      - id: plan
+        env:
+          APPS: ${{ inputs.apps || 'gallery files photo board mail' }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+        run: |
+          echo "apps=$(printf '%s\n' $APPS | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  linux:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
     steps:
       - uses: actions/checkout@v4
       - uses: jiro4989/setup-nim-action@v2
@@ -61,16 +73,20 @@ jobs:
       - name: zig (links against an older glibc, for older systems)
         run: pip install ziglang
       - name: AppImage
-        run: RETRO_APP=${{ inputs.app }} nimble appimage -y
+        run: RETRO_APP=${{ matrix.app }} nimble appimage -y
       - uses: actions/upload-artifact@v4
         with:
-          name: linux
+          name: linux-${{ matrix.app }}
           path: build/*.AppImage
 
   windows:
     # from Linux, with MinGW: the icon and the version go into the .exe
-    if: inputs.windows
+    needs: plan
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
     steps:
       - uses: actions/checkout@v4
       - uses: jiro4989/setup-nim-action@v2
@@ -80,15 +96,19 @@ jobs:
       - name: MinGW
         run: sudo apt-get update && sudo apt-get install -y mingw-w64
       - name: Windows program
-        run: RETRO_APP=${{ inputs.app }} nimble exe -y
+        run: RETRO_APP=${{ matrix.app }} nimble exe -y
       - uses: actions/upload-artifact@v4
         with:
-          name: windows
+          name: windows-${{ matrix.app }}
           path: build/win/*.exe
 
   android:
-    if: inputs.android
+    needs: plan
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
     steps:
       - uses: actions/checkout@v4
       - uses: jiro4989/setup-nim-action@v2
@@ -109,15 +129,19 @@ jobs:
             echo "no signing key in the secrets: this run makes one"
           fi
       - name: APK
-        run: RETRO_APP=${{ inputs.app }} nimble appapk -y
+        run: RETRO_APP=${{ matrix.app }} nimble appapk -y
       - uses: actions/upload-artifact@v4
         with:
-          name: android
+          name: android-${{ matrix.app }}
           path: build/*.apk
 
   macos:
-    if: inputs.macos
+    needs: plan
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
     steps:
       - uses: actions/checkout@v4
       - uses: jiro4989/setup-nim-action@v2
@@ -125,16 +149,17 @@ jobs:
           nim-version: "2.2.6"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: macOS app
-        run: RETRO_APP=${{ inputs.app }} nimble macapp -y
+        run: RETRO_APP=${{ matrix.app }} nimble macapp -y
       - uses: actions/upload-artifact@v4
         with:
-          name: macos
+          name: macos-${{ matrix.app }}
           path: build/mac/*.zip
 
   release:
-    # a tag given: one GitHub release with what was built
-    if: ${{ always() && inputs.tag != '' && !contains(needs.*.result, 'failure') }}
-    needs: [linux, windows, android, macos]
+    # a tag: one GitHub release with every file built (what did build, when
+    # one system failed: its log says why)
+    if: ${{ always() && needs.plan.outputs.tag != '' }}
+    needs: [plan, linux, windows, android, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -145,6 +170,8 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag }}
+          tag_name: ${{ needs.plan.outputs.tag }}
+          name: Retro Nim UI ${{ needs.plan.outputs.tag }}
           files: dist/*
           generate_release_notes: true
+          fail_on_unmatched_files: false

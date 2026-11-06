@@ -9,9 +9,10 @@
   `retroios`, `retrokit`), and so do the settings folders (`~/.retro`).
 - **The examples are built only when asked**, one at a time: `nimble
   photo`, `nimble photoexe`, or any app of the table with `RETRO_APP=...
-  nimble exe` / `appapk` / `appimage` / `macapp`; GitHub's Release
-  workflow builds the one app chosen, by hand, and CI compiles the examples
-  only when run by hand. **HR Book** joins them: employee records of
+  nimble exe` / `appapk` / `appimage` / `macapp`. GitHub's Release
+  workflow, on a `v...` tag or by hand, builds Retro Gallery, Files,
+  Photo, Board and Mail for Linux, Windows, Android and macOS and puts
+  them on the release; CI compiles the examples only when run by hand. **HR Book** joins them: employee records of
   several hotels, sealed with a PIN, smart Excel import, letters, charts.
 - **For AI agents and their users:** `skills/retroui/SKILL.md` (building
   apps with the kit), `AGENTS.md` and `CLAUDE.md` (rules for changing it),
@@ -29,7 +30,23 @@
   box has the focus shows at once.
 - **BUILDING.md** covers the desktop too: Windows from Windows, Linux or
   macOS (MinGW), its icon and version, macOS `.app`s, Linux AppImages.
+- **Bigger text.** The UI's text is 13.5 pixels per em at 100 % on
+  desktops and tablets (was 12), about Windows 3.1's 10-point System font:
+  capitals 10 pixels, small letters 7, the letters in proportion with the
+  controls and icons; 16.5 on phones (was 15). `DesktopTextEm` and
+  `TouchTextEm` say so; `setBaseTextSize` still sets your own. Docked
+  panels' tabs keep their labels whole (less room around them, then a
+  size smaller) before cutting them short.
+- **uirelays brought up to date** with nim-lang/uirelays master
+  (`cb82378`, merged on the `uirelays` branch): KeySlash on X11 (it was
+  already there in the kit's translation, now one case), precise wheel
+  lines for touchpads (`Event.preciseLines`, `wheelLines`), the figdraw
+  driver's clips and scrolling. It stays inside the package: `nimble
+  install retroui` brings it, nothing else to download.
 - Fixed: `retrokit new` made apps that imported `retro` (now `retroui`).
+- Fixed: CI's Android driver test (a fake Android) lacked
+  `AMotionEvent_getMetaState`, which the driver now reads; it takes
+  Android's headers from the sysroot `retroapk` carries, no NDK needed.
 - **The apps, with the new text, menus and frame:** Retro Photo 4.9.3,
   Retro Files 3.3.3, Retro Mail 1.0.4, Retro Board 1.3.2 (its About box
   no longer shows the credit twice), HR Book 0.1.
@@ -80,7 +97,7 @@
     `kern` tables are dropped), a style a font lacks made bold or slanted
     as FreeType does (its outline emboldened, the letters wider). Line
     height, baseline and the controls' sizes come from FreeSans with its
-    line gap (a 15-pixel line at 12).
+    line gap (a 16-pixel line at 13.5).
   - Settings: "look.fontv" is 3; a font stored before (MS W98 UI, Kawkab
     Mono...) is FreeSans now, a font file stays one; `uiFontKey` words are
     "sans", "serif", "mono", "file" (the old ones still read).

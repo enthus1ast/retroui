@@ -490,9 +490,9 @@ block freeSans:
   run(2)
   # the line from the font: FreeSans's ascent, descent and line gap
   # (0.9 + 0.2 + 0.1 em), as a font file's always were
-  doAssert textSize() == 12
-  doAssert FontH == int(round(12 * (lineFactor(fSans, withGap = true) + 0.02))), $FontH
-  doAssert FontH == 15 and FontAscent == 12, $(FontH, FontAscent)
+  doAssert textSize() == DesktopTextEm and DesktopTextEm == 13.5
+  doAssert FontH == int(round(13.5 * (lineFactor(fSans, withGap = true) + 0.02))), $FontH
+  doAssert FontH == 16 and FontAscent == 13, $(FontH, FontAscent)
   # every Latin-1 and Latin Extended-A letter in all four styles
   for cp in 0xA1 .. 0x17F:
     if cp == 0xAD: continue
@@ -607,7 +607,7 @@ block switchFonts:
   view = proc () = discard button("OK")
   run(2)
   doAssert uiFont() == ufMono and faceOf(TextStyle()) == fMono
-  doAssert FontH == int(round(12 * (lineFactor(fMono) + 0.02))), "FreeMono's own line"
+  doAssert FontH == int(round(textSize() * (lineFactor(fMono) + 0.02))), "FreeMono's own line"
   doAssert textWidth("iii") == textWidth("WWW"), "monospaced"
   var s: Settings
   storeAppearance(s)

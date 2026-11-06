@@ -328,16 +328,22 @@ proc startDrag(d: Dock; p: DockPanel) =
 
 proc groupTabs(d: Dock; g: DockGroup; r: Rect; ev: var DockEvent; folding: bool) =
   ## A group's tabs in `r`, the menu arrow at the right.
-  let st = style(size = 0.9)
   fill(r, th.face)
   hline(r.x, r.y + r.h - 1, r.w, th.frame)
   let mw = r.h
+  let room = r.w - mw - dp(2)
+  # (the labels whole when they can be: less room around them first, then
+  # a size smaller; only then are some cut short)
+  var st = style(size = 0.9)
   var natural = newSeq[int](g.panels.len)
   var total = 0
-  for i, p in g.panels:
-    natural[i] = textWidth(tr(p.title), st) + dp(12)
-    total += natural[i] - 1
-  let room = r.w - mw - dp(2)
+  for (size, pad) in [(0.9, 12), (0.9, 6), (0.8, 6)]:
+    st = style(size = size)
+    total = 0
+    for i, p in g.panels:
+      natural[i] = textWidth(tr(p.title), st) + dp(pad)
+      total += natural[i] - 1
+    if total <= room: break
   var widths = natural
   if total > room and g.panels.len > 1:
     let mine = min(natural[clamp(g.sel, 0, g.panels.high)], room div 2)

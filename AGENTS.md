@@ -15,8 +15,10 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
 - `examples/` -- the example apps (Gallery, Retro Photo, Retro Files,
   Retro Mail, Retro Board, HR Book, Notepad, Ledger, Charts...). They are
   built only when asked, one at a time (`nimble photo`, `nimble photoexe`,
-  `RETRO_APP=photo nimble exe`...), never by `nimble install` or CI on
-  its own.
+  `RETRO_APP=photo nimble exe`...), never by `nimble install`. GitHub's
+  Release workflow (`.github/workflows/release.yml`, on a `v...` tag or by
+  hand) builds Gallery, Files, Photo, Board and Mail for Linux, Windows,
+  Android and macOS onto the release.
 - `tests/` -- headless tests on a fake screen driver (`tests/harness.nim`).
 - `docs/controls.md` -- every control with pictures, made by `tools/shots.nim`.
 
@@ -26,7 +28,10 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
    (every exported symbol has a `##` doc comment).
 2. Build what you touch and run its tests:
    `nim c -r --hints:off tests/test_<name>.nim`; the whole suite is
-   `nimble test` (all must pass before a commit).
+   `nimble test` (all must pass before a commit). A change to the
+   Android driver (`uirelays/drivers/android*`): `sh
+   tests/android_mock/run.sh` too (the driver on a fake Android; a new
+   NDK function needs its fake in `tests/android_mock/mock_android.c`).
 3. Before a release, run the tests under the sanitizers too (the command
    is at the top of `tests/lsan.supp`); a leak found goes into
    `test_hardening`.
@@ -60,7 +65,10 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
   the drivers, not in the app code.
 - **uirelays** (`src/retroui/uirelays`): generic, in upstream's style, no
   Retro names or app logic. It is the same code as the `uirelays` branch:
-  after changing it, `sh tools/uirelays.sh push "message"`.
+  after changing it, `sh tools/uirelays.sh push "message"`; `sh
+  tools/uirelays.sh merge` brings upstream's new commits (nim-lang/uirelays
+  master) into the branch, then `pull`. It stays inside the package (no
+  separate nimble dependency) until upstream has the branch's work.
 - **No dependencies to install:** link only what every system has
   (libc; Windows' system DLLs); load anything else at run time and work
   without it.
