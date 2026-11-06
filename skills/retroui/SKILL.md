@@ -182,6 +182,15 @@ costs what its visible rows cost.
   numbers, `colIndex("Name")`). Write one with `writeCsv(path, table)` or
   `toCsv(table)`; `csvLine(cells)` and `csvField(s)` quote as needed.
   All of them are in `retroui/charts` (part of `import retroui`).
+- **Network:** `import retroui/http` -- `httpRequest("GET", url)` from any
+  thread (status, headers, body; `error` when no answer came). `import
+  retroui/xmpp` -- chat: `xmppStart(jid, password)`, take `xmppEvents()`
+  every frame (with `wakeIn(250)` while `xmppRunning()`), `sendChat(to,
+  text)`; build with `-d:ssl`. `examples/communicator.nim` is a whole
+  messenger on it.
+- **PDF of your own text:** `import retroui/report` -- `newReport`,
+  `paragraph`, `table`, `savePdf` (or `reportFromHtml(html)`); Notepad's
+  File > Print to PDF is a short example.
 
 ## 8. Looks, text and the window
 

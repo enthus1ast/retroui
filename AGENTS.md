@@ -13,7 +13,8 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
   uirelays, kept generic: see below); `src/retroapk.nim`, `retroios.nim`,
   `retrokit.nim` -- the command-line tools.
 - `examples/` -- the example apps (Gallery, Retro Photo, Retro Files,
-  Retro Mail, Retro Board, HR Book, Notepad, Ledger, Charts...). They are
+  Retro Mail, Retro Communicator, Retro Board, HR Book, Notepad, Ledger,
+  Charts...). They are
   built only when asked, one at a time (`nimble photo`, `nimble photoexe`,
   `RETRO_APP=photo nimble exe`...), never by `nimble install`. GitHub's
   Release workflow (`.github/workflows/release.yml`, on a `v...` tag or by

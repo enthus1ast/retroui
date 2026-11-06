@@ -328,7 +328,7 @@ proc beginMdiWindow*(w: var MdiWindow): bool =
       m.toFront(key)
     let g = if w.glyph.len > 0: w.glyph else: retroOr(pxApp, nfWindowMaximize)
     image(ir.x + (ir.w - dp(32)) div 2, ir.y, glyphIcon(g, th.text, dp(32)))
-    let label = ellipsize(w.title, ir.w)
+    let label = ellipsize(tr(w.title), ir.w)
     let lr = rect(ir.x + (ir.w - textWidth(label)) div 2 - 2, ir.y + dp(34),
                   textWidth(label) + 4, FontH + 2)
     if hit.focused:

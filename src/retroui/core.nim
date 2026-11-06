@@ -16,7 +16,7 @@ import uirelays/services
 import gfx, busy
 export busy
 
-const RetroVersion* = "0.20.8"
+const RetroVersion* = "0.21.0"
   ## The toolkit's version (shown in About boxes' Credits).
 const
   RetroDeveloper* = "Sultan Al Isaiee"

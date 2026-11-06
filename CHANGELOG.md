@@ -1,5 +1,36 @@
 # Changes
 
+## 0.21.0
+
+- **`retroui/xmpp`: chat on XMPP (Jabber).** An account on any public
+  server -- nobody's to run -- with what a messenger needs: signing on
+  (STARTTLS, SASL PLAIN), the contact list and its groups, presence and
+  status notes, messages with typing notifications and delivery receipts,
+  the messages you send from another device (carbons), asking to add
+  someone and answering who asks, profiles (vCard, with a picture), chat
+  rooms (MUC), files (HTTP upload) and making an account from inside the
+  app where the server allows it (in-band registration). The server is
+  found by its SRV record (DNS over HTTPS through `retroui/http`). The
+  connection runs on a thread of its own; the app takes what came with
+  `xmppEvents()` each frame. Build with `-d:ssl` (OpenSSL, loaded at run
+  time). In Termux and on Android before 9, where bionic has no `glob`
+  (std/net looks for the certificate authorities with it), the module
+  brings its own (`androidglob.c`).
+- **Retro Communicator** (`examples/communicator.nim`, `nimble
+  communicator`): an instant messenger in the look of 1999 on it -- sign
+  on or make an account, the friends list with groups (folded), who is
+  there, away or busy and their notes, a search; a window for each talk
+  with typing and Delivered; rooms with who is in them; away messages
+  answered once per talk; your profile with a picture and a QR code to add
+  you; files and pictures sent; requests to accept; the sounds of a door,
+  a message in and out; notifications; history kept per friend; the
+  password in the system's keyring when you ask.
+- **Notepad prints to PDF** (File > Print to PDF, Ctrl+P), on A4 pages in
+  FreeMono, through `retroui/report`. Ctrl+O and Ctrl+S work as keys too.
+- The icons of minimized windows in the window (MDI) show their titles in
+  the interface's language (`tr`), as their title bars do.
+- Retro Gallery and the small examples are 0.21.0.
+
 ## 0.20.8
 
 - **Retro Files opens the folder it is given**: `retro-files ~/Pictures`

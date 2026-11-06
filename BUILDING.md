@@ -64,6 +64,12 @@ file with its icon and menu entry.
 Mac), `RETRO_APP=photo nimble appapk`; the apps are listed in
 `retroui.nimble` (`RetroApps`).
 
+**Apps that use `retroui/xmpp`** (Retro Communicator: `nimble
+communicator`) build with `-d:ssl`: Nim's TLS through OpenSSL, loaded when
+the app starts (libssl 3 or 1.1, which Linux, the BSDs and Termux have; on
+Windows the OpenSSL DLLs beside the .exe). `examples/communicator.nims`
+turns it on for the example.
+
 ---
 
 ## Android

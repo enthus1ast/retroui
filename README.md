@@ -1184,6 +1184,33 @@ carries, made once).
 |---|---|
 | ![Retro Mail's start page and Add Account Wizard](docs/mail-wizard.png) | ![Retro Mail on a phone, a message swiped](docs/mail-phone.png) |
 
+## Chat
+
+`retroui/xmpp` is chat on XMPP (Jabber): an account on any public server,
+talking to anyone on any XMPP app (Conversations, Gajim, Monal, Dino...).
+Signing on (STARTTLS, SASL), the contact list and its groups, presence and
+status notes, typing notifications, delivery receipts, the messages you
+send from another device, asking to add someone, profiles with a picture,
+chat rooms, files (HTTP upload), and making an account from inside the app
+where the server allows it. The connection runs on a thread of its own:
+
+```nim
+import retroui, retroui/xmpp
+xmppStart("me@yax.im", "my password")
+app "Chat", 400, 300:
+  for e in xmppEvents():
+    if e.kind == xeMessage: echo e.jid, ": ", e.text
+  if button("Hello"): discard sendChat("friend@xmpp.jp", "Hello!")
+  if xmppRunning(): wakeIn(250)
+```
+
+![Retro Communicator: the friends list and a talk](docs/communicator.png)
+
+Build with `-d:ssl` (OpenSSL, loaded at run time). `examples/communicator.nim`
+is **Retro Communicator** on it (`nimble communicator`): the friends list
+with groups, a window for each talk, rooms, away messages, your profile
+with a picture and a QR code to add you, files sent, the sounds of 1999.
+
 ## Whiteboard
 
 `retroui/board` is a whiteboard's document, in the manner of tldraw: pages
@@ -1797,7 +1824,8 @@ needed. `nimble test` runs them all; `nimble fuzz` runs the fuzzers.
 | `examples/gallery.nim` | every control, page by page (also an APK: `nimble galleryapk`) |
 | `examples/filemanager.nim` | Retro Files: an Explorer-class file manager (also an APK: `nimble apk`) |
 | `examples/ledger.nim` | a small accounting app: grids, forms, CSV, reports |
-| `examples/notepad.nim` | a 3.1 Notepad: open, save, cut / copy / paste, time and date, find, "Save changes?" |
+| `examples/notepad.nim` | a 3.1 Notepad: open, save, cut / copy / paste, time and date, find, print to PDF, "Save changes?" |
+| `examples/communicator.nim` | Retro Communicator: chat on XMPP -- friends, groups, rooms, away messages, profiles, files (`-d:ssl`) |
 | `examples/charts.nim` | Chart Viewer: open a CSV, pick a chart, save a PNG |
 | `examples/invoice.nim` | an invoice from an HTML template: preview, PDF, print |
 | `examples/native.nim` | calling the system's own APIs on each platform |

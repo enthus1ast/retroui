@@ -1,11 +1,13 @@
 ## A Notepad in the manner of Windows 3.1: open and save files, cut, copy,
-## paste, select all, the time and date (F5), find (Ctrl+F, F3), a status
-## bar and a "Save changes?" box on exit.  nim c -r examples/notepad.nim
+## paste, select all, the time and date (F5), find (Ctrl+F, F3), print to a
+## PDF (Ctrl+P), a status bar and a "Save changes?" box on exit.
+## nim c -r examples/notepad.nim
 ##
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
 import std/[os, strutils, times]
 import retroui
+import retroui/report
 
 var
   text = "Welcome to Retro Notepad.\n\nOpen a text file with File > Open, or type here.\n"
@@ -16,6 +18,7 @@ var
   showAbout = false
   openDlg = false
   saveDlg = false
+  pdfDlg = false
   picked = ""
   status = ""
   finder = FindState()
@@ -62,6 +65,21 @@ proc save(): bool =
     false
   else: saveTo(path)
 
+proc printToPdf(p: string) =
+  ## The text on A4 pages, in FreeMono, as a PDF.
+  var dest = p
+  if dest.splitFile.ext.toLowerAscii != ".pdf": dest &= ".pdf"
+  try:
+    var doc = newReport(docName(), page = A4)
+    doc.footer("", "{page} / {pages}", "")
+    for line in text.splitLines:
+      if line.strip.len == 0: doc.space(6)
+      else: doc.paragraph([span(line, mono = true)], size = 10)
+    doc.savePdf(dest)
+    status = "Printed to " & dest.extractFilename
+  except CatchableError as e:
+    status = "Could not print: " & e.msg
+
 proc load(p: string) =
   try:
     text = readFile(p).replace("\r\n", "\n")
@@ -102,6 +120,10 @@ app "Notepad", 620, 420:
       if menuItem("&Open...", "Ctrl+O"): openDlg = true
       if menuItem("&Save", "Ctrl+S"): discard save()
       if menuItem("Save &As..."): saveDlg = true
+      menuSeparator()
+      if menuItem("&Print to PDF...", "Ctrl+P"):
+        picked = (if path.len > 0: path.changeFileExt(".pdf") else: "Untitled.pdf")
+        pdfDlg = true
       menuSeparator()
       if menuItem("E&xit"):
         if text != saved: askExit = true else: quitApp()
@@ -149,11 +171,18 @@ app "Notepad", 620, 420:
   editArea text, lines = -1
   editorId = ui.lastId
 
+  if hotkeyPressed("Ctrl+O"): openDlg = true
+  if hotkeyPressed("Ctrl+S"): discard save()
+  if hotkeyPressed("Ctrl+P"):
+    picked = (if path.len > 0: path.changeFileExt(".pdf") else: "Untitled.pdf")
+    pdfDlg = true
   if filePicker(openDlg, picked, fmOpen, ["*.txt", "*.md", "*.nim", "*.ini", "*.csv", "*"],
                 "Open"):
     load(picked)
   if filePicker(saveDlg, picked, fmSave, ["*.txt"], "Save As"):
     discard saveTo(picked)
+  if filePicker(pdfDlg, picked, fmSave, ["*.pdf"], "Print to PDF"):
+    printToPdf(picked)
 
   case msgBox(askExit, "Notepad", "The text in " & docName() &
               " has changed.\n\nSave the changes?",
