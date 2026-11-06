@@ -23,6 +23,7 @@
 ##     if ev.activated and ev.item.isDir: folder.open(ev.item.path)
 
 import std/[os, strutils, times, tables, sets, algorithm, monotimes, math, sequtils]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import gfx, core, widgets, business, extras, nerdicons, pixelicons, platform, files,
        imaging, background, textfile, docfs, memwatch
 import uirelays/services
@@ -1654,7 +1655,7 @@ proc placeList*(): seq[tuple[name, path: string]] =
   ## `places()`, asked at most every 5 seconds (it can be slow).
   if ui.now - tree.placesAt > 5000:
     tree.places = places()
-    when defined(android):
+    when androidApp:
       # Termux's home, given through its documents provider (docfs)
       if systemCall("installed", "com.termux") == "1":
         tree.places.add ("Termux", "/data/data/com.termux/files/home")

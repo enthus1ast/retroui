@@ -34,9 +34,10 @@
 ## a file that cannot be read gives nil (its icon is shown instead).
 
 import std/[os, math, strutils]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import gfx, imaging, jpeg, imageformats, jxl, exr, svgimport, zip
 
-const desktop = not (defined(android) or defined(ios))
+const desktop = not (androidApp or defined(ios))
 
 when desktop:
   import std/locks

@@ -6,6 +6,7 @@
 ## states, and label / value lists.
 
 import std/[strutils, unicode, math, tables]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import core, widgets, business, platform, nerdicons, pixelicons
 import uirelays/input
 
@@ -1310,7 +1311,7 @@ proc appearanceRows(): bool =
     else:
       setUiFont(fonts[f])
       result = true
-  when not defined(android) and not defined(ios):
+  when not androidApp and not defined(ios):
     if pxScale == 1:
       var sharp = if subpixelText(): 0 else: 1
       if settingCombo("Text edges", ["Sharp", "Smooth"], sharp):

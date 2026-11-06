@@ -162,6 +162,27 @@ retroapk app.nim --name:"My App" --install     # the installer asks to confirm
 Termux's clang builds for the phone's own ABI; with `pkg install lld` the
 sysroot in `retroapk` builds the others too (`--abi:x86_64`...).
 
+### A desktop app in Termux, on Termux:X11
+
+The same app also runs in Termux itself, in a window on Termux:X11 (the
+Termux:X11 app, from F-Droid or its GitHub releases), with no APK:
+
+```sh
+pkg install x11-repo
+pkg install termux-x11-nightly libx11 nim clang git
+nimble install retroui
+termux-x11 :0 &                 # then open the Termux:X11 app
+export DISPLAY=:0
+nim c -r -d:release -d:useMalloc app.nim
+```
+
+In Termux, Nim builds for Android, so the kit decides by what is built:
+an APK's library (`--app:lib`, what `retroapk` makes) gets Android's own
+driver; a program run from the shell gets the X11 driver, its files and
+services as on Linux, and draws on the CPU. With no window manager on
+Termux:X11 the window has no title bar and sits at the top left;
+`RETRO_SIZE=1200x800` makes it bigger, `RETRO_TOUCH=1` finger-sized.
+
 ### How the compiler is chosen
 
 1. `--cc:PATH` or `RETRO_ANDROID_CC` (a compiler of your own);

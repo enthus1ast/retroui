@@ -33,15 +33,16 @@
 ##     echo windowsDocumentsFolder()
 
 import std/[os, strutils, dynlib, times]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import uirelays/services
 when defined(macosx) or defined(ios):
   import std/macros
 when not defined(windows):
   import std/posix
-when not defined(ios) and not defined(android):
+when not defined(ios) and not androidApp:
   import std/[osproc, streams]
 
-when defined(android):
+when androidApp:
   # Android before 9 has no posix_spawn (what std/osproc uses): commands
   # run through popen, which every version has.
   proc c_popen(cmd, mode: cstring): File {.importc: "popen", header: "<stdio.h>".}
@@ -518,7 +519,7 @@ proc termuxApi*(command: string; args: openArray[string] = []; input = "";
   ## `termuxApi("vibrate", ["-d", "200"])`, `termuxApi("battery-status")`,
   ## `termuxApi("toast", ["Saved"])`, `termuxApi("clipboard-get")`.
   when defined(ios): ""
-  elif defined(android):
+  elif androidApp:
     if command.len == 0 or not command.allCharsInSet(Letters + Digits + {'-'}): return ""
     let exe = findExe("termux-" & command)
     if exe.len == 0: return ""
@@ -567,7 +568,7 @@ proc readSmall(path: string): string =
 
 proc getprop(key: string): string =
   ## An Android system property, from Termux (getprop); "" elsewhere.
-  when defined(android) and not defined(ios):
+  when androidApp and not defined(ios):
     try:
       let (o, code) = runShell("getprop " & shellQuote(key))
       if code == 0: o.strip else: ""
@@ -588,7 +589,7 @@ proc vibrate*(ms = 50): bool {.discardable.} =
         play(4095)                              # kSystemSoundID_Vibrate
         result = true
     else:
-      when defined(android):
+      when androidApp:
         if javaAvailable():
           let v = javaActivityObj("getSystemService", "vibrator")
           if v.isNil: return false
@@ -616,7 +617,7 @@ proc deviceName*(): string =
       var n = uint32(buf.len)
       if GetComputerNameW(addr buf[0], addr n) != 0: wideText(buf) else: ""
     else:
-      when defined(android):
+      when androidApp:
         if javaAvailable(): return deviceModel()
         if inTermux():
           let model = getprop("ro.product.model")
@@ -647,7 +648,7 @@ proc osVersion*(): string =
       if rtl(addr v) != 0: return "Windows"
       "Windows " & $v.major & "." & $v.minor & "." & $v.build
     else:
-      when defined(android):
+      when androidApp:
         if javaAvailable(): return "Android " & androidVersion().release
         let rel = getprop("ro.build.version.release")
         if rel.len > 0: return "Android " & rel
@@ -675,7 +676,7 @@ proc batteryLevel*(): int =
       if GetSystemPowerStatus(addr s) == 0 or s.percent == 255 or s.batteryFlag == 128: -1
       else: int(s.percent)
     else:
-      when defined(android):
+      when androidApp:
         if javaAvailable():
           let bm = javaActivityObj("getSystemService", "batterymanager")
           if bm.isNil: return -1
@@ -713,7 +714,7 @@ proc systemDarkMode*(): bool =
     elif defined(windows):
       dark = windowsAppsUseDarkMode()
     else:
-      when defined(android):
+      when androidApp:
         if javaAvailable():
           let res = javaActivityObj("getResources")
           let conf = javaCallObj(res, "getConfiguration")
@@ -728,7 +729,7 @@ proc systemDarkMode*(): bool =
           if "gtk-application-prefer-dark-theme=1" in ini or "gtk-application-prefer-dark-theme=true" in ini:
             dark = true
           else:
-            when not defined(android):
+            when not androidApp:
               let gs = findExe("gsettings")
               if gs.len > 0:
                 let (o, code) = execCmdEx(gs & " get org.gnome.desktop.interface color-scheme")
@@ -753,7 +754,7 @@ proc beepSystem*() =
     elif defined(windows):
       discard MessageBeep(0)
     else:
-      when defined(android):
+      when androidApp:
         if javaAvailable():
           if toneGen.isNil:                          # the notification stream, 80%
             toneGen = javaNew("android.media.ToneGenerator", 5, 80)
@@ -783,7 +784,7 @@ proc userName*(): string =
       if f == nil: "" else: toNim(f())
     elif defined(windows):
       windowsUserName()
-    elif defined(android):
+    elif androidApp:
       ""
     else:
       let pw = getpwuid(getuid())
@@ -803,7 +804,7 @@ proc keepScreenOn*(on: bool): bool {.discardable.} =
     elif defined(windows):
       const continuous = 0x80000000'u32
       result = SetThreadExecutionState(if on: continuous or 0x2 or 0x1 else: continuous) != 0
-    elif defined(android):
+    elif androidApp:
       if javaAvailable():
         onUiThread:
           let w = javaActivityObj("getWindow")
@@ -819,7 +820,7 @@ proc openSettings*(kind = ""): bool {.discardable.} =
   ## app's page; Android) -- where the system has such a page. False when it
   ## could not.
   try:
-    when defined(android):
+    when androidApp:
       if not javaAvailable(): return false
       let action = case kind
         of "wifi": "android.settings.WIFI_SETTINGS"

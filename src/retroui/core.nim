@@ -10,12 +10,13 @@
 ## and the widgets.
 
 import std/[tables, unicode, os, math, strutils, monotimes, times]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import uirelays
 import uirelays/services
 import gfx, busy
 export busy
 
-const RetroVersion* = "0.20.2"
+const RetroVersion* = "0.20.3"
   ## The toolkit's version (shown in About boxes' Credits).
 const
   RetroDeveloper* = "Sultan Al Isaiee"
@@ -2215,7 +2216,7 @@ proc canClassicFrame*(): bool =
   ## the system's frame -- Windows, macOS, X11 (Linux, the BSDs, Wayland
   ## desktops through XWayland), and the GTK 4, SDL and Siwin drivers
   ## (Wayland's own windows too) -- not the phones.
-  not (defined(android) or defined(ios)) and canDrawFrame()
+  not (androidApp or defined(ios)) and canDrawFrame()
 
 proc showFrameMenuItem() =
   ## (the item in the system's menu, checked while the 3.1 frame is on)
@@ -2236,7 +2237,7 @@ proc setClassicFrame*(on: bool) =
   elif not on and ui.ownFrame: now = not setSystemFrame(true)
   if now != ui.ownFrame:
     ui.ownFrame = now
-    ui.ownCaption = defined(android) or defined(ios) or captionEnv or now
+    ui.ownCaption = androidApp or defined(ios) or captionEnv or now
     ui.force = true
     showFrameMenuItem()
 
@@ -2320,7 +2321,7 @@ proc startApp*(title: string; w, h: int; theme = ui.theme; zoom = 0) =
   else: discard
   themeFromEnv()
   ui.title = title
-  ui.ownCaption = defined(android) or defined(ios) or captionEnv or ui.ownFrame
+  ui.ownCaption = androidApp or defined(ios) or captionEnv or ui.ownFrame
   applyLayout(l)
   ui.running = true
   ui.prevBottom = ui.h
@@ -2652,7 +2653,7 @@ proc drawTip() =
   let w = textWidth(tipText) + 8
   let tipH = FontH + 4
   var x, y: int
-  if (defined(android) or defined(ios) or ui.touch) and ui.my - tipH - dp(12) >= 0:
+  if (androidApp or defined(ios) or ui.touch) and ui.my - tipH - dp(12) >= 0:
     # a tablet's or a phone's pointer (drawn by the system, big; or a
     # finger): the tip above it, where nothing covers it
     x = ui.mx - w div 2
@@ -2663,7 +2664,7 @@ proc drawTip() =
     let ph = if windowRelays.pointerHeight != nil: windowRelays.pointerHeight() else: 0
     let under = if ph > 0: ph * 3 div 4 + 4 else: max(20, dp(22))
     x = ui.mx
-    y = ui.my + (if defined(android) or defined(ios) or ui.touch: dp(40) else: max(under, dp(22)))
+    y = ui.my + (if androidApp or defined(ios) or ui.touch: dp(40) else: max(under, dp(22)))
     if y + tipH > ui.h: y = ui.my - tipH - dp(10)
   x = clamp(x, 0, max(0, ui.w - w))
   let r = rect(x, y, w, tipH)

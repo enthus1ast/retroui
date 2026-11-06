@@ -43,6 +43,9 @@ is in `docs/uirelays-pr.md`.
 - `drivers/surface_driver.nim` -- the relays both phone drivers share.
 - `services.nim` -- `systemRelays`: data folder, links, files, places,
   storage access, photo decoding, `systemCall`.
+- `target.nim` -- `androidApp` (an APK: the NativeActivity driver) and
+  `androidShell` (a program run in Termux: the X11 driver, on
+  Termux:X11), both built with `--os:android`.
 - Files dropped on the window (`FileDropEvent`: WM_DROPFILES, XDND) and
   dragged out of it (`startFileDragOut`, `fileDragRelays`: OLE's DoDragDrop
   with CF_HDROP and the shell's IDList Array, XDND as the source with

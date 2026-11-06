@@ -50,6 +50,7 @@
 ##     let v = videoView("intro.mp4", height = 200)
 
 import std/[os, strutils, tables, hashes, times, osproc, streams, locks]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 from std/math import round
 import gfx, core, widgets, platform, pixelicons, imaging
 import uirelays/services
@@ -88,7 +89,7 @@ proc `$`*(a: SoundId): string {.borrow.}
   ## The sound's number as text.
 
 var
-  mediaThroughSystem* = defined(android)
+  mediaThroughSystem* = androidApp
     ## Sounds and videos go to the platform's own side
     ## (`systemCall("media.*")`): Android (set there by itself). Tests set it to check the
     ## calls.
@@ -725,7 +726,7 @@ const toolOpts: set[ProcessOption] = when defined(windows): {poDaemon} else: {} 
 proc lookForTools() =
   if toolsLooked: return
   toolsLooked = true
-  when not (defined(android) or defined(ios)):
+  when not (androidApp or defined(ios)):
     foundFfmpeg = findExe("ffmpeg")
     foundFfprobe = findExe("ffprobe")
 
@@ -760,7 +761,7 @@ proc toolRun(exe: string; args: openArray[string]): string =
   ## What `exe` writes (its errors too) by the time it ends. (Not on
   ## Android, before 9 without posix_spawn, nor iOS: no tools there.)
   if exe.len == 0: return ""
-  when defined(android) or defined(ios):
+  when androidApp or defined(ios):
     result = ""
   else:
     try:
@@ -874,7 +875,7 @@ type Prerolled = object
   pos, dur: int64            # where the picture is shown from and for how long, ns (-1: not known)
   fps: float                 # the stream's frame rate (0: not known)
 
-when not (defined(android) or defined(ios) or defined(windows) or defined(macosx)):
+when not (androidApp or defined(ios) or defined(windows) or defined(macosx)):
   # Exact seeks and frame steps, and the picture they give taken here: `GstPlayer.poll` asks
   # for a sample before the preroll, and (GStreamer 1.24) that asking drops the preroll a paused
   # seek gives.
@@ -1109,7 +1110,7 @@ proc start(r: FfReader; atS: float): bool =
   if v > 0 and v < 5: args.add ["-vsync", "passthrough"]
   else: args.add ["-fps_mode", "passthrough"]
   args.add ["-f", "rawvideo", "-"]
-  when defined(android) or defined(ios):
+  when androidApp or defined(ios):
     false                            # (no ffmpeg there: the system reads videos)
   else:
     try:
@@ -1736,7 +1737,7 @@ proc videoEncodeAvailable*(): bool {.gcsafe.} =
       if mfAvailable(): return true
     false
 
-when not (defined(android) or defined(ios)):
+when not (androidApp or defined(ios)):
   proc ffmpegBegin(v: VideoWriter; path: string; fps: float; bitrate: int)
 
 proc beginVideo*(path: string; w, h: int; fps: float; bitrate = 0): VideoWriter =
@@ -1769,7 +1770,7 @@ proc beginVideo*(path: string; w, h: int; fps: float; bitrate = 0): VideoWriter 
     else:
       v.error = if r.len >= 2 and r[0] == "0": r[1] else: "Videos cannot be written on this device."
     return
-  when not (defined(android) or defined(ios)):
+  when not (androidApp or defined(ios)):
     # (ffmpeg: desktops only -- Android before 9 has no posix_spawn, and
     # writes through the system above)
     ffmpegBegin(v, path, fps, bitrate)
@@ -1779,7 +1780,7 @@ proc beginVideo*(path: string; w, h: int; fps: float; bitrate = 0): VideoWriter 
   if v.error.len == 0:
     v.error = "Videos cannot be written here: ffmpeg is not installed."
 
-when not (defined(android) or defined(ios)):
+when not (androidApp or defined(ios)):
   proc ffmpegBegin(v: VideoWriter; path: string; fps: float; bitrate: int) =
     let ff = ffmpegExe()
     if ff.len > 0:

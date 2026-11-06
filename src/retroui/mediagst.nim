@@ -13,6 +13,7 @@
 ## ```
 
 import std/[dynlib, os]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import gfx
 
 type
@@ -62,7 +63,7 @@ const
   MsgEos = 1
   MsgError = 2
 
-when not (defined(android) or defined(ios) or defined(windows) or defined(macosx)):
+when not (androidApp or defined(ios) or defined(windows) or defined(macosx)):
   import std/locks
   var gstLock: Lock
   initLock(gstLock)
@@ -70,7 +71,7 @@ when not (defined(android) or defined(ios) or defined(windows) or defined(macosx
 proc loadGst(): bool =
   ## (GStreamer's functions found, GStreamer started: the first time
   ## takes a moment -- its plugins looked through)
-  when defined(android) or defined(ios) or defined(windows) or defined(macosx):
+  when androidApp or defined(ios) or defined(windows) or defined(macosx):
     return false
   else:
     let core = loadLib("libgstreamer-1.0.so.0")
@@ -110,7 +111,7 @@ proc loadGst(): bool =
 proc gstAvailable*(): bool {.gcsafe.} =
   ## GStreamer (with its app library) is on this system. The first call
   ## starts it (any thread may make it: the others wait).
-  when defined(android) or defined(ios) or defined(windows) or defined(macosx):
+  when androidApp or defined(ios) or defined(windows) or defined(macosx):
     return false
   else:
     {.cast(gcsafe).}:

@@ -305,11 +305,19 @@ const MaxCached = 64
 # (a kept statement is finalized when it is dropped; the connection is
 # closed with sqlite3_close_v2, which waits for the last one. Only ours:
 # FTS5 keeps statements of its own on the connection.)
-proc `=destroy`(x: CachedObj) =
-  if x.stmt != nil: discard sqlite3_finalize(x.stmt)
+when defined(gcDestructors):
+  proc `=destroy`(x: CachedObj) =
+    if x.stmt != nil: discard sqlite3_finalize(x.stmt)
+else:      # (--mm:refc, an editor's check among them: its hooks take `var`)
+  proc `=destroy`(x: var CachedObj) =
+    if x.stmt != nil: discard sqlite3_finalize(x.stmt)
 proc `=copy`(a: var CachedObj; b: CachedObj) {.error.}
-proc `=destroy`(c: Conn) =
-  if c.p != nil: discard sqlite3_close_v2(c.p)
+when defined(gcDestructors):
+  proc `=destroy`(c: Conn) =
+    if c.p != nil: discard sqlite3_close_v2(c.p)
+else:
+  proc `=destroy`(c: var Conn) =
+    if c.p != nil: discard sqlite3_close_v2(c.p)
 proc `=copy`(a: var Conn; b: Conn) {.error.}
 
 proc shortSql(sql: string): string =

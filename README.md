@@ -251,6 +251,9 @@ retrokit small hello.nim          # optimized for size, LTO, stripped: about 1.1
 retroapk hello.nim --install      # on a phone in Termux
 ```
 
+In Termux the same `nim c -r` runs it in a window on Termux:X11 (see
+BUILDING.md, "A desktop app in Termux").
+
 On Windows from Linux: `nim c -d:release -d:useMalloc -d:lto --opt:size --passL:-s -d:mingw
 --cpu:amd64 --app:gui hello.nim`.
 

@@ -25,13 +25,14 @@
 ## Safe on any thread.
 
 import std/[os, strutils, locks]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import uirelays/services, sha2
 when defined(windows):
   import std/widestrs
 else:
   import std/[posix, sysrand]
   import vault
-  when not defined(android) and not defined(ios):
+  when not androidApp and not defined(ios):
     import std/[osproc, streams]
 
 var secretsLock: Lock
@@ -171,7 +172,7 @@ when not defined(windows):
 
 # ---- macOS keychain, Linux keyring --------------------------------------------------------
 
-when not defined(windows) and not defined(android) and not defined(ios):
+when not defined(windows) and not androidApp and not defined(ios):
   var keyringBroken = false              # guarded by secretsLock: secret-tool failed
 
   proc toHexText(s: string): string =
@@ -262,7 +263,7 @@ proc saveSecret*(app, name, value: string): bool {.gcsafe.} =
       if not ok: return false
       withLock secretsLock:
         result = replaceFile(fileOf(app, name, make = true), sealed)
-    elif defined(android) or defined(ios):
+    elif androidApp or defined(ios):
       withLock secretsLock:
         result = sealFile(app, name, value)
     else:
@@ -290,7 +291,7 @@ proc loadSecret*(app, name: string): string {.gcsafe.} =
       if sealed.len == 0: return ""
       let (ok, plain) = dpapi(sealed, "retro." & app & "\0" & name, false)
       if ok and plain.startsWith("v"): result = plain[1 .. ^1]
-    elif defined(android) or defined(ios):
+    elif androidApp or defined(ios):
       withLock secretsLock:
         result = openFile(app, name)
     else:
@@ -309,7 +310,7 @@ proc deleteSecret*(app, name: string) {.gcsafe.} =
   ## none).
   if app.len == 0 or name.len == 0: return
   {.cast(gcsafe).}:
-    when not defined(windows) and not defined(android) and not defined(ios):
+    when not defined(windows) and not androidApp and not defined(ios):
       if not filesOnly():
         when defined(macosx): keychainDelete(app, name)
         else: keyringDelete(app, name)

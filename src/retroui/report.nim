@@ -27,11 +27,12 @@
 ## left. Sizes are points (1/72 inch; `mm` converts).
 
 import std/[strutils, tables, math, unicode, os, streams]
-when not defined(android) and not defined(ios) and not defined(windows):
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
+when not androidApp and not defined(ios) and not defined(windows):
   import std/osproc
 import gfx, core, widgets, business, typeset, ttf, imaging, pdf, templates, nerdicons, uirelays
 when defined(windows): import std/dynlib
-when defined(android): import uirelays/services
+when androidApp: import uirelays/services
 export pdf, templates, Align, Color, color
 
 # ---- the document ------------------------------------------------------------------------------------
@@ -1053,7 +1054,7 @@ proc savePng*(r: Report; index: int; path: string; dpi = 150.0): bool {.discarda
 
 # ---- printing ----------------------------------------------------------------------------------------
 
-when not defined(android) and not defined(ios) and not defined(windows):
+when not androidApp and not defined(ios) and not defined(windows):
   proc runOut(exe: string; args: openArray[string]): tuple[code: int; output: string] =
     ## Runs `exe` and returns its exit code and output (-1: it did not run).
     try:
@@ -1077,7 +1078,7 @@ proc printPdf*(path: string; jobName = ""; printer = ""; pages = 0): tuple[ok: b
   ## - iOS: not available yet.
   if not fileExists(path): return (false, "There is no file " & path & ".")
   let job = if jobName.len > 0: jobName else: path.extractFilename
-  when defined(android):
+  when androidApp:
     let res = systemCall("print.pdf", absolutePath(path) & "\t" & job & "\t" &
                          (if pages > 0: $pages else: ""))
     if res == "1": (true, "Opened the print dialog for " & job & ".")
@@ -1119,7 +1120,7 @@ proc printPdf*(path: string; jobName = ""; printer = ""; pages = 0): tuple[ok: b
 proc printReport*(r: Report; jobName = ""; printer = ""): tuple[ok: bool; message: string] =
   ## Prints the document (see `printPdf` for each system): it is written as
   ## a PDF file in a temporary folder first.
-  let dir = when defined(android): dataDir("retro-print") else: getTempDir() / "retro-print"
+  let dir = when androidApp: dataDir("retro-print") else: getTempDir() / "retro-print"
   try: createDir(dir) except OSError, IOError: discard
   var name = (if r.title.len > 0: r.title else: "document")
   for c in name.mitems:

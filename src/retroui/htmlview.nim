@@ -40,6 +40,7 @@
 ##   if w.back: requestClose()      # Back with no page before (Android)
 
 import std/[strutils, unicode, tables, os, hashes, times, base64, math]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import core, widgets, markdown, pixelicons, nerdicons, imaging, htmldom, htmllayout, htmlcss
 import webp, gifanim
 import uirelays/[services, input]
@@ -1385,7 +1386,7 @@ type
     file: tuple[path, text: string; stamp: Time]
 
 var
-  useSystemWebView* = defined(android)
+  useSystemWebView* = androidApp
     ## Pages are the system's WebView (Android; tests can turn it on with a
     ## fake `systemRelays.call`).
   webs: Table[string, WebState]

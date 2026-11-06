@@ -398,14 +398,19 @@ proc listen(job: Job) {.thread.} =
 
 # ---- the flow, on the UI thread -------------------------------------------------------------
 
-proc `=destroy`(l: Link) =
+proc dropLink(slot: int) =
   ## A flow no one keeps: its sign-in stops, its slot is free once its
   ## thread ends.
-  if l.slot >= 0:
+  if slot >= 0:
     {.cast(gcsafe).}:
       withLock signInLock:
-        slots[l.slot].cancel = true
-        slots[l.slot].attached = false
+        slots[slot].cancel = true
+        slots[slot].attached = false
+
+when defined(gcDestructors):
+  proc `=destroy`(l: Link) = dropLink(l.slot)
+else:      # (--mm:refc, an editor's check among them: its hooks take `var`)
+  proc `=destroy`(l: var Link) = dropLink(l.slot)
 
 proc `=copy`(a: var Link; b: Link) {.error.}
 

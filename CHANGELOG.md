@@ -1,5 +1,22 @@
 # Changes
 
+## 0.20.3
+
+- **Apps run in Termux, on Termux:X11.** In Termux, Nim builds for
+  Android, and the kit took every such build for an APK: a program run
+  from the shell waited for an Android activity that never came, and
+  nothing showed. Now an APK's library (`--app:lib`, what `retroapk`
+  makes) gets Android's own driver, and a program run from the shell the
+  X11 driver, with files, links and services as on Linux and drawing on
+  the CPU (Android's own EGL knows no X11 windows, so it is not loaded
+  there). `uirelays/target`: `androidApp` and `androidShell`. Steps in
+  BUILDING.md, "A desktop app in Termux".
+- **An editor's check passes:** the kit's own `=destroy` hooks
+  (`mediaaudio`, `oauth`, `db`) take `var` under `--mm:refc`, as that mode
+  asks -- `nim check` with refc (as some editors run it) failed on them.
+  Checked with Nim 2.4.0 as well as 2.2.
+- Retro Gallery and the small examples are 0.20.3.
+
 ## 0.20.2
 
 - **Retro Board 1.3.3: bigger words.** The letters on the board are

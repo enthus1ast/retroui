@@ -2,6 +2,7 @@
 ## settings, opening links, and what kind of device this is.
 
 import std/[os, tables, strutils, osproc]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import uirelays/[services, input]
 import core, gfx
 from ttf import sfntOf
@@ -299,14 +300,14 @@ proc restoreAppearance*(s: Settings) =
 
 proc canOpenTerminal*(): bool =
   ## `openTerminal` can work here (a desktop).
-  when defined(android) or defined(ios): false else: true
+  when androidApp or defined(ios): false else: true
 
 proc openTerminal*(dir: string): bool {.discardable.} =
   ## Opens a terminal window in the folder `dir` (the system's own: on
   ## Linux $TERMINAL or the first of the usual ones there; Windows
   ## Terminal or the command prompt; macOS's Terminal). False when none
   ## could be started.
-  when defined(android) or defined(ios):
+  when androidApp or defined(ios):
     false
   else:
     proc start(exe: string; args: openArray[string]): bool =

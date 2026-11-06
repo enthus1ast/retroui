@@ -22,8 +22,9 @@
 ## the APK needs the INTERNET permission).
 
 import std/[os, strutils, times, locks, typedthreads, algorithm, sequtils]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import core
-when defined(android):
+when androidApp:
   import uirelays/services
 elif not defined(ios):
   import fetch
@@ -222,7 +223,7 @@ proc downloadTo(whole, dest, agent: string; timeoutSec: int): string {.gcsafe.} 
   ## on any thread.
   let (url, headers) = splitHeaders(whole)
   if url.len == 0: return "no address"
-  when defined(android):
+  when androidApp:
     if '\t' in url or '\t' in dest: return "bad address"
     try: createDir(dest.parentDir) except OSError: discard
     var hs: seq[string]

@@ -9,7 +9,8 @@
 ##   if err.len > 0: echo "could not: ", err
 
 import std/[os, strutils]
-when defined(android):
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
+when androidApp:
   import native
 elif not defined(ios):
   import std/osproc
@@ -24,7 +25,7 @@ proc downloadFile*(url, dest: string; userAgent = defaultAgent; timeoutSec = 60;
   ## an API). "" when it worked, else what went wrong.
   let part = dest & ".part"
   try: createDir(dest.parentDir) except OSError: discard
-  when defined(android):
+  when androidApp:
     if not javaAvailable(): return "Java is not reachable"
     let sdk = androidVersion().sdk
     if sdk > 0 and sdk < 29: return "downloading needs Android 10 or newer"

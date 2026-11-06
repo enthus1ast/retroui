@@ -35,6 +35,7 @@
 ##   setBadge(unreadCount)
 
 import std/[os, strutils, tables, locks, typedthreads, times, unicode]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import native, bgcheck
 when defined(windows):
   import std/exitprocs
@@ -704,7 +705,7 @@ proc notifyAvailable*(): bool =
   ## for a minute). False on iOS, and where `notify` would answer false.
   when defined(ios): return false
   else:
-    when defined(android):
+    when androidApp:
       if javaAvailable():
         let nm = javaActivityObj("getSystemService", "notification")
         if nm.isNil: return false
@@ -735,7 +736,7 @@ proc notify*(title, body: string; app = ""; icon = ""; tag = ""): bool {.discard
   if t.len == 0 and b.len == 0: return false
   when defined(ios): return false
   else:
-    when defined(android):
+    when androidApp:
       if javaAvailable():
         try: return androidNotify(t, b, icon, tag, badgeNow)
         except CatchableError: return false
@@ -751,7 +752,7 @@ proc clearNotification*(tag = "") =
   ## "": all of them. (macOS leaves them; Windows has one at a time.)
   when defined(ios): discard
   else:
-    when defined(android):
+    when androidApp:
       if javaAvailable():
         androidClear(tag)
         return
@@ -768,7 +769,7 @@ proc setBadge*(count: int) =
   when defined(macosx):
     try: dockBadge(c)
     except CatchableError: discard
-  elif defined(android):
+  elif androidApp:
     if javaAvailable():
       try: androidBadge(c)
       except CatchableError: discard

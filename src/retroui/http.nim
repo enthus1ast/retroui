@@ -29,11 +29,12 @@
 ## to connect, or for the next bytes -- not the length of a whole download.
 
 import std/[strutils, uri]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 when defined(windows):
   import std/[locks, widestrs]
 elif not defined(ios):
   import std/[dynlib, locks, os, sysrand]
-  when defined(android):
+  when androidApp:
     import uirelays/services
   else:
     import std/[osproc, posix, streams]
@@ -300,7 +301,7 @@ when defined(windows):
 
 # ---- Android: Java's HttpURLConnection (tools/android/RetroNet.java) ---------------------
 
-when defined(android):
+when androidApp:
   proc javaRequest(meth, url: string; headers: openArray[(string, string)]; body: string;
                    timeoutSec: int; follow: bool; there: var bool): HttpResponse =
     ## Through the app's Java part; `there` false when it has none (not an
@@ -505,7 +506,7 @@ when not defined(windows) and not defined(ios):
       return failed(if msg.len > 0: msg else: $curl.strerror(code))
     result.status = int(status)
 
-  when not defined(android):
+  when not androidApp:
     proc writePrivate(path, data: string): bool =
       ## A new file only this user may read (it can hold a token).
       let fd = posix.open(path.cstring, O_WRONLY or O_CREAT or O_EXCL, Mode(0o600))
@@ -639,7 +640,7 @@ proc httpRequest*(meth, url: string; headers: openArray[(string, string)] = [];
     result = failed("HTTP requests are not done on iOS yet")
   else:
     {.cast(gcsafe).}:
-      when defined(android):
+      when androidApp:
         var there = true
         result = javaRequest(meth, url, hs, body, timeoutSec, followRedirects, there)
         if not there:                  # (Termux: not an APK)

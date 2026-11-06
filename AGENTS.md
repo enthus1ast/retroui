@@ -63,6 +63,13 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
 - **The same everywhere:** behaviour and looks must match on Windows,
   macOS, Linux/BSD and Android; platform conventions (Cmd on macOS) go in
   the drivers, not in the app code.
+- **Android: an app or a program in Termux.** Nim builds both with
+  `--os:android`. `androidApp` (`uirelays/target`) is an APK (the
+  activity, JNI, the app's folders); `androidShell` is a program run in
+  Termux (X11 on Termux:X11, files and services as on Linux). Use
+  `androidApp` for anything of the activity's; `defined(android)` only
+  for what Android's libc and system are either way (bionic's malloc,
+  /system/fonts, /storage).
 - **uirelays** (`src/retroui/uirelays`): generic, in upstream's style, no
   Retro names or app logic. It is the same code as the `uirelays` branch:
   after changing it, `sh tools/uirelays.sh push "message"`; `sh

@@ -33,6 +33,7 @@
 ##     label "..."
 
 import std/atomics
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import native
 
 type BackgroundCheck* = proc () {.nimcall, gcsafe.}
@@ -43,7 +44,7 @@ var
   running: Atomic[bool]              # a check is under way (one at a time)
   inCheck {.threadvar.}: bool        # this thread runs the check
 
-when defined(android):
+when androidApp:
   # android_glue.c's; weak: a program without the Android driver (in
   # Termux) has none, and nothing then waits
   proc bgRegistered() {.importc: "uirelays_bg_registered", cdecl,
@@ -68,7 +69,7 @@ proc onBackgroundCheck*(check: BackgroundCheck) =
   ## slow: on Android a process started for a check runs the app's start
   ## only this far.
   theCheck = check
-  when defined(android):
+  when androidApp:
     if cast[pointer](bgRegistered) != nil: bgRegistered()
 
 proc androidSchedule(minutes: int): bool =
@@ -83,7 +84,7 @@ proc scheduleBackgroundCheck*(minutes: int): bool {.discardable.} =
   ## the app calls it at every start. False where nothing is scheduled:
   ## the desktops (apps keep running there), iOS, an APK built without
   ## `retroapk --background` (`javaError` says why).
-  when defined(android):
+  when androidApp:
     if not javaAvailable(): return false
     androidSchedule(minutes)
   else:
@@ -94,7 +95,7 @@ proc inBackgroundCheck*(): bool =
   ## in, no dialog to show -- and, on Android, while the app's start runs
   ## for one with no window (the process was started for a check).
   result = inCheck
-  when defined(android):
+  when androidApp:
     if not result and cast[pointer](bgHeadless) != nil: result = bgHeadless() != 0
 
 proc retroBackgroundCheck*(): cint {.exportc: "uirelays_background_check", dynlib, cdecl, gcsafe.} =

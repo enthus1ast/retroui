@@ -37,7 +37,7 @@ retrokit new myapp --kind:business     # kinds: hello, form, business, files, ch
 cd myapp && nimble run
 ```
 
-Needs Nim 2.0+ (2.2 recommended) and a C compiler. Build with
+Needs Nim 2.0+ (2.2 or 2.4) and a C compiler. Build with
 `-d:release -d:useMalloc` (memory goes back to the system).
 
 ## 3. The shape of every app
@@ -208,6 +208,11 @@ retroapk app.nim --name:"My App" --id:com.me.myapp             # Android APK: no
 retroios app.nim --simulator --run                             # iOS, on a Mac with Xcode
 retrokit small app.nim                                         # smallest desktop build
 ```
+
+In Termux on Android, `nim c -r app.nim` runs the app in a window on
+Termux:X11 (`termux-x11 :0 &`, `export DISPLAY=:0`, `pkg install libx11`);
+`retroapk` makes the APK. (`uirelays/target`: `androidApp` is an APK,
+`androidShell` a program in Termux.)
 
 `retroapk` needs only clang with lld (or Zig); without either it fetches
 the NDK. Keep `~/.retro/android` (the signing key) for updates. Details per

@@ -14,8 +14,9 @@
 ##   useThumbCache(thumbCacheFolder("Retro Files"), 96 * 1024 * 1024)
 
 import std/[os, times, strutils, algorithm, locks]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import gfx, imaging, jpeg
-when defined(android) or defined(ios):
+when androidApp or defined(ios):
   import uirelays/services     # (a phone's app's folder: `cacheFolder`)
 
 const
@@ -42,7 +43,7 @@ proc cacheFolder*(app: string): string =
   ## may be emptied (Android does when the storage runs short): Windows'
   ## LocalAppData, ~/Library/Caches, XDG's cache folder (~/.cache); on a
   ## phone the app's own. Not made here.
-  when defined(android):
+  when androidApp:
     dataDir(app).parentDir / "cache"
   elif defined(ios):
     dataDir(app) / "Caches"

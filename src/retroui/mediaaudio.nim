@@ -14,6 +14,7 @@
 ## ```
 
 import std/[locks, typedthreads, math, dynlib, hashes]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 
 type
   Pcm = object
@@ -43,7 +44,10 @@ proc release(p: ptr Pcm) =
     if p.data != nil: deallocShared(p.data)
     deallocShared(p)
 
-proc `=destroy`(h: PcmHandle) = release(h.p)
+when defined(gcDestructors):
+  proc `=destroy`(h: PcmHandle) = release(h.p)
+else:      # (--mm:refc, an editor's check among them: its hooks take `var`)
+  proc `=destroy`(h: var PcmHandle) = release(h.p)
 proc `=copy`(a: var PcmHandle; b: PcmHandle) {.error.}
 
 template pcm(s: Sound): ptr Pcm = s.h.p
@@ -334,7 +338,7 @@ type AudioOut = object
   write: proc (o: var AudioOut; buf: var seq[int16]): bool {.nimcall, gcsafe.}
   close: proc (o: var AudioOut) {.nimcall, gcsafe.}
 
-when defined(linux) and not defined(android):
+when defined(linux) and not androidApp:
   type
     PaSampleSpec = object
       format: cint

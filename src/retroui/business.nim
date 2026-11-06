@@ -25,6 +25,7 @@
 ## ```
 
 import std/[strutils, unicode, os, algorithm, math, times]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import core, widgets, pixelicons
 import uirelays/services
 
@@ -2581,7 +2582,7 @@ proc rescan(filters: openArray[string]) =
   fdlg.fileSel = -1
   fdlg.dirSel = -1
 
-const phone = defined(android) or defined(ios)
+const phone = androidApp or defined(ios)
 
 proc startDir(): string =
   ## Where the dialog opens: phones, the app's own folder (the only one it
@@ -2604,7 +2605,7 @@ proc downloadsDir*(): string =
   ## another drive or not; "Download" on a phone's storage), else the home
   ## folder: where Save As starts for a file that came from elsewhere (an
   ## attachment, a download).
-  when defined(android):
+  when androidApp:
     for p in ["/storage/emulated/0/Download", "/sdcard/Download"]:
       if dirExists(p): return p
     return dataDir("")

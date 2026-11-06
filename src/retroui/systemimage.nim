@@ -24,9 +24,10 @@
 ## ```
 
 import std/[os, osproc, strutils]
+import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import gfx, imaging
 import uirelays/services
-when not defined(android):
+when not androidApp:
   import std/locks
 
 const systemImageExts* = [".heic", ".heif", ".hif", ".avif"]
@@ -126,14 +127,14 @@ proc allOpaque(b: Bitmap): bool =
     if (p shr 24) != 255: return false
   true
 
-when not defined(android):
+when not androidApp:
   var libLock: Lock
   initLock(libLock)
 
 # ---- Linux and the BSDs: libheif and libavif ------------------------------------
 
 const UseLibs = (defined(linux) or defined(freebsd) or defined(openbsd) or
-                 defined(netbsd) or defined(dragonfly)) and not defined(android)
+                 defined(netbsd) or defined(dragonfly)) and not androidApp
 
 when UseLibs:
   import std/dynlib
@@ -892,7 +893,7 @@ elif defined(windows):
           comRelease(encoder))
       if heicEncoder == 1: result.add "heic"
 
-elif not defined(android):
+elif not androidApp:
   proc decodeWithLibraries(data: string; ext: string; hi: ptr seq[uint16]): Bitmap = nil
   proc encodeWithLibraries(b: Bitmap; kind: string; quality: int): string = ""
   proc encodeKinds(): seq[string] = @[]
@@ -905,7 +906,7 @@ proc decodeWithSystem*(path: string; hi: ptr seq[uint16] = nil): Bitmap =
   ## AVIF) also puts its pixels there at 16 bits, R G B A each (as
   ## `decodePng` does) -- where the system's libraries give them; else `hi`
   ## is left empty.
-  when defined(android):
+  when androidApp:
     let tmp = getTempDir() / ("retro-sysimg-" & $getCurrentProcessId() & "-" & $getThreadId() & ".png")   # (one per thread)
     defer:
       try: removeFile(tmp) except OSError: discard
@@ -954,7 +955,7 @@ proc systemEncodeExts*(): seq[string] =
   ## or neither (Linux: libheif with an HEVC or AV1 encoder plugin, libavif
   ## with an AV1 encoder; macOS: what ImageIO writes; Windows: a WIC HEIF
   ## encoder; Android: none).
-  when defined(android): @[]
+  when androidApp: @[]
   else:
     try: encodeKinds()
     except CatchableError: @[]
@@ -964,7 +965,7 @@ proc encodeWithSystem*(b: Bitmap; ext: string; quality: int): string =
   ## AVIF file ("avif"), by the system's encoder at `quality` 0 .. 100 (100:
   ## the best); "" when this system has no encoder for it (see
   ## `systemEncodeExts`).
-  when defined(android): ""
+  when androidApp: ""
   else:
     let kind = encodeKind(ext)
     if b == nil or kind.len == 0 or b.w <= 0 or b.h <= 0 or b.px.len < b.w * b.h: return ""
@@ -973,7 +974,7 @@ proc encodeWithSystem*(b: Bitmap; ext: string; quality: int): string =
 
 proc systemImageNote*(): string =
   ## What to say when such a picture could not be read.
-  when defined(android): "this device cannot read it (HEIF needs Android 9, AVIF Android 12)"
+  when androidApp: "this device cannot read it (HEIF needs Android 9, AVIF Android 12)"
   elif defined(macosx) or defined(ios):
     "this system cannot read it (HEIC needs macOS 10.13 or iOS 11, AVIF macOS 13 or iOS 16)"
   elif defined(windows):
