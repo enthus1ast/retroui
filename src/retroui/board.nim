@@ -102,7 +102,7 @@ type
     geo*: GeoKind            ## a geometric shape's outline
     flipX*, flipY*: bool     ## mirrored across, down
     text*: string            ## a label, a note's, a text's, a frame's name
-    scale*: float            ## text: how big its letters are (1)
+    scale*: float            ## how big its words are, times its size's (1)
     autoSize*: bool          ## text: as wide as its words (else wrapped in `w`)
     pts*: seq[InkPoint]      ## ink: its points (from its box's corner); a line: its handles
     isPen*: bool             ## ink drawn with a pen (its pressure real)
@@ -191,8 +191,16 @@ const
     0xFF4F72FC'u32, 0xFF4DABF7'u32, 0xFFFFC034'u32, 0xFFF76707'u32, 0xFF099268'u32, 0xFF40C057'u32,
     0xFFFF8787'u32, 0xFFE03131'u32, 0xFF1D1D1D'u32]
   strokeWidths: array[BoardSize, float] = [2.0, 3.5, 5.0, 10.0]
-  fontSizes*: array[BoardSize, float] = [18.0, 24.0, 36.0, 44.0]
-    ## The letters of each size (page units).
+  fontSizes*: array[BoardSize, float] = [38.0, 48.0, 68.0, 86.0]
+    ## The letters of each size (page units): M twice what it was (24),
+    ## the others as Excalidraw has them to its M (0.8, 1.4, 1.8 times) --
+    ## words as big beside the shapes drawn round them as Excalidraw's on
+    ## a tablet, where a page unit is a screen dot at 100 %.
+  oldFontSizes: array[BoardSize, float] = [18.0, 24.0, 36.0, 44.0]
+    ## (the sizes of a board saved before (its `version` 1): its words are
+    ## kept as big as they were, with `scale`)
+  BoardFileVersion = 2
+    ## (2: the letters of `fontSizes`)
   fontFamilies: array[BoardFont, string] = ["Caveat", "Patrick Hand", "Architects Daughter", "Gochi Hand",
                                             "Indie Flower", "Aref Ruqaa", "FreeSans", "FreeSerif",
                                             "FreeMono", "FreeSerif"]
@@ -1487,14 +1495,14 @@ proc labelFrame*(b: Board; s: Shape): LabelFrame =
   case s.kind
   of skGeo:
     let lb = s.labelBox
-    LabelFrame(host: s, x: lb.x, y: lb.y, w: lb.w, h: lb.h, size: fontSizes[s.size], wrap: lb.w,
+    LabelFrame(host: s, x: lb.x, y: lb.y, w: lb.w, h: lb.h, size: s.textSize, wrap: lb.w,
                valign: s.valign)
   of skNote:
     # (smaller letters when a word is wider than the note, or the words
     # taller: a note keeps its size)
     let w = max(10.0, s.w - 32)
     let h = max(10.0, s.h - 32)
-    var size = fontSizes[s.size]
+    var size = s.textSize
     if s.text.len > 0:
       var widest = 0.0
       for word in strutils.splitWhitespace(s.text): widest = max(widest, s.measureText(word, 0, size)[0])
@@ -1513,7 +1521,7 @@ proc labelFrame*(b: Board; s: Shape): LabelFrame =
   of skArrow:
     # (on its middle, as wide as its words)
     let m = b.arrowMiddle(s)
-    let size = fontSizes[s.size]
+    let size = s.textSize
     var host = s
     host.rot = 0
     host.align = baMiddle
@@ -1524,7 +1532,7 @@ proc labelFrame*(b: Board; s: Shape): LabelFrame =
     host.y = m.y - host.h / 2
     LabelFrame(host: host, x: 0, y: 0, w: host.w, h: host.h, size: size, wrap: host.w + 1, valign: baMiddle)
   else:
-    LabelFrame(host: s, x: 0, y: 0, w: s.w, h: s.h, size: fontSizes[s.size], wrap: max(10.0, s.w),
+    LabelFrame(host: s, x: 0, y: 0, w: s.w, h: s.h, size: s.textSize, wrap: max(10.0, s.w),
                valign: baMiddle)
 
 proc placed(f: LabelFrame; text: string; color: uint32): tuple[t: TextData; l: TextLayout; oy: float] =
@@ -2406,7 +2414,8 @@ proc keepPictures(b: Board; s: var Shape; assets: JsonNode) =
 
 proc toJson*(b: Board): JsonNode =
   ## The whole board (its pages, their shapes and views) as JSON.
-  result = %*{"format": "retro-board", "version": 1, "name": b.name, "cur": b.cur, "nextId": b.nextId}
+  result = %*{"format": "retro-board", "version": BoardFileVersion, "name": b.name, "cur": b.cur,
+               "nextId": b.nextId}
   if b.paper != 0: result["paper"] = %b.paper
   var ps = newJArray()
   for p in b.pages:
@@ -2426,6 +2435,7 @@ proc boardFrom*(j: JsonNode): Board =
   ## A board saved with `toJson` (nil: not one).
   if j == nil or j.kind != JObject or j{"format"}.getStr != "retro-board": return nil
   result = Board(name: j{"name"}.getStr)
+  let before = j{"version"}.getInt(1) < 2       # (smaller letters then: kept so)
   var maxId = 0
   for pj in j{"pages"}.getElems:
     let p = Page(id: pj{"id"}.getInt, name: pj{"name"}.getStr("Page"), camX: pj{"camX"}.getFloat,
@@ -2434,6 +2444,8 @@ proc boardFrom*(j: JsonNode): Board =
     maxId = max(maxId, p.id)
     for sj in pj{"shapes"}.getElems:
       var s = shapeFrom(sj)
+      if before and s.hasText:
+        s.scale = (if s.scale > 0: s.scale else: 1.0) * oldFontSizes[s.size] / fontSizes[s.size]
       result.keepPictures(s, j{"assets"})
       maxId = max(maxId, s.id)
       p.shapes.add s

@@ -30,13 +30,14 @@
   box has the focus shows at once.
 - **BUILDING.md** covers the desktop too: Windows from Windows, Linux or
   macOS (MinGW), its icon and version, macOS `.app`s, Linux AppImages.
-- **Bigger text.** The UI's text is 13.5 pixels per em at 100 % on
-  desktops and tablets (was 12), about Windows 3.1's 10-point System font:
-  capitals 10 pixels, small letters 7, the letters in proportion with the
-  controls and icons; 16.5 on phones (was 15). `DesktopTextEm` and
-  `TouchTextEm` say so; `setBaseTextSize` still sets your own. Docked
-  panels' tabs keep their labels whole (less room around them, then a
-  size smaller) before cutting them short.
+- **Retro Board 1.3.3: bigger words.** The letters on the board are
+  twice as big, as Excalidraw's beside the shapes: S, M, L and XL are 38,
+  48, 68 and 86 page units (were 18, 24, 36, 44; a unit is a screen dot at
+  100 % on a tablet). Boards saved before (`version` 1) keep their words as
+  they were drawn (`Shape.scale`) until a size is chosen; labels of
+  shapes and arrows follow `scale` as text does.
+- **Docked panels' tabs keep their labels whole** (less room around them,
+  then a size smaller) before cutting them short.
 - **uirelays brought up to date** with nim-lang/uirelays master
   (`cb82378`, merged on the `uirelays` branch): KeySlash on X11 (it was
   already there in the kit's translation, now one case), precise wheel
@@ -48,7 +49,7 @@
   `AMotionEvent_getMetaState`, which the driver now reads; it takes
   Android's headers from the sysroot `retroapk` carries, no NDK needed.
 - **The apps, with the new text, menus and frame:** Retro Photo 4.9.3,
-  Retro Files 3.3.3, Retro Mail 1.0.4, Retro Board 1.3.2 (its About box
+  Retro Files 3.3.3, Retro Mail 1.0.4, Retro Board 1.3.3 (its About box
   no longer shows the credit twice), HR Book 0.1.
 
 - **GNU FreeFont is the kit's text: FreeSans the default, FreeSerif and
@@ -97,7 +98,7 @@
     `kern` tables are dropped), a style a font lacks made bold or slanted
     as FreeType does (its outline emboldened, the letters wider). Line
     height, baseline and the controls' sizes come from FreeSans with its
-    line gap (a 16-pixel line at 13.5).
+    line gap (a 15-pixel line at 12).
   - Settings: "look.fontv" is 3; a font stored before (MS W98 UI, Kawkab
     Mono...) is FreeSans now, a font file stays one; `uiFontKey` words are
     "sans", "serif", "mono", "file" (the old ones still read).

@@ -570,3 +570,23 @@ suite "more options (as Excalidraw)":
     let t = c.page.shapes[0]
     check t.fillOf == bcViolet and t.roughness == 1 and t.round and t.link == "https://www.foxoman.net"
     check t.fill == bfZigzag and c.page.shapes[1].elbow
+
+suite "the letters' sizes":
+  test "words as big as Excalidraw's; a board of before keeps its own":
+    check fontSizes == [38.0, 48.0, 68.0, 86.0]
+    let b = newBoard()
+    var box = b.newShape(skGeo, 0, 0, 300, 120)
+    box.text = "Test"
+    discard b.addShape(box)
+    check b.labelFrame(b.page.shapes[0]).size == 48.0
+    # saved now (version 2) and read back: the same
+    let j = b.toJson
+    check j["version"].getInt == 2
+    check boardFrom(j).page.shapes[0].textSize == 48.0
+    # a board saved before (version 1): its words at 24, as they were drawn,
+    # and so again once saved and read back
+    j["version"] = %1
+    let old = boardFrom(j)
+    let s = old.page.shapes[0]
+    check abs(s.textSize - 24.0) < 1e-9 and abs(old.labelFrame(s).size - 24.0) < 1e-9
+    check abs(boardFrom(old.toJson).page.shapes[0].textSize - 24.0) < 1e-9

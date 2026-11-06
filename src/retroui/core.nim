@@ -209,13 +209,13 @@ const
                     (name: "Hot Dog", theme: HotDog), (name: "Paper", theme: Paper)]
     ## The color schemes that come with the toolkit, by name.
 
-  DesktopMetrics* = Metrics(pad: 8, gap: 6, ctrlH: 25, editH: 22,
-                            itemH: 18, menuH: 22, sbW: 17)
+  DesktopMetrics* = Metrics(pad: 8, gap: 6, ctrlH: 24, editH: 21,
+                            itemH: 17, menuH: 21, sbW: 17)
     ## The sizes of Windows 3.1 dialogs (at the default text size: a
-    ## 16-pixel line; `fitMetrics` makes them from the text in use).
-  TouchMetrics* = Metrics(pad: 8, gap: 8, ctrlH: 36, editH: 34,
-                          itemH: 32, menuH: 34, sbW: 22)
-    ## The same look with targets a finger can hit (a 20-pixel line).
+    ## 15-pixel line; `fitMetrics` makes them from the text in use).
+  TouchMetrics* = Metrics(pad: 8, gap: 8, ctrlH: 34, editH: 32,
+                          itemH: 30, menuH: 32, sbW: 22)
+    ## The same look with targets a finger can hit (an 18-pixel line).
   LayerBase* = 0         ## the window's content and its bars
   LayerDialog* = 1       ## dialogs (over the content)
   LayerPopup* = 2        ## menus, drop-down lists, calendars (over dialogs)
@@ -452,12 +452,10 @@ proc fingers*(): bool {.inline.} =
   of csAuto: ui.touch and not ui.roomy
 
 const
-  DesktopTextEm* = 13.5
+  DesktopTextEm* = 12.0
     ## The UI's text size at 100 % on desktops and tablets, logical pixels
-    ## per em: about the size of Windows 3.1's System font (10 points), so
-    ## the letters (FreeSans: capitals 10 pixels, small letters 7) hold their
-    ## own beside the controls and icons.
-  TouchTextEm* = 16.5
+    ## per em (a 15-pixel line).
+  TouchTextEm* = 15.0
     ## The UI's text size at 100 % with finger-sized controls (phones).
 
 proc fitMetrics() =
@@ -1860,7 +1858,7 @@ proc textScale*(): int = ui.textScale
 
 proc setBaseTextSize*(em: float) =
   ## The text size at 100%, logical pixels per em (default `DesktopTextEm`,
-  ## 13.5, on desktops and tablets; `TouchTextEm`, 16.5, on phones).
+  ## 12, on desktops and tablets; `TouchTextEm`, 15, on phones).
   ui.baseEm = em
   fitMetrics()
   ui.force = true

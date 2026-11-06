@@ -412,9 +412,8 @@ get the same with `scrollWheel`, `scrollPan`, `scrollTo` / `scrollBy` /
 sharp (2x, 3x) and the text and controls make up the rest (a 1.33x tablet
 gets 1x lines and 1.33x text). `setUiScale(125)` (and Ctrl + / - / 0, and
 the phone title bar's menu) scales everything; `setTextScale(120)` only
-the text (controls grow with it); `setBaseTextSize(15)` changes the 100%
-size (13.5 pixels per em on desktops and tablets, about Windows 3.1's
-10-point System font; 16.5 on phones). Try layouts on a desktop with `RETRO_SIZE=420x840`, `RETRO_TOUCH=1`,
+the text (controls grow with it); `setBaseTextSize(14)` changes the 100%
+size (12 pixels per em on desktops and tablets, 15 on phones). Try layouts on a desktop with `RETRO_SIZE=420x840`, `RETRO_TOUCH=1`,
 `RETRO_CAPTION=1` (the phone title bar), `RETRO_SCALE=150`, `RETRO_ZOOM=2`.
 
 ## Text and icons
@@ -1241,7 +1240,7 @@ b.saveBoard("flow.board")
   scale, transparent or on the canvas's color), SVG and PDF (vectors,
   text as outlines).
 
-`examples/retroboard.nim` is **Retro Board 1.3.2**, a whiteboard app made of
+`examples/retroboard.nim` is **Retro Board 1.3.3**, a whiteboard app made of
 it: the 3.1 title bar on phones and tablets, a status bar (the tool's
 hint, page, shapes, zoom, memory), the color schemes and Appearance, a
 floating tool bar (select, hand, draw, highlighter, eraser, laser,

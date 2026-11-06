@@ -101,11 +101,11 @@ var
   zoom* = 1         ## driver coordinate units per logical pixel
   sysFont: Font
   sysFontSize = 0
-  textEm = 13.5'f32     ## the UI's text size: logical pixels per em
+  textEm = 12'f32       ## the UI's text size: logical pixels per em
   uiFontSel = ufSans
     ## the UI's font
-  FontH* = 16           ## height of a line of the UI's text, logical pixels
-  FontAscent* = 13      ## from a line's top to its baseline
+  FontH* = 15           ## height of a line of the UI's text, logical pixels
+  FontAscent* = 12      ## from a line's top to its baseline
   textLut: array[256, uint8]
     ## small text's coverage made a little darker (as it always was)
 
@@ -462,8 +462,8 @@ proc lineK(): float32 = lineFactor(uiBase(), withGap = true) + 0.02
   ## always were -- FreeSans 1.2 em -- and a little more)
 
 proc setTextSize*(em: float) =
-  ## The UI's text size in logical pixels per em (13.5 on desktops and
-  ## tablets, 16.5 on phones: `core`'s `DesktopTextEm`, `TouchTextEm`).
+  ## The UI's text size in logical pixels per em (12 on desktops and
+  ## tablets, 15 on phones: `core`'s `DesktopTextEm`, `TouchTextEm`).
   ## `FontH` and `FontAscent` follow.
   textEm = clamp(float32(em), 6, 96)
   let e = textEm
@@ -474,7 +474,7 @@ proc setTextSize*(em: float) =
   for i in 0 .. 255:
     textLut[i] = uint8(round(pow(i.float / 255, 1 / 1.2) * 255))
 
-setTextSize(13.5)
+setTextSize(12)
 
 proc textSize*(): float = textEm
   ## The UI's text size in logical pixels per em.

@@ -21,7 +21,7 @@ import retroui/[board, freehand]
 
 const
   AppName = "Retro Board"
-  BoardVersion = "1.3.2"
+  BoardVersion = "1.3.3"
   iconPng = staticRead("assets/board-icon.png")
 
 type
@@ -2241,7 +2241,7 @@ proc strokeSection(f: var Flow) =
     if clicked:
       cur.size = z
       restyle("Size", proc (s: var Shape) =
-        if s.kind == skText: s.scale = 1
+        s.scale = 1                    # (the size chosen: its letters as that size has them)
         s.size = z)
   f.heading("Sloppiness")
   for (lv, name) in [(-1, "Architect"), (0, "Artist"), (1, "Cartoonist")]:
@@ -2302,7 +2302,7 @@ proc textSection(f: var Flow) =
     if clicked:
       cur.size = z
       restyle("Size", proc (s: var Shape) =
-        if s.kind == skText: s.scale = 1
+        s.scale = 1                    # (the size chosen: its letters as that size has them)
         s.size = z)
   f.heading("Align")
   for (al, g) in [(baStart, nfAlignLeft), (baMiddle, nfAlignCenter), (baEnd, nfAlignRight)]:
@@ -3269,7 +3269,9 @@ proc dialogs() =
             "on as many pages as you like.",
             "Made with Retro Nim UI " & RetroVersion & " (retroui/board, retroui/freehand)."],
            tagline = "Draw, sketch and think together", iconPng = iconPng,
-           whatsNew = ["1.3.2: the menus answer at once; the letters drawn as before, Sharp text a choice; " &
+           whatsNew = ["1.3.3: the words on the board twice as big -- as Excalidraw's beside the shapes (S, M, L, XL: " &
+                       "38, 48, 68, 86); boards made before keep theirs as they were drawn until you choose a size",
+                       "1.3.2: the menus answer at once; the letters drawn as before, Sharp text a choice; " &
                        "the Windows 3.1 frame on every desktop",
                        "1.3.1: a line drawn from a shape or to one holds on to it (a connector, as an arrow " &
                        "with no heads: it follows the shapes; Alt: a free line); 100% half as big on a tablet or " &

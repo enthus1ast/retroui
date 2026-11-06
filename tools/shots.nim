@@ -2028,8 +2028,8 @@ true black, for phones whose pixels are off where it is black.
 The UI follows the screen's density by itself, in whole pixels so lines stay
 sharp. `setUiScale(125)` makes everything larger (Ctrl + / - / 0 do it too,
 and the phone title bar's menu); `setTextScale(130)` only the text, the
-controls growing with it; `setBaseTextSize(15)` changes the size at 100%
-(13.5 pixels per em on desktops and tablets, 16.5 on phones).
+controls growing with it; `setBaseTextSize(14)` changes the size at 100%
+(12 pixels per em on desktops and tablets, 15 on phones).
 `setControlSizes(csTouch)` gives finger-sized controls on any screen.
 
 {{pictures:sizes}}
