@@ -6,6 +6,7 @@
 #   tools/uirelays.sh push "message"  src/retroui/uirelays -> a commit on the branch
 #   tools/uirelays.sh pull            the branch's src/uirelays -> src/retroui/uirelays
 #   tools/uirelays.sh diff            what differs between the two
+#   tools/uirelays.sh merge           nim-lang/uirelays master merged into the branch
 #
 # RETRO.md, VERSION and LICENSE.md stay in retro only.
 set -e
@@ -45,6 +46,27 @@ case "$1" in
   diff)
     git -C "$root" archive "$branch" src/uirelays | tar -x -C "$work"
     diff -ru -x RETRO.md -x VERSION -x LICENSE.md "$work/src/uirelays" "$here" && echo "the same"
+    ;;
+  merge)
+    upstream=${UIRELAYS_UPSTREAM:-https://github.com/nim-lang/uirelays.git}
+    git -C "$root" fetch -q "$upstream" master
+    new=$(git -C "$root" rev-parse FETCH_HEAD)
+    if git -C "$root" merge-base --is-ancestor "$new" "$branch"; then
+      echo "the branch has upstream's $new already"; exit 0
+    fi
+    git -C "$root" log --oneline "$branch..$new"
+    # (a worktree of its own that stays when the merge stops on a conflict)
+    tree=$root/../uirelays-merge
+    git -C "$root" worktree add -q "$tree" "$branch"
+    cd "$tree"
+    if git merge --no-ff -q -m "Merge nim-lang/uirelays master ($(git rev-parse --short "$new"))" "$new"; then
+      cd "$root" && git worktree remove "$tree"
+      echo "merged; now: tools/uirelays.sh pull, and $new in VERSION"
+    else
+      echo "conflicts in $tree: fix them, git add, git commit there; then"
+      echo "git worktree remove $tree && tools/uirelays.sh pull"
+      exit 1
+    fi
     ;;
   *)
     sed -n '2,10p' "$0"

@@ -5,8 +5,8 @@ with my changes for phones, tablets, pens and the GPU, so retro needs no
 other package. Import it as `retroui/uirelays`.
 
 It is the same code as `src/uirelays` on the **`uirelays` branch** of this
-repository: upstream's history up to the commit in `VERSION`, then my
-commits on top, ready to go upstream as a pull request. Nothing in it
+repository: upstream's history with my commits on it, upstream merged in
+up to the commit in `VERSION`, ready to go upstream as a pull request. Nothing in it
 knows about retro -- it stays a library for any Nim program.
 
 ## Keeping the two the same
@@ -14,6 +14,12 @@ knows about retro -- it stays a library for any Nim program.
     tools/uirelays.sh push "X11: what changed"   # src/retroui/uirelays -> a commit on the branch
     tools/uirelays.sh pull                       # the branch -> src/retroui/uirelays
     tools/uirelays.sh diff                       # what differs between them
+    tools/uirelays.sh merge                      # upstream's new commits into the branch, then pull
+
+`merge` fetches nim-lang/uirelays master and merges it into the branch in
+a worktree of its own; when the two changed the same lines it stops and
+says where, to finish there by hand (`git add`, `git commit`), then
+`tools/uirelays.sh pull`. Write the upstream commit merged into `VERSION`.
 
 ## Sending it upstream
 
