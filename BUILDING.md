@@ -171,20 +171,24 @@ Termux:X11 app, from F-Droid or its GitHub releases), with no APK:
 pkg install x11-repo
 pkg install termux-x11-nightly libx11 nim clang git
 nimble install retroui
-termux-x11 :0 &                 # then open the Termux:X11 app
-export DISPLAY=:0
 nim c -r -d:release -d:useMalloc app.nim
 ```
+
+That is all: when no X server is running the app starts Termux:X11's
+(`termux-x11 :0`, and `DISPLAY=:0` when it is not set), brings the
+Termux:X11 app to the front and opens there. With no window manager on
+Termux:X11 (as it comes) the window fills the screen and turns with the
+tablet, as an Android app does; it is as big as the tablet's density says
+(200 % on a 320 dpi screen; `RETRO_SCALE=150`, or Ctrl + and Ctrl -, for
+another size; `RETRO_TOUCH=1` for finger-sized controls). For windows you
+can move and size, run a window manager on Termux:X11 first (`pkg install
+openbox`, then `openbox &`, or a whole desktop such as xfce4): the app then
+opens as an ordinary window.
 
 In Termux, Nim builds for Android, so the kit decides by what is built:
 an APK's library (`--app:lib`, what `retroapk` makes) gets Android's own
 driver; a program run from the shell gets the X11 driver, its files and
-services as on Linux, and draws on the CPU. It is as big as the tablet's
-density says (Android's own, as an APK would be: 200 % on a 320 dpi
-screen); `RETRO_SCALE=150` makes it smaller or bigger, Ctrl + and Ctrl -
-too. With no window manager on Termux:X11 the window has no title bar and
-sits at the top left; `RETRO_SIZE=1200x800` gives it another size,
-`RETRO_TOUCH=1` finger-sized controls.
+services as on Linux, and draws on the CPU.
 
 ### How the compiler is chosen
 

@@ -209,8 +209,9 @@ retroios app.nim --simulator --run                             # iOS, on a Mac w
 retrokit small app.nim                                         # smallest desktop build
 ```
 
-In Termux on Android, `nim c -r app.nim` runs the app in a window on
-Termux:X11 (`termux-x11 :0 &`, `export DISPLAY=:0`, `pkg install libx11`);
+In Termux on Android, `nim c -r app.nim` runs the app on Termux:X11
+(`pkg install x11-repo termux-x11-nightly libx11`): it starts the X server
+when none runs, brings Termux:X11 to the front and fills its screen;
 `retroapk` makes the APK. (`uirelays/target`: `androidApp` is an APK,
 `androidShell` a program in Termux.)
 

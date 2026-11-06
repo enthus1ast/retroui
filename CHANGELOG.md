@@ -1,5 +1,15 @@
 # Changes
 
+## 0.20.5
+
+- **Termux:X11 by itself.** A program run in Termux starts Termux:X11's
+  server when none is running (`termux-x11 :0`, `DISPLAY=:0` when unset)
+  and brings the Termux:X11 app to the front: `nim c -r app.nim` is all
+  it takes. With no window manager there, the window fills the screen and
+  follows it when the tablet turns, as an Android app does; with one
+  (openbox, xfce...), windows are ordinary ones.
+- Retro Gallery and the small examples are 0.20.5.
+
 ## 0.20.4
 
 - **Termux:X11 at the screen's size.** An X server on Android draws on the
