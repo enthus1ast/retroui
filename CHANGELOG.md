@@ -1,5 +1,39 @@
 # Changes
 
+## 0.20.2
+
+- **Retro Board 1.3.3: bigger words.** The letters on the board are
+  twice as big, as Excalidraw's beside the shapes: S, M, L and XL are 38,
+  48, 68 and 86 page units (were 18, 24, 36, 44; a unit is a screen dot at
+  100 % on a tablet). Boards saved before (`version` 1) keep their words as
+  they were drawn (`Shape.scale`) until a size is chosen; labels of
+  shapes and arrows follow `scale` as text does.
+- **The kit's own text is 12 pixels per em again** (15 on phones), as in
+  0.20.0: 0.20.1's bigger text (13.5) was meant for the board's words,
+  not the controls. `DesktopTextEm` and `TouchTextEm` stay, with those
+  values; `DesktopMetrics` and `TouchMetrics` match them.
+- Retro Gallery and the small examples are 0.20.2.
+
+## 0.20.1
+
+- **GitHub releases carry the apps.** The Release workflow, on a `v...`
+  tag or by hand (Actions > Release > Run workflow), builds Retro
+  Gallery, Files, Photo, Board and Mail for Linux (AppImage), Windows
+  (.exe), Android (APK) and macOS (.app) and puts them on the release.
+- **uirelays brought up to date** with nim-lang/uirelays master
+  (`cb82378`, merged on the `uirelays` branch): KeySlash on X11 (it was
+  already there in the kit's translation, now one case), precise wheel
+  lines for touchpads (`Event.preciseLines`, `wheelLines`), the figdraw
+  driver's clips and scrolling. It stays inside the package: `nimble
+  install retroui` brings it, nothing else to download.
+- **Docked panels' tabs keep their labels whole** (less room around them,
+  then a size smaller) before cutting them short.
+- Fixed: CI's Android driver test (a fake Android) lacked
+  `AMotionEvent_getMetaState`, which the driver now reads; it takes
+  Android's headers from the sysroot `retroapk` carries, no NDK needed.
+- The kit's text was 13.5 pixels per em in this release (back to 12 in
+  0.20.2).
+
 ## 0.20.0
 
 - **The package is `retroui`** (github.com/foxoman/retroui): `nimble install
@@ -9,10 +43,8 @@
   `retroios`, `retrokit`), and so do the settings folders (`~/.retro`).
 - **The examples are built only when asked**, one at a time: `nimble
   photo`, `nimble photoexe`, or any app of the table with `RETRO_APP=...
-  nimble exe` / `appapk` / `appimage` / `macapp`. GitHub's Release
-  workflow, on a `v...` tag or by hand, builds Retro Gallery, Files,
-  Photo, Board and Mail for Linux, Windows, Android and macOS and puts
-  them on the release; CI compiles the examples only when run by hand. **HR Book** joins them: employee records of
+  nimble exe` / `appapk` / `appimage` / `macapp`; CI compiles the
+  examples only when run by hand. **HR Book** joins them: employee records of
   several hotels, sealed with a PIN, smart Excel import, letters, charts.
 - **For AI agents and their users:** `skills/retroui/SKILL.md` (building
   apps with the kit), `AGENTS.md` and `CLAUDE.md` (rules for changing it),
@@ -30,26 +62,9 @@
   box has the focus shows at once.
 - **BUILDING.md** covers the desktop too: Windows from Windows, Linux or
   macOS (MinGW), its icon and version, macOS `.app`s, Linux AppImages.
-- **Retro Board 1.3.3: bigger words.** The letters on the board are
-  twice as big, as Excalidraw's beside the shapes: S, M, L and XL are 38,
-  48, 68 and 86 page units (were 18, 24, 36, 44; a unit is a screen dot at
-  100 % on a tablet). Boards saved before (`version` 1) keep their words as
-  they were drawn (`Shape.scale`) until a size is chosen; labels of
-  shapes and arrows follow `scale` as text does.
-- **Docked panels' tabs keep their labels whole** (less room around them,
-  then a size smaller) before cutting them short.
-- **uirelays brought up to date** with nim-lang/uirelays master
-  (`cb82378`, merged on the `uirelays` branch): KeySlash on X11 (it was
-  already there in the kit's translation, now one case), precise wheel
-  lines for touchpads (`Event.preciseLines`, `wheelLines`), the figdraw
-  driver's clips and scrolling. It stays inside the package: `nimble
-  install retroui` brings it, nothing else to download.
 - Fixed: `retrokit new` made apps that imported `retro` (now `retroui`).
-- Fixed: CI's Android driver test (a fake Android) lacked
-  `AMotionEvent_getMetaState`, which the driver now reads; it takes
-  Android's headers from the sysroot `retroapk` carries, no NDK needed.
 - **The apps, with the new text, menus and frame:** Retro Photo 4.9.3,
-  Retro Files 3.3.3, Retro Mail 1.0.4, Retro Board 1.3.3 (its About box
+  Retro Files 3.3.3, Retro Mail 1.0.4, Retro Board 1.3.2 (its About box
   no longer shows the credit twice), HR Book 0.1.
 
 - **GNU FreeFont is the kit's text: FreeSans the default, FreeSerif and
