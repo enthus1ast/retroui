@@ -192,6 +192,11 @@ to `x11EventHook` (in `retroui/uirelays/drivers/x11_driver`) before it looks
 at it, and gives its connection and window (`x11Display`, `x11Window`);
 `x11Wake` runs a frame. Retro Desktop is made that way.
 
+The cursor font X has is 16 pixels, whatever the screen: on a dense one
+(150% and more) the driver draws the cursors itself, in the classic shapes,
+at the screen's scale. `x11DrawnCursors = 1` asks for them always, `0`
+never (the cursor font, or a cursor theme through libXcursor).
+
 In Termux, Nim builds for Android, so the kit decides by what is built:
 an APK's library (`--app:lib`, what `retroapk` makes) gets Android's own
 driver; a program run from the shell gets the X11 driver, its files and

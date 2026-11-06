@@ -217,6 +217,8 @@ when none runs, brings Termux:X11 to the front and fills its screen;
 windows (a window manager, a desktop) gets every event first with
 `x11EventHook` (`retroui/uirelays/drivers/x11_driver`; `x11Display`,
 `x11Window`, `x11Wake`): see Retro Desktop, github.com/foxoman/retrodesktop.
+On X11 the cursors are drawn at the screen's scale when it is 150% or more
+(`x11DrawnCursors`: 1 always, 0 never).
 
 `retroapk` needs only clang with lld (or Zig); without either it fetches
 the NDK. Keep `~/.retro/android` (the signing key) for updates. Details per

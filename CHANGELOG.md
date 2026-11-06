@@ -1,5 +1,19 @@
 # Changes
 
+## 0.20.7
+
+- **Cursors at the screen's size on X11.** The X cursor font has one size,
+  16 pixels -- a speck on a 2K tablet in Termux:X11 or on a 4K monitor.
+  When the screen is at 150% or more, the X11 driver draws its cursors
+  itself in the classic shapes (the arrow, the I-beam, the hourglass, the
+  hand, the cross, the sizing arrows, the four-way arrow), each pixel a
+  square of the screen's scale, and keeps one of each instead of making a
+  new cursor at every change. `x11DrawnCursors` (1 always, 0 never, -1 the
+  screen decides) and `x11ClassicCursor` for a window manager's own
+  windows; `classicCursorArt` gives the drawings (Retro Desktop writes them
+  as a cursor theme for other programs).
+- Retro Gallery and the small examples are 0.20.7.
+
 ## 0.20.6
 
 - **A window manager on the app's own X connection.** The X11 driver hands
