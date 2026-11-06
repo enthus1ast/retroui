@@ -125,7 +125,7 @@ tools):
 
 ```sh
 nimble gallery        # every control in one window
-nimble files          # Retro Files, the file manager
+nimble files          # Retro Files, the file manager (a folder after it: opens there)
 nimble ledger         # a small business app: invoices, customers, reports
 nimble invoice        # an invoice from an HTML template: preview, PDF, printing
 nimble charts         # Chart Viewer: a CSV file as charts, saved as PNG

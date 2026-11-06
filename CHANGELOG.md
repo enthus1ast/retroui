@@ -1,5 +1,12 @@
 # Changes
 
+## 0.20.8
+
+- **Retro Files opens the folder it is given**: `retro-files ~/Pictures`
+  (or a file: its folder) starts there -- a desktop's "open this folder",
+  Retro Desktop's Android Files.
+- Retro Gallery and the small examples are 0.20.8.
+
 ## 0.20.7
 
 - **Cursors at the screen's size on X11.** The X cursor font has one size,

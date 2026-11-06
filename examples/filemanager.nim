@@ -2311,6 +2311,12 @@ proc content() =
     main()
 
 proc startFolder(saved: string): string =
+  # (a folder on the command line -- a desktop's "open this folder", a
+  # file's folder -- first)
+  if paramCount() >= 1:
+    let arg = paramStr(1)
+    if dirExists(arg): return absolutePath(arg)
+    if fileExists(arg): return absolutePath(arg).parentDir
   let storage = "/storage/emulated/0"
   let android = platformName() == "android"
   case startIn
