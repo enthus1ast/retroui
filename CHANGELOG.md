@@ -1,5 +1,13 @@
 # Changes
 
+## 0.26.1
+
+- The Cocoa driver's backend builds on its own again (the uirelays tests
+  compile it as plain Objective-C, without the Nim side): the two calls it
+  makes into the program for VoiceOver have weak stand-ins that do nothing,
+  and the program's own take their place when it is linked.
+- Retro Gallery and the small examples are 0.26.1.
+
 ## 0.26.0
 
 - **Screen readers, on every platform.** Orca on Linux and BSD (AT-SPI,

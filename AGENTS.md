@@ -98,6 +98,11 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
   `androidApp` for anything of the activity's; `defined(android)` only
   for what Android's libc and system are either way (bionic's malloc,
   /system/fonts, /storage).
+- **A driver's C and Objective-C build on their own**: the uirelays tests
+  compile `cocoa_backend.m` (and others) as plain C, without Nim. What such
+  a file calls in Nim gets a weak stand-in there
+  (`__attribute__((weak)) void cocoa_accessListen(void) {}`); the Nim
+  side's `exportc` proc takes its place when the program is linked.
 - **uirelays** (`src/retroui/uirelays`): generic, in upstream's style, no
   Retro names or app logic (the X11 driver's `x11EventHook`, `x11Display`,
   `x11Window`, `x11Wake` are generic too: what any program that manages
