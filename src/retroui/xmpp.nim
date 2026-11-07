@@ -5,9 +5,11 @@
 ## notifications and delivery receipts, the messages you send from another
 ## device (carbons), asking to add someone and answering who asks, profiles
 ## (vCard: a name, words about you, a picture), chat rooms (MUC), sending a
-## file (HTTP upload: its address goes in the message), and making an
+## file (HTTP upload: its address goes in the message), making an
 ## account from inside the app (in-band registration) where the server
-## allows it.
+## allows it, and the history kept by the server (the message archive,
+## XEP-0313): what was said from your other devices, or while you were
+## away, and the conversations of before on a new device.
 ##
 ## The connection lives on a thread of its own; the app sends with the
 ## procs below and takes what came, every frame, with `xmppEvents`.
@@ -59,7 +61,9 @@ type
     xeRoomPresence   ## someone in a room: `jid` the room, `resource` the nickname, `show`
     xeRoomSubject    ## a room's subject: `jid`, `text`
     xeSlot           ## an upload slot: `id`, `putUrl`, `url` (the address to send), `headers`
-    xeServices       ## the server's services: `fields` ("upload", jid), ("rooms", jid)
+    xeServices       ## the server's services: `fields` ("upload", jid), ("rooms", jid), ("archive", jid)
+    xeArchived       ## a message from the archive (`askArchive`): `jid` the other one, `text`, `id`, `stamp`, `url`, `mine`, `archiveId`; `resource` the asking's id
+    xeArchiveDone    ## an `askArchive` answered: `id` its id, `text` the last one's `archiveId` ("" none), `show` "complete" when there is no more; `fields` ("first", id), ("count", n)
 
   Contact* = object
     ## Someone on the contact list.
@@ -84,6 +88,8 @@ type
     fields*: seq[(string, string)]   ## xeVcard: FN, NICKNAME, DESC, URL, PHOTO, TYPE; xeServices
     removed*: bool             ## xeRoster: these contacts were taken off the list
     carbon*: bool              ## xeMessage: you sent it, from another device
+    mine*: bool                ## xeArchived: you sent it (from this device or another)
+    archiveId*: string         ## xeMessage, xeArchived: its id in the server's archive ("" none)
 
   Config = object
     jid, password, host, resource, show, status: string
@@ -379,6 +385,9 @@ proc runWorker(cfg: Config) {.thread.} =
     put("<iq type='get' id='roster1'><query xmlns='jabber:iq:roster'/></iq>")
     put("<iq type='set' id='carbons1'><enable xmlns='urn:xmpp:carbons:2'/></iq>")
     put("<iq type='get' id='disco1' to='" & esc(domain) & "'><query xmlns='http://jabber.org/protocol/disco#items'/></iq>")
+    # (the account's own features: the message archive is the account's)
+    put("<iq type='get' id='info-" & esc(bareJid(full)) & "' to='" & esc(bareJid(full)) &
+        "'><query xmlns='http://jabber.org/protocol/disco#info'/></iq>")
     var pres = "<presence>"
     if cfg.show.len > 0: pres &= "<show>" & esc(cfg.show) & "</show>"
     if cfg.status.len > 0: pres &= "<status>" & esc(cfg.status) & "</status>"
@@ -430,6 +439,18 @@ proc runWorker(cfg: Config) {.thread.} =
           elif e != nil and e.len > 0: why = e[0].tag.replace("-", " ")
           emit(xeError, why, id = id)
           return
+        let fin = n.child("fin")
+        if fin != nil and fin.attr("xmlns") == "urn:xmpp:mam:2":
+          # (the end of an archive's answer: where it stopped, for the next page)
+          var ev = XmppEvent(kind: xeArchiveDone, id: id,
+                             show: (if fin.attr("complete") == "true": "complete" else: ""))
+          let st = fin.child("set")
+          if st != nil:
+            if st.child("last") != nil: ev.text = st.child("last").innerText
+            if st.child("first") != nil: ev.fields.add ("first", st.child("first").innerText)
+            if st.child("count") != nil: ev.fields.add ("count", st.child("count").innerText)
+          emit(ev)
+          return
         if id == "roster1" and q != nil:
           var cs: seq[Contact]
           for it in q.findAll("item"): cs.add contactOf(it)
@@ -445,6 +466,7 @@ proc runWorker(cfg: Config) {.thread.} =
           var fs: seq[(string, string)]
           for ft in q.findAll("feature"):
             if ft.attr("var") == "urn:xmpp:http:upload:0": fs.add ("upload", who)
+            if ft.attr("var") == "urn:xmpp:mam:2" and bareJid(who) == bareJid(full): fs.add ("archive", who)
           for idn in q.findAll("identity"):
             if idn.attr("category") == "conference" and idn.attr("type") == "text": fs.add ("rooms", who)
           if fs.len > 0: emit(XmppEvent(kind: xeServices, fields: fs))
@@ -495,6 +517,25 @@ proc runWorker(cfg: Config) {.thread.} =
           let st = if n.child("status") != nil: n.child("status").innerText else: ""
           emit(XmppEvent(kind: xePresence, jid: bareJid(sender), resource: resourceOf(sender), show: show, text: st))
       of "message":
+        # a message from the archive, asked for with askArchive (only the
+        # account's own server answers that: from nobody, or the account)
+        let res = n.child("result")
+        if res != nil and res.attr("xmlns") == "urn:xmpp:mam:2":
+          if n.attr("from").len > 0 and bareJid(n.attr("from")) != bareJid(full): return
+          let fw = res.child("forwarded")
+          if fw == nil or fw.child("message") == nil: return
+          let am = fw.child("message")
+          if am.attr("type") == "groupchat" or am.attr("type") == "error" or am.child("body") == nil: return
+          var stamp = ""
+          if fw.child("delay") != nil: stamp = fw.child("delay").attr("stamp")
+          let mine = bareJid(am.attr("from")) == bareJid(full)
+          var url = ""
+          for x in am.findAll("x"):
+            if x.attr("xmlns") == "jabber:x:oob" and x.child("url") != nil: url = x.child("url").innerText
+          emit(XmppEvent(kind: xeArchived, jid: bareJid(if mine: am.attr("to") else: am.attr("from")),
+                         text: am.child("body").innerText, id: am.attr("id"), stamp: stamp, url: url,
+                         mine: mine, archiveId: res.attr("id"), resource: res.attr("queryid")))
+          return
         var m = n
         var carbon = false
         # (a carbon: a message of this account, sent or received on another device)
@@ -531,8 +572,12 @@ proc runWorker(cfg: Config) {.thread.} =
           var url = ""
           for x in m.findAll("x"):
             if x.attr("xmlns") == "jabber:x:oob" and x.child("url") != nil: url = x.child("url").innerText
+          # (its id in the archive, given by the account's server)
+          var aid = ""
+          for sid in n.findAll("stanza-id"):
+            if sid.attr("xmlns") == "urn:xmpp:sid:0" and sid.attr("by") == bareJid(full): aid = sid.attr("id")
           emit(XmppEvent(kind: xeMessage, jid: other, resource: resourceOf(sender), text: m.child("body").innerText,
-                         id: m.attr("id"), stamp: stamp, url: url, carbon: carbon))
+                         id: m.attr("id"), stamp: stamp, url: url, carbon: carbon, archiveId: aid))
           # (a receipt asked for: given)
           let rq = m.child("request")
           if rq != nil and rq.attr("xmlns") == "urn:xmpp:receipts" and not carbon and m.attr("id").len > 0:
@@ -708,3 +753,22 @@ proc askUpload*(service, filename: string; size: int64; mime: string): string =
   result = newId()
   xmppSend("<iq type='get' id='" & result & "' to='" & esc(service) & "'><request xmlns='urn:xmpp:http:upload:0' " &
            "filename='" & esc(filename) & "' size='" & $size & "' content-type='" & esc(mime) & "'/></iq>")
+
+proc askArchive*(with = ""; after = ""; before = ""; latest = false; start = ""; max = 50): string =
+  ## The server's archive of your messages (XEP-0313; xeServices says
+  ## "archive" when it keeps one): those with `with` ("" everyone's), after
+  ## the one whose archiveId is `after`, or before `before`, or the
+  ## `latest`, or since `start` (ISO 8601), `max` at most. They come as
+  ## xeArchived in the order they were said, then xeArchiveDone (with the
+  ## last one's id: ask `after` it for the next page). Its id.
+  result = newId()
+  var x = "<iq type='set' id='" & result & "'><query xmlns='urn:xmpp:mam:2' queryid='" & result & "'>" &
+          "<x xmlns='jabber:x:data' type='submit'><field var='FORM_TYPE' type='hidden'>" &
+          "<value>urn:xmpp:mam:2</value></field>"
+  if with.len > 0: x &= "<field var='with'><value>" & esc(with) & "</value></field>"
+  if start.len > 0: x &= "<field var='start'><value>" & esc(start) & "</value></field>"
+  x &= "</x><set xmlns='http://jabber.org/protocol/rsm'><max>" & $max & "</max>"
+  if after.len > 0: x &= "<after>" & esc(after) & "</after>"
+  elif before.len > 0: x &= "<before>" & esc(before) & "</before>"
+  elif latest: x &= "<before/>"
+  xmppSend(x & "</set></query></iq>")

@@ -1191,8 +1191,11 @@ talking to anyone on any XMPP app (Conversations, Gajim, Monal, Dino...).
 Signing on (STARTTLS, SASL), the contact list and its groups, presence and
 status notes, typing notifications, delivery receipts, the messages you
 send from another device, asking to add someone, profiles with a picture,
-chat rooms, files (HTTP upload), and making an account from inside the app
-where the server allows it. The connection runs on a thread of its own:
+chat rooms, files (HTTP upload), making an account from inside the app
+where the server allows it, and the history the server keeps (the message
+archive, XEP-0313: `askArchive` -- what you said from your other devices,
+or while this one was off, a page at a time). The connection runs on a
+thread of its own:
 
 ```nim
 import retroui, retroui/xmpp
@@ -1209,7 +1212,12 @@ app "Chat", 400, 300:
 Build with `-d:ssl` (OpenSSL, loaded at run time). `examples/communicator.nim`
 is **Retro Communicator** on it (`nimble communicator`): the friends list
 with groups, a window for each talk, rooms, away messages, your profile
-with a picture and a QR code to add you, files sent, the sounds of 1999.
+with a picture and a QR code to add you, files sent, the sounds of 1999 --
+and the history synced from the server when you sign on (Earlier messages
+in a talk goes further back), and **voice messages**: the microphone
+button records (Termux:API on a phone, PulseAudio or ALSA on Linux; AAC in
+an .m4a with ffmpeg, as Conversations and Monal play it) and sends it, and
+a voice message that comes plays in the talk.
 
 ## Whiteboard
 
@@ -1817,6 +1825,7 @@ needed. `nimble test` runs them all; `nimble fuzz` runs the fuzzers.
 | `test_pdf`, `test_report` | the PDF writer (structure, fonts, pictures, cross-reference table), templates, HTML reports, page breaks, repeated headers, totals, previews |
 | `test_apk` | the APK tool's SHA-256, CRC-32, deflate and PNG |
 | `test_board`, `test_boardapp` | the whiteboard: ink, shapes, arrows held by shapes, typing, undo, files, PDF, the memory kept; Retro Board as a program -- its docked panels, Tab, the panels kept between runs, Zen and View mode and the button that leaves them |
+| `test_xmpp` | chat on XMPP with a small server of the test's own: signing on, the account's archive found, a page of it (yours and theirs, in order, with their archive ids), a forged answer from someone else left out; a port where nothing answers |
 | `android_mock/run.sh` | the real Android driver against a fake Android (looper, input queue, window, JNI): frames, taps, keyboard, Arabic text, insets, cancelled touches, keys, rotation, Back |
 
 ## Examples
@@ -1828,7 +1837,7 @@ needed. `nimble test` runs them all; `nimble fuzz` runs the fuzzers.
 | `examples/filemanager.nim` | Retro Files: an Explorer-class file manager (also an APK: `nimble apk`) |
 | `examples/ledger.nim` | a small accounting app: grids, forms, CSV, reports |
 | `examples/notepad.nim` | a 3.1 Notepad: open, save, cut / copy / paste, time and date, find, print to PDF, "Save changes?" |
-| `examples/communicator.nim` | Retro Communicator: chat on XMPP -- friends, groups, rooms, away messages, profiles, files (`-d:ssl`) |
+| `examples/communicator.nim` | Retro Communicator: chat on XMPP -- friends, groups, rooms, away messages, profiles, files, the history synced from the server, voice messages (`-d:ssl`) |
 | `examples/charts.nim` | Chart Viewer: open a CSV, pick a chart, save a PNG |
 | `examples/invoice.nim` | an invoice from an HTML template: preview, PDF, print |
 | `examples/native.nim` | calling the system's own APIs on each platform |

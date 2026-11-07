@@ -1,5 +1,34 @@
 # Changes
 
+## 0.22.0
+
+- **`retroui/xmpp`: the server's history (the message archive, XEP-0313).**
+  xeServices says "archive" when the account's server keeps one;
+  `askArchive` asks it for a page -- with someone or everyone, after or
+  before a message, the latest, or since a time -- and the messages come
+  as `xeArchived` (yours and theirs, in the order they were said, with
+  `mine` and their `archiveId`), then `xeArchiveDone` with the last one's
+  id for the next page and whether that was all. A message that comes as
+  it is said carries its `archiveId` too (the server's stanza-id), so an
+  app keeps each once. An archive's answer from anyone but the account's
+  own server is left out.
+- **Retro Communicator 1.1: the history synced, and voice messages.**
+  Signing on brings in what was said while it was off -- from your phone,
+  your other computer, or to them -- from the server's archive (the first
+  time on a device, the last 30 days), a page at a time, each line once,
+  in the order said; a new talk with nobody's log here starts with the
+  last 50 of the archive, and **Earlier messages** at the top of a talk
+  goes further back. The microphone button records a voice message
+  (Termux:API's microphone on a phone; PulseAudio or ALSA on Linux, made
+  AAC by ffmpeg where it is) and sends it as a file, as Conversations,
+  Monal and the others do; a voice message that comes shows **Play**, is
+  fetched once and played (the system's sound, or mpv or ffplay). It ends
+  by itself after five minutes; Cancel lets it go. Times from the server
+  show in this device's time zone.
+- `test_xmpp`: a session with a small server of the test's own -- signing
+  on, the archive found, a page taken in order, a forged answer left out.
+- Retro Gallery and the small examples are 0.22.0.
+
 ## 0.21.2
 
 - **Markdown in Arabic reads right to left:** a list item whose first words

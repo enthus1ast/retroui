@@ -68,7 +68,10 @@ Mac), `RETRO_APP=photo nimble appapk`; the apps are listed in
 communicator`) build with `-d:ssl`: Nim's TLS through OpenSSL, loaded when
 the app starts (libssl 3 or 1.1, which Linux, the BSDs and Termux have; on
 Windows the OpenSSL DLLs beside the .exe). `examples/communicator.nims`
-turns it on for the example.
+turns it on for the example. Its voice messages record with Termux:API's
+`termux-microphone-record` (a phone, in Termux) or PulseAudio's `parecord`
+or ALSA's `arecord` (Linux), and ffmpeg, where it is, makes them AAC; they
+play with the system's sound, or mpv or ffplay.
 
 ---
 

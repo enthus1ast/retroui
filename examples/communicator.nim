@@ -6,8 +6,14 @@
 ## any XMPP app (Conversations, Gajim, Monal, Dino...). No server of mine to
 ## run, no phone number, no email.
 ##
-## Your history stays on your device (a log per friend). The password is
-## kept by the system's keyring when you ask it to be saved.
+## Your history stays on your device (a log per friend), and where your
+## server keeps an archive of your messages (most do: XEP-0313) it is
+## brought in when you sign on -- what you said from your phone shows on
+## the computer, and a new device gets the conversations of before.
+## Voice messages: the microphone button records (Termux:API's microphone
+## on a phone, PulseAudio or ALSA on Linux) and sends it as a file, as
+## Conversations and the others do; a voice message that comes plays here.
+## The password is kept by the system's keyring when you ask it to be saved.
 ##
 ## Build: `nim c -d:release -d:ssl examples/communicator.nim` (OpenSSL,
 ## loaded at run time). `RETRO_COMM_INSECURE=1` accepts a server's
@@ -15,9 +21,10 @@
 ##
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
-import std/[os, strutils, tables, times, algorithm, base64, typedthreads, locks, unicode]
+import std/[os, strutils, tables, times, algorithm, base64, typedthreads, locks, unicode, sets, osproc, hashes, exitprocs]
 import retroui
 import retroui/[qrcode, xmpp, media, mediaaudio, notify, http, secrets]
+when not defined(windows): import std/posix
 
 const
   App = "retro-communicator"
@@ -48,6 +55,8 @@ type
 
   Line = object
     who, text, time, url, id: string
+    aid: string                    ## its id in the server's archive ("" not known)
+    at: string                     ## when, in UTC (ISO 8601: sorts as text; "" before 0.22)
     mine, system, delivered: bool
 
   Talk = ref object
@@ -64,6 +73,8 @@ type
     lastKey: float
     autoReplied: bool
     stick: bool                    ## the transcript follows the newest line
+    asking: string                 ## an archive's page asked for it ("" none)
+    archiveEnd: bool               ## the archive has nothing earlier
 
 var
   conf: Settings
@@ -108,6 +119,21 @@ var
   sendTo: Talk
   profileName, profileAbout, profilePhoto = ""
   uploads: Table[string, (Talk, string)]   ## the slot's id -> the talk, the file
+  # the server's archive
+  archiveOn = false                ## the server keeps one
+  syncing = ""                     ## the page asked for now when signing on ("" none)
+  syncLast = ""                    ## the last archive id the sync took
+  liveLast = ""                    ## the last archive id of a message that came meanwhile
+  earlier: Table[string, seq[Line]]   ## a talk's earlier page, as it comes (the asking's id)
+  seenIds: Table[string, HashSet[string]]   ## per friend: the ids in the log (no line twice)
+  # voice messages
+  recTalk: Talk                    ## recording for this talk (nil none)
+  recProc: Process
+  recFile = ""
+  recStart = 0.0
+  playing = ""                     ## the voice message playing (its address)
+  playId: SoundId
+  playProc: Process
 
 # ---- the files: settings, history ----------------------------------------------------------------
 
@@ -129,12 +155,85 @@ proc keep() =
 
 proc logFile(jid: string): string = dataPath("logs" / jid.replace("/", "_") & ".log")
 
+proc logText(l: Line): string =
+  ## A line of the log: when, who, mine, the file, the words, its id, its
+  ## archive id, when in UTC (the last three since 0.22: older lines have
+  ## five fields).
+  [l.time, l.who, (if l.mine: "1" else: "0"), l.url,
+   l.text.replace("\n", "\\n").replace("\t", " "), l.id, l.aid, l.at].join("\t")
+
+proc lineOf(s: string): (bool, Line) =
+  let f = s.split('\t')
+  if f.len < 5: return (false, Line())
+  var l = Line(time: f[0], who: f[1], mine: f[2] == "1", url: f[3],
+               text: f[4].replace("\\n", "\n"), delivered: true)
+  if f.len >= 7:
+    l.id = f[5]
+    l.aid = f[6]
+  if f.len >= 8: l.at = f[7]
+  (true, l)
+
+proc keyOf(l: Line): string = (if l.mine: "1" else: "0") & ":" & l.text
+  ## (a line known by its words, for lines kept before they had ids)
+
+var lastAt: Table[string, string]   ## per friend: when the log's newest line was said
+
+proc seen(jid: string): var HashSet[string] =
+  ## The ids (and words) of what the log of `jid` holds: an archive's
+  ## message already here is not added again.
+  if not seenIds.hasKey(jid):
+    var ids = initHashSet[string]()
+    try:
+      for s in readFile(logFile(jid)).splitLines:
+        let (ok, l) = lineOf(s)
+        if ok:
+          if l.id.len > 0: ids.incl "i:" & l.id
+          if l.aid.len > 0: ids.incl "a:" & l.aid
+          if l.id.len == 0 and l.aid.len == 0: ids.incl keyOf(l)
+          if l.at > lastAt.getOrDefault(jid): lastAt[jid] = l.at
+    except CatchableError: discard
+    seenIds[jid] = ids
+  seenIds[jid]
+
+proc remember(jid: string; l: Line) =
+  if l.id.len > 0: seen(jid).incl "i:" & l.id
+  if l.aid.len > 0: seen(jid).incl "a:" & l.aid
+  if l.id.len == 0 and l.aid.len == 0: seen(jid).incl keyOf(l)
+
 proc logLine(jid: string; l: Line) =
+  ## A line kept: at the end, or -- said before the newest (the archive
+  ## brings what another device said while this one was off) -- where it
+  ## goes by its time.
+  discard seen(jid)
   try:
-    let f = open(logFile(jid), fmAppend)
-    f.writeLine([l.time, l.who, (if l.mine: "1" else: "0"), l.url,
-                 l.text.replace("\n", "\\n").replace("\t", " ")].join("\t"))
-    f.close()
+    if l.at.len == 0 or l.at >= lastAt.getOrDefault(jid):
+      let f = open(logFile(jid), fmAppend)
+      f.writeLine(logText(l))
+      f.close()
+      if l.at.len > 0: lastAt[jid] = l.at
+    else:
+      var all = readFile(logFile(jid)).splitLines
+      while all.len > 0 and all[^1].len == 0: all.setLen(all.len - 1)
+      var k = all.len
+      while k > 0:
+        let (ok, o) = lineOf(all[k - 1])
+        if ok and o.at.len > 0 and o.at <= l.at: break
+        if ok and o.at.len == 0: break       # (older lines, without times)
+        dec k
+      all.insert(logText(l), k)
+      writeFile(logFile(jid), all.join("\n") & "\n")
+  except CatchableError: discard
+  remember(jid, l)
+
+proc logEarlier(jid: string; lines: seq[Line]) =
+  ## Lines from before the log's first, put at its start.
+  try:
+    var all = ""
+    for l in lines:
+      all.add logText(l) & "\n"
+      remember(jid, l)
+    let old = if fileExists(logFile(jid)): readFile(logFile(jid)) else: ""
+    writeFile(logFile(jid), all & old)
   except CatchableError: discard
 
 proc history(jid: string): seq[Line] =
@@ -143,10 +242,8 @@ proc history(jid: string): seq[Line] =
     var all = readFile(logFile(jid)).splitLines
     if all.len > 120: all = all[^120 .. ^1]
     for s in all:
-      let f = s.split('\t')
-      if f.len >= 5:
-        result.add Line(time: f[0], who: f[1], mine: f[2] == "1", url: f[3],
-                        text: f[4].replace("\\n", "\n"), delivered: true)
+      let (ok, l) = lineOf(s)
+      if ok: result.add l
   except CatchableError: discard
 
 # ---- sounds: of its own, made here ---------------------------------------------------------------
@@ -201,6 +298,17 @@ proc stateName(show: string): string =
 
 proc now12(): string = now().format("h:mm tt")
 
+proc nowAt(): string = now().utc.format("yyyy-MM-dd'T'HH:mm:ss")
+  ## (now, as a line's `at`)
+
+proc atOf(stamp: string): string = (if stamp.len >= 19: stamp[0 ..< 19] else: nowAt())
+
+proc stampTime(stamp: string): string =
+  ## A server's time (ISO 8601, UTC) as this device's: "Nov 1 2:00 PM".
+  if stamp.len < 19: return now12()
+  try: stamp[0 ..< 19].parse("yyyy-MM-dd'T'HH:mm:ss", utc()).local.format("MMM d h:mm tt")
+  except CatchableError: stamp
+
 proc photoOf(fields: seq[(string, string)]): Bitmap =
   var data, kind = ""
   for (k, v) in fields:
@@ -241,15 +349,23 @@ proc talkWith(jid: string; room = false; open = true): Talk =
                                glyph: (if room: nfComments else: nfComment), r: r))
   if not room: result.lines = history(jid)
   talks.add result
+  if not room and result.lines.len == 0 and archiveOn and xmppRunning():
+    # (nothing here yet, on this device: the conversation of before)
+    result.asking = askArchive(with = jid, latest = true, max = 50)
+    earlier[result.asking] = @[]
 
 proc addLine(t: Talk; l: Line) =
-  t.lines.add l
+  # (in the order said: a line from the archive may go before the last ones)
+  var k = t.lines.len
+  if l.at.len > 0:
+    while k > 0 and t.lines[k - 1].at > l.at: dec k
+  t.lines.insert(l, k)
   if t.lines.len > 500: t.lines.delete(0)
   if not t.room: logLine(t.jid, l)
   t.stick = true
 
 proc systemLine(t: Talk; s: string) =
-  t.lines.add Line(text: s, system: true, time: now12())
+  t.lines.add Line(text: s, system: true, time: now12(), at: nowAt())
 
 proc send(t: Talk) =
   let body = t.draft.strip
@@ -258,7 +374,7 @@ proc send(t: Talk) =
     sendRoom(t.jid, body)
   else:
     let id = sendChat(t.jid, body)
-    t.addLine Line(who: localOf(myJid), text: body, time: now12(), mine: true, id: id)
+    t.addLine Line(who: localOf(myJid), text: body, time: now12(), mine: true, id: id, at: nowAt())
     play(msgOut)
   t.draft = ""
   t.composing = false
@@ -274,6 +390,8 @@ proc signOn() =
   else: deleteSecret(App, address)
   keep()
   buddies.clear()
+  archiveOn = false
+  syncing = ""
   signing = true
   wantedOff = false
   said = "Connecting..."
@@ -313,6 +431,10 @@ var
 
 proc mimeOf(path: string): string =
   case path.splitFile.ext.toLowerAscii
+  of ".m4a": "audio/mp4"
+  of ".aac": "audio/aac"
+  of ".ogg", ".oga", ".opus": "audio/ogg"
+  of ".wav": "audio/wav"
   of ".png": "image/png"
   of ".jpg", ".jpeg": "image/jpeg"
   of ".gif": "image/gif"
@@ -334,6 +456,23 @@ proc uploadNow(j: UploadJob) {.thread.} =
   {.cast(gcsafe).}:
     withLock upLock: upDone.add (j.id, j.getUrl, err)
 
+proc isAudio(path: string): bool =
+  ## A voice message (or another sound): by its name's end.
+  var p = path
+  let q = p.find('?')
+  if q >= 0: p = p[0 ..< q]
+  p.toLowerAscii.splitFile.ext in [".m4a", ".aac", ".mp3", ".ogg", ".oga", ".opus", ".wav", ".amr", ".flac", ".weba"]
+
+proc voicePath(url: string): string =
+  ## Where a voice message is kept here (by its address).
+  var p = url
+  let q = p.find('?')
+  if q >= 0: p = p[0 ..< q]
+  dataPath("voice" / toHex(cast[uint64](hash(url))) & p.splitFile.ext.toLowerAscii)
+
+proc recorded(path: string): bool = path.parentDir == dataPath("voice" / "x").parentDir
+  ## (a voice message recorded here, not a file chosen)
+
 proc sendFile(t: Talk; path: string) =
   let svc = services.getOrDefault("upload")
   if svc.len == 0:
@@ -345,7 +484,7 @@ proc sendFile(t: Talk; path: string) =
     return
   let id = askUpload(svc, path.extractFilename, size, mimeOf(path))
   uploads[id] = (t, path)
-  t.systemLine("Sending " & path.extractFilename & "...")
+  t.systemLine(if recorded(path): "Sending the voice message..." else: "Sending " & path.extractFilename & "...")
 
 proc uploadsDone() =
   var done: seq[(string, string, string)]
@@ -357,13 +496,193 @@ proc uploadsDone() =
     let (t, path) = uploads[id]
     uploads.del id
     if err.len > 0: t.systemLine("Could not send " & path.extractFilename & ": " & err)
+    if err.len == 0 and isAudio(path):
+      # (a voice message sent: kept here under its address, to play it back)
+      try:
+        if recorded(path): moveFile(path, voicePath(url)) else: copyFile(path, voicePath(url))
+      except CatchableError: discard
+    if err.len > 0: discard
     elif t.room: sendRoom(t.jid, url, url)
     else:
       let mid = sendChat(t.jid, url, url)
-      t.addLine Line(who: localOf(myJid), text: path.extractFilename, url: url, time: now12(),
+      t.addLine Line(who: localOf(myJid), text: path.extractFilename, url: url, time: now12(), at: nowAt(),
                      mine: true, id: mid)
 
+# ---- voice messages: recorded here, sent as a file; played when they come ------------------------
+
+const MaxVoice = 300.0             ## seconds: a voice message ends by itself after five minutes
+
+proc termuxMic(): bool = findExe("termux-microphone-record").len > 0
+
+proc canRecord(): bool =
+  ## A microphone this app can record from: Termux:API's (a phone), or
+  ## PulseAudio's or ALSA's (Linux).
+  when defined(android) or defined(ios) or defined(windows) or defined(macosx): false
+  else: termuxMic() or findExe("parecord").len > 0 or findExe("arecord").len > 0
+
+proc startRecording(t: Talk) =
+  if not services.hasKey("upload"):
+    t.systemLine("Your server takes no files (it has no HTTP upload): no voice messages.")
+    return
+  let stamp = now().format("yyyy-MM-dd' 'HH.mm.ss")
+  try:
+    if termuxMic():
+      recFile = dataPath("voice" / "Voice " & stamp & ".m4a")
+      discard execShellCmd("termux-microphone-record -f " & quoteShell(recFile) & " -e aac -l 0 >/dev/null 2>&1")
+      recProc = nil
+    else:
+      recFile = dataPath("voice" / "Voice " & stamp & ".wav")
+      recProc = if findExe("parecord").len > 0:
+                  startProcess("parecord", args = ["--file-format=wav", recFile], options = {poUsePath})
+                else: startProcess("arecord", args = ["-q", "-f", "cd", recFile], options = {poUsePath})
+  except CatchableError as e:
+    t.systemLine("Could not record: " & e.msg)
+    return
+  recTalk = t
+  recStart = epochTime()
+
+proc stopRecording(send: bool) =
+  ## The recording ended: sent (a .m4a, as the other apps play it), or let go.
+  let t = recTalk
+  if t == nil: return
+  recTalk = nil
+  if termuxMic():
+    discard execShellCmd("termux-microphone-record -q >/dev/null 2>&1")
+    sleep(500)                     # (the file is finished by Termux:API's app)
+  elif recProc != nil:
+    when not defined(windows):
+      discard posix.kill(Pid(recProc.processID), SIGINT)   # (it finishes the file)
+    discard recProc.waitForExit(3000)
+    recProc.close()
+    recProc = nil
+  var path = recFile
+  if not send or epochTime() - recStart < 0.8:
+    try: removeFile(path) except CatchableError: discard
+    if send: t.systemLine("That was too short to send.")
+    return
+  if path.endsWith(".wav") and ffmpegExe().len > 0:
+    # (WAV is big: AAC in an .m4a, which Conversations, Monal and the others play)
+    let m4a = path.changeFileExt(".m4a")
+    let code = execShellCmd(quoteShell(ffmpegExe()) & " -y -loglevel quiet -i " & quoteShell(path) &
+                            " -ac 1 -c:a aac -b:a 48k " & quoteShell(m4a))
+    if code == 0 and fileExists(m4a):
+      try: removeFile(path) except CatchableError: discard
+      path = m4a
+  sendFile(t, path)
+
+type FetchJob = object
+  url, path: string
+
+var
+  fetchLock: Lock
+  fetchDone {.guard: fetchLock.}: seq[(string, string)]   ## the address, what went wrong
+  fetching: Table[string, ref Thread[FetchJob]]
+
+proc fetchNow(j: FetchJob) {.thread.} =
+  var err = ""
+  try:
+    let r = httpRequest("GET", j.url, timeoutSec = 60)
+    if r.ok: writeFile(j.path, r.body)
+    else: err = "the server says " & $r.status
+  except CatchableError as e: err = e.msg
+  {.cast(gcsafe).}:
+    withLock fetchLock: fetchDone.add (j.url, err)
+
+proc stopPlaying() =
+  if playId != NoSound: stopSound(playId)
+  playId = NoSound
+  if playProc != nil:
+    try:
+      playProc.terminate()
+      discard playProc.waitForExit(1000)
+      playProc.close()
+    except CatchableError: discard
+    playProc = nil
+  if playing.len > 0 and termuxMic() and findExe("termux-media-player").len > 0:
+    discard execShellCmd("termux-media-player stop >/dev/null 2>&1")
+  playing = ""
+
+proc playVoice(url: string) =
+  ## A voice message: played from here once it is here (fetched first).
+  stopPlaying()
+  let path = voicePath(url)
+  if not fileExists(path):
+    if not fetching.hasKey(url):
+      var th = new Thread[FetchJob]
+      createThread(th[], fetchNow, FetchJob(url: url, path: path))
+      fetching[url] = th
+    playing = url
+    return
+  playing = url
+  playId = playSound(path)
+  if playId != NoSound: return
+  # (where the system's sound cannot play it: a player that can)
+  for (exe, args) in [("mpv", @["--no-video", "--really-quiet", path]),
+                      ("ffplay", @["-nodisp", "-autoexit", "-loglevel", "quiet", path])]:
+    if findExe(exe).len > 0:
+      try:
+        playProc = startProcess(exe, args = args, options = {poUsePath})
+        return
+      except CatchableError: discard
+  if findExe("termux-media-player").len > 0:
+    discard execShellCmd("termux-media-player play " & quoteShell(path) & " >/dev/null 2>&1")
+    return
+  playing = ""
+  discard openUrl(path)
+
+proc voiceTick() =
+  ## Each frame: the fetched ones played, the ended ones let go.
+  var done: seq[(string, string)]
+  withLock fetchLock:
+    done = move fetchDone
+    fetchDone = @[]
+  for (url, err) in done:
+    if fetching.hasKey(url):
+      joinThread(fetching[url][])
+      fetching.del url
+    if url == playing:
+      if err.len > 0:
+        playing = ""
+        said = "Could not get the voice message: " & err
+      else: playVoice(url)
+  if playing.len > 0 and not fetching.hasKey(playing):
+    if playProc != nil and not playProc.running:
+      playProc.close()
+      playProc = nil
+      playing = ""
+    elif playId != NoSound and not soundPlaying(playId):
+      playId = NoSound
+      playing = ""
+  if recTalk != nil and epochTime() - recStart > MaxVoice: stopRecording(true)
+
 # ---- what came ------------------------------------------------------------------------------------
+
+proc noteArchived(aid: string) =
+  ## The newest message's archive id: the next sign-on brings what came after it.
+  if aid.len == 0: return
+  conf["archiveLast"] = aid
+  conf["archiveFor"] = address
+  discard saveSettings(App, conf)
+
+proc startSync() =
+  ## What came since the last time (or, the first time on this device, in
+  ## the last 30 days), from the server's archive, a page at a time.
+  let last = if conf.getOrDefault("archiveFor", "") == address: conf.getOrDefault("archiveLast", "") else: ""
+  liveLast = ""
+  syncLast = ""
+  syncing = if last.len > 0: askArchive(after = last, max = 100)
+            else: askArchive(start = (now().utc - 30.days).format("yyyy-MM-dd'T'HH:mm:ss'Z'"), max = 100)
+
+proc archivedLine(e: XmppEvent): Line =
+  Line(who: (if e.mine: localOf(myJid) else: nameOf(e.jid)), text: e.text, url: e.url, mine: e.mine,
+       at: atOf(e.stamp),
+       time: stampTime(e.stamp), id: e.id, aid: e.archiveId, delivered: true)
+
+proc alreadyHere(jid: string; l: Line): bool =
+  ## The log has it: by its archive id, its id, or (lines kept before they
+  ## had ids) its words.
+  let s = seen(jid)
+  (l.aid.len > 0 and ("a:" & l.aid) in s) or (l.id.len > 0 and ("i:" & l.id) in s) or keyOf(l) in s
 
 proc buddy(jid: string): Buddy =
   result = buddies.getOrDefault(jid)
@@ -386,6 +705,10 @@ proc takeEvents() =
       play(doorOpen)
     of xeOffline:
       signing = false
+      archiveOn = false
+      syncing = ""
+      earlier.clear()
+      for t in talks: t.asking = ""
       if registering:
         registering = false
       elif screen == scMain:
@@ -439,18 +762,23 @@ proc takeEvents() =
       if isOn and not wasOn: play(doorOpen)
       elif wasOn and not isOn: play(doorClose)
     of xeMessage:
+      if (e.archiveId.len > 0 and ("a:" & e.archiveId) in seen(e.jid)) or
+         (e.id.len > 0 and ("i:" & e.id) in seen(e.jid)):
+        continue                   # (the archive brought it already)
       let t = talkWith(e.jid)
       t.win.open = true
       let b = buddies.getOrDefault(e.jid)
       if b != nil: b.typing = ""
-      var when2 = now12()
-      if e.stamp.len >= 19:
-        try: when2 = e.stamp[0 ..< 19].parse("yyyy-MM-dd'T'HH:mm:ss").format("MMM d h:mm tt")
-        except CatchableError: when2 = e.stamp
+      let when2 = if e.stamp.len > 0: stampTime(e.stamp) else: now12()
+      if e.archiveId.len > 0:
+        if syncing.len > 0: liveLast = e.archiveId
+        else: noteArchived(e.archiveId)
       if e.carbon:
-        t.addLine Line(who: localOf(myJid), text: e.text, url: e.url, time: when2, mine: true, delivered: true)
+        t.addLine Line(who: localOf(myJid), text: e.text, url: e.url, time: when2, mine: true, delivered: true,
+                       id: e.id, aid: e.archiveId, at: atOf(e.stamp))
       else:
-        t.addLine Line(who: nameOf(e.jid), text: e.text, url: e.url, time: when2)
+        t.addLine Line(who: nameOf(e.jid), text: e.text, url: e.url, time: when2, id: e.id, aid: e.archiveId,
+                       at: atOf(e.stamp))
         if not mdiIsActive(t.win): inc t.unread
         play(msgIn)
         discard notify(nameOf(e.jid), (if e.url.len > 0: "sent a file" else: e.text), app = "Retro Communicator",
@@ -493,7 +821,7 @@ proc takeEvents() =
     of xeRoomMessage:
       let t = talkWith(e.jid, room = true)
       let mine = e.resource == t.nick
-      t.addLine Line(who: e.resource, text: e.text, url: e.url, mine: mine,
+      t.addLine Line(who: e.resource, text: e.text, url: e.url, mine: mine, at: atOf(e.stamp),
                      time: (if e.stamp.len > 0: "earlier" else: now12()))
       if not mine and not mdiIsActive(t.win): inc t.unread
     of xeRoomPresence:
@@ -517,7 +845,43 @@ proc takeEvents() =
                      mime: mimeOf(path), headers: e.headers))
         upThreads.add th
     of xeServices:
-      for (k, v) in e.fields: services[k] = v
+      for (k, v) in e.fields:
+        services[k] = v
+        if k == "archive" and not archiveOn:
+          archiveOn = true
+          startSync()
+    of xeArchived:
+      if e.resource == syncing:
+        # (said while this device was off, from another one or to it)
+        let l = archivedLine(e)
+        if not alreadyHere(e.jid, l):
+          var open: Talk = nil
+          for t in talks:
+            if t.jid == e.jid: open = t
+          if open != nil: open.addLine l
+          else: logLine(e.jid, l)
+      elif earlier.hasKey(e.resource):
+        let l = archivedLine(e)
+        if not alreadyHere(e.jid, l): earlier[e.resource].add l
+    of xeArchiveDone:
+      if e.id == syncing:
+        if e.text.len > 0: syncLast = e.text
+        if e.show != "complete" and e.text.len > 0:
+          liveLast = ""
+          syncing = askArchive(after = e.text, max = 100)
+        else:
+          syncing = ""
+          noteArchived(if liveLast.len > 0: liveLast else: syncLast)
+      elif earlier.hasKey(e.id):
+        let got = earlier[e.id]
+        earlier.del e.id
+        for t in talks:
+          if t.asking == e.id:
+            t.asking = ""
+            if e.show == "complete" or got.len == 0: t.archiveEnd = true
+            if got.len > 0:
+              logEarlier(t.jid, got)
+              t.lines = got & t.lines
 
 # ---- the screens ---------------------------------------------------------------------------------
 
@@ -736,7 +1100,7 @@ proc conversation(t: Talk) =
   let b = buddies.getOrDefault(t.jid)
   # (who it is takes what the picture and the buttons leave: a long name
   # or a room's address must not push the buttons off the window)
-  row(if t.room: @[36, -1, 0] else: @[36, -1, 0, 0]):
+  row(if t.room: @[36, -1, 0, 0] else: @[36, -1, 0, 0, 0]):
     if t.room:
       icon(nfComments, brand, 1.4)
       col:
@@ -748,6 +1112,10 @@ proc conversation(t: Talk) =
         label(nameOf(t.jid), bold = true)
         let sh = if b != nil: b.showOf else: "unavailable"
         label(if b != nil and b.status.len > 0: b.status else: stateName(sh), color = stateColor(sh))
+    if toolButton(nfMicrophone, (if recTalk == t: "Stop and send" else: "Voice message"),
+                  down = recTalk == t, enabled = canRecord() and (recTalk == nil or recTalk == t)):
+      if recTalk == t: stopRecording(true)
+      else: startRecording(t)
     if toolButton(nfPaperclip, "Send a file"):
       sendTo = t
       sendPath = getHomeDir()
@@ -759,6 +1127,16 @@ proc conversation(t: Talk) =
   let listH = max(dp(80), remainingH() - EditH - CtrlH - 3 * Gap - lineHeight())
   proc transcript(t: Talk; h: int) =
     beginPanel(h, key = "talk" & t.jid)
+    if archiveOn and not t.room and not t.archiveEnd:
+      # (the server's archive: what was said before the first line here)
+      if t.asking.len > 0: label("Asking the server...", color = idle)
+      elif link("Earlier messages"):
+        var before = ""
+        for l in t.lines:
+          if l.aid.len > 0 and before.len == 0: before = l.aid
+        t.asking = if before.len > 0: askArchive(with = t.jid, before = before, max = 50)
+                   else: askArchive(with = t.jid, latest = true, max = 50)
+        earlier[t.asking] = @[]
     for i, l in t.lines:
       withId(i):
         if l.system:
@@ -768,7 +1146,16 @@ proc conversation(t: Talk) =
             label(l.who, bold = true, color = (if l.mine: me else: them), literal = true)
             label(l.time, color = idle)
             if l.url.len == 0: label(l.text, literal = true)
-          if l.url.len > 0:
+          if l.url.len > 0 and isAudio(l.url):
+            row:
+              space(16)
+              let now = playing == l.url
+              let shown = if now and fetching.hasKey(l.url): nfMicrophone & "  Voice message   Getting it..."
+                          elif now: nfStop & "  Voice message   Stop"
+                          else: nfPlay & "  Voice message   Play"
+              if link(shown):
+                if now: stopPlaying() else: playVoice(l.url)
+          elif l.url.len > 0:
             row:
               space(16)
               if link(nfPaperclip & " " & (if l.text != l.url: l.text else: l.url.extractFilename) & "   Open"):
@@ -792,7 +1179,16 @@ proc conversation(t: Talk) =
         endPanel()
   else:
     transcript(t, listH)
-  label(if b != nil and b.typing.len > 0: nameOf(t.jid) & " is " & b.typing & "..." else: " ", color = idle)
+  if recTalk == t:
+    let secs = int(epochTime() - recStart)
+    row:
+      label(nfCircle & "  Recording " & $(secs div 60) & ":" & align($(secs mod 60), 2, '0') &
+            "   (the microphone button again sends it)", color = busyC, literal = true)
+      spring()
+      if link("Cancel"): stopRecording(false)
+    wakeIn(250)
+  else:
+    label(if b != nil and b.typing.len > 0: nameOf(t.jid) & " is " & b.typing & "..." else: " ", color = idle)
   row([-1, 70]):
     if edit(t.draft):
       t.lastKey = epochTime()
@@ -953,7 +1349,7 @@ proc dialogs() =
   if showSendFile and sendTo != nil:
     if fileDialog(showSendFile, sendPath, fmOpen, ["All Files (*.*)"], title = "Send a File"):
       sendFile(sendTo, sendPath)
-  aboutBox(showAbout, "Retro Communicator", "1.0",
+  aboutBox(showAbout, "Retro Communicator", "1.1",
            ["An instant messenger on XMPP: any public server, any XMPP app.",
             "Developed by Sultan Al Isaiee @foxoman"])
 
@@ -1026,6 +1422,10 @@ awayMessage = conf.getOrDefault("away", awayMessage)
 soundsOn = conf.getOrDefault("sounds", "1") == "1"
 closedGroups = conf.getOrDefault("closed", "Offline").split('\t')
 initLock(upLock)
+initLock(fetchLock)
+addExitProc(proc () =
+  stopRecording(false)            # (no microphone left recording)
+  stopPlaying())
 makeSounds()
 if address.len > 0:
   password = loadSecret(App, address)
@@ -1035,12 +1435,13 @@ if address.len > 0:
 app "Retro Communicator", 760, 520:
   takeEvents()
   uploadsDone()
+  voiceTick()
   # (the connection lost: tried again, more slowly each time)
   if retryAt > 0 and epochTime() >= retryAt and not xmppRunning():
     retryAt = 0
     signing = true
     xmppStart(address, password, insecure = insecure, show = Shows[myState], status = myNote)
-  if xmppRunning() or retryAt > 0 or uploads.len > 0: wakeIn(250)
+  if xmppRunning() or retryAt > 0 or uploads.len > 0 or playing.len > 0: wakeIn(250)
   case screen
   of scWelcome: welcome()
   of scSignOn: signOnBox()

@@ -186,8 +186,11 @@ costs what its visible rows cost.
   thread (status, headers, body; `error` when no answer came). `import
   retroui/xmpp` -- chat: `xmppStart(jid, password)`, take `xmppEvents()`
   every frame (with `wakeIn(250)` while `xmppRunning()`), `sendChat(to,
-  text)`; build with `-d:ssl`. `examples/communicator.nim` is a whole
-  messenger on it.
+  text)`; the server's history: when xeServices says "archive",
+  `askArchive(after = lastId)` brings xeArchived then xeArchiveDone (ask
+  again `after` its `text` until `show == "complete"`); keep each message's
+  `archiveId` so none comes twice. Build with `-d:ssl`.
+  `examples/communicator.nim` is a whole messenger on it.
 - **PDF of your own text:** `import retroui/report` -- `newReport`,
   `paragraph`, `table`, `savePdf` (or `reportFromHtml(html)`); Notepad's
   File > Print to PDF is a short example.
