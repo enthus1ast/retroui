@@ -189,7 +189,11 @@ costs what its visible rows cost.
   text)`; the server's history: when xeServices says "archive",
   `askArchive(after = lastId)` brings xeArchived then xeArchiveDone (ask
   again `after` its `text` until `show == "complete"`); keep each message's
-  `archiveId` so none comes twice. Build with `-d:ssl`.
+  `archiveId` so none comes twice. End-to-end encryption: `import
+  retroui/omemo` -- `omemoOpen(dir, jid)`, `omemoHandle(e)` first for each
+  event, `omemoStart()` on xeOnline, `omemoDecrypt(e)` when
+  `isEncrypted(e)`, `omemoSend(to, text)`, `omemoNotes()` every frame.
+  Build with `-d:ssl`.
   `examples/communicator.nim` is a whole messenger on it.
 - **PDF of your own text:** `import retroui/report` -- `newReport`,
   `paragraph`, `table`, `savePdf` (or `reportFromHtml(html)`); Notepad's

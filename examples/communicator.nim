@@ -13,6 +13,11 @@
 ## Voice messages: the microphone button records (Termux:API's microphone
 ## on a phone, PulseAudio or ALSA on Linux) and sends it as a file, as
 ## Conversations and the others do; a voice message that comes plays here.
+## Talks are end-to-end encrypted with OMEMO (the lock button), as
+## Conversations, Monal, Gajim and Dino do it, when the other one's app has
+## it: the server carries words it cannot read; files and voice messages
+## sent in such a talk are locked too (aesgcm://). The fingerprints are in
+## Info and My Profile, to compare them side by side.
 ## The password is kept by the system's keyring when you ask it to be saved.
 ##
 ## Build: `nim c -d:release -d:ssl examples/communicator.nim` (OpenSSL,
@@ -21,9 +26,9 @@
 ##
 ## Developed by Sultan Al Isaiee @foxoman -- www.foxoman.net -- sultan@foxoman.net
 
-import std/[os, strutils, tables, times, algorithm, base64, typedthreads, locks, unicode, sets, osproc, hashes, exitprocs]
+import std/[os, strutils, tables, times, algorithm, base64, typedthreads, locks, unicode, sets, osproc, hashes, exitprocs, uri, sequtils]
 import retroui
-import retroui/[qrcode, xmpp, media, mediaaudio, notify, http, secrets]
+import retroui/[qrcode, xmpp, media, mediaaudio, notify, http, secrets, omemo]
 when not defined(windows): import std/posix
 
 const
@@ -58,6 +63,14 @@ type
     aid: string                    ## its id in the server's archive ("" not known)
     at: string                     ## when, in UTC (ISO 8601: sorts as text; "" before 0.22)
     mine, system, delivered: bool
+    locked: bool                   ## it came or went encrypted (OMEMO)
+    failed: bool                   ## it could not go
+
+  Up = object
+    ## a file going: its talk, the file, and when the talk is encrypted the
+    ## locked copy uploaded and its secret
+    t: Talk
+    path, sent, secret: string
 
   Talk = ref object
     jid: string
@@ -75,6 +88,7 @@ type
     stick: bool                    ## the transcript follows the newest line
     asking: string                 ## an archive's page asked for it ("" none)
     archiveEnd: bool               ## the archive has nothing earlier
+    secure: bool                   ## messages go encrypted (OMEMO)
 
 var
   conf: Settings
@@ -118,7 +132,7 @@ var
   sendPath = ""
   sendTo: Talk
   profileName, profileAbout, profilePhoto = ""
-  uploads: Table[string, (Talk, string)]   ## the slot's id -> the talk, the file
+  uploads: Table[string, Up]       ## the slot's id -> the file going
   # the server's archive
   archiveOn = false                ## the server keeps one
   syncing = ""                     ## the page asked for now when signing on ("" none)
@@ -126,6 +140,9 @@ var
   liveLast = ""                    ## the last archive id of a message that came meanwhile
   earlier: Table[string, seq[Line]]   ## a talk's earlier page, as it comes (the asking's id)
   seenIds: Table[string, HashSet[string]]   ## per friend: the ids in the log (no line twice)
+  # end-to-end encryption
+  keys: OmemoStore                 ## this device's OMEMO (nil: no libcrypto)
+  plainFor: seq[string]            ## the friends you turned the lock off for
   # voice messages
   recTalk: Talk                    ## recording for this talk (nil none)
   recProc: Process
@@ -151,6 +168,7 @@ proc keep() =
   conf["away"] = awayMessage
   conf["sounds"] = (if soundsOn: "1" else: "0")
   conf["closed"] = closedGroups.join("\t")
+  conf["plain"] = plainFor.join("\t")
   discard saveSettings(App, conf)
 
 proc logFile(jid: string): string = dataPath("logs" / jid.replace("/", "_") & ".log")
@@ -160,7 +178,7 @@ proc logText(l: Line): string =
   ## archive id, when in UTC (the last three since 0.22: older lines have
   ## five fields).
   [l.time, l.who, (if l.mine: "1" else: "0"), l.url,
-   l.text.replace("\n", "\\n").replace("\t", " "), l.id, l.aid, l.at].join("\t")
+   l.text.replace("\n", "\\n").replace("\t", " "), l.id, l.aid, l.at, (if l.locked: "1" else: "")].join("\t")
 
 proc lineOf(s: string): (bool, Line) =
   let f = s.split('\t')
@@ -171,6 +189,7 @@ proc lineOf(s: string): (bool, Line) =
     l.id = f[5]
     l.aid = f[6]
   if f.len >= 8: l.at = f[7]
+  if f.len >= 9: l.locked = f[8] == "1"
   (true, l)
 
 proc keyOf(l: Line): string = (if l.mine: "1" else: "0") & ":" & l.text
@@ -349,6 +368,9 @@ proc talkWith(jid: string; room = false; open = true): Talk =
                                glyph: (if room: nfComments else: nfComment), r: r))
   if not room: result.lines = history(jid)
   talks.add result
+  if not room and keys != nil:
+    result.secure = keys.omemoKnows(jid) and jid notin plainFor
+    if xmppRunning(): keys.omemoRefresh(jid)
   if not room and result.lines.len == 0 and archiveOn and xmppRunning():
     # (nothing here yet, on this device: the conversation of before)
     result.asking = askArchive(with = jid, latest = true, max = 50)
@@ -373,8 +395,9 @@ proc send(t: Talk) =
   if t.room:
     sendRoom(t.jid, body)
   else:
-    let id = sendChat(t.jid, body)
-    t.addLine Line(who: localOf(myJid), text: body, time: now12(), mine: true, id: id, at: nowAt())
+    let id = if t.secure and keys != nil: keys.omemoSend(t.jid, body) else: sendChat(t.jid, body)
+    t.addLine Line(who: localOf(myJid), text: body, time: now12(), mine: true, id: id, at: nowAt(),
+                   locked: t.secure and keys != nil)
     play(msgOut)
   t.draft = ""
   t.composing = false
@@ -456,19 +479,21 @@ proc uploadNow(j: UploadJob) {.thread.} =
   {.cast(gcsafe).}:
     withLock upLock: upDone.add (j.id, j.getUrl, err)
 
+proc plainPath(url: string): string =
+  ## (an address without what follows "?" or "#")
+  result = url
+  for c in ['#', '?']:
+    let q = result.find(c)
+    if q >= 0: result = result[0 ..< q]
+
 proc isAudio(path: string): bool =
   ## A voice message (or another sound): by its name's end.
-  var p = path
-  let q = p.find('?')
-  if q >= 0: p = p[0 ..< q]
+  let p = plainPath(path)
   p.toLowerAscii.splitFile.ext in [".m4a", ".aac", ".mp3", ".ogg", ".oga", ".opus", ".wav", ".amr", ".flac", ".weba"]
 
 proc voicePath(url: string): string =
-  ## Where a voice message is kept here (by its address).
-  var p = url
-  let q = p.find('?')
-  if q >= 0: p = p[0 ..< q]
-  dataPath("voice" / toHex(cast[uint64](hash(url))) & p.splitFile.ext.toLowerAscii)
+  ## Where a voice message (or a file) is kept here, by its address.
+  dataPath("voice" / toHex(cast[uint64](hash(url))) & plainPath(url).splitFile.ext.toLowerAscii)
 
 proc recorded(path: string): bool = path.parentDir == dataPath("voice" / "x").parentDir
   ## (a voice message recorded here, not a file chosen)
@@ -482,8 +507,21 @@ proc sendFile(t: Talk; path: string) =
   if size <= 0:
     t.systemLine("Cannot read " & path.extractFilename & ".")
     return
-  let id = askUpload(svc, path.extractFilename, size, mimeOf(path))
-  uploads[id] = (t, path)
+  var up = Up(t: t, path: path, sent: path)
+  var mime = mimeOf(path)
+  if t.secure and keys != nil and not t.room:
+    # (an encrypted talk: the file locked before it goes; its key goes in the message)
+    try:
+      let (data, secret) = encryptFile(readFile(path))
+      up.sent = dataPath("voice" / "upload-" & newId() & path.splitFile.ext)
+      writeFile(up.sent, data)
+      up.secret = secret
+      mime = "application/octet-stream"
+    except CatchableError as e:
+      t.systemLine("Could not lock " & path.extractFilename & ": " & e.msg)
+      return
+  let id = askUpload(svc, path.extractFilename, getFileSize(up.sent), mime)
+  uploads[id] = up
   t.systemLine(if recorded(path): "Sending the voice message..." else: "Sending " & path.extractFilename & "...")
 
 proc uploadsDone() =
@@ -491,10 +529,15 @@ proc uploadsDone() =
   withLock upLock:
     done = move upDone
     upDone = @[]
-  for (id, url, err) in done:
+  for (id, plainUrl, err) in done:
     if not uploads.hasKey(id): continue
-    let (t, path) = uploads[id]
+    let up = uploads[id]
+    let (t, path) = (up.t, up.path)
     uploads.del id
+    if up.sent != up.path:
+      try: removeFile(up.sent) except CatchableError: discard
+    # (an encrypted talk: the aesgcm:// address, its key after "#", goes inside the message)
+    let url = if up.secret.len > 0: aesgcmUrl(plainUrl, up.secret) else: plainUrl
     if err.len > 0: t.systemLine("Could not send " & path.extractFilename & ": " & err)
     if err.len == 0 and isAudio(path):
       # (a voice message sent: kept here under its address, to play it back)
@@ -503,6 +546,10 @@ proc uploadsDone() =
       except CatchableError: discard
     if err.len > 0: discard
     elif t.room: sendRoom(t.jid, url, url)
+    elif up.secret.len > 0 and keys != nil:
+      let mid = keys.omemoSend(t.jid, url)
+      t.addLine Line(who: localOf(myJid), text: path.extractFilename, url: url, time: now12(), at: nowAt(),
+                     mine: true, id: mid, locked: true)
     else:
       let mid = sendChat(t.jid, url, url)
       t.addLine Line(who: localOf(myJid), text: path.extractFilename, url: url, time: now12(), at: nowAt(),
@@ -572,21 +619,43 @@ proc stopRecording(send: bool) =
 
 type FetchJob = object
   url, path: string
+  open: bool                       ## a file to open once it is here (not a voice message to play)
+  plainHttp: bool                  ## (a server of your own without TLS: aesgcm:// over http too)
 
 var
   fetchLock: Lock
-  fetchDone {.guard: fetchLock.}: seq[(string, string)]   ## the address, what went wrong
+  fetchDone {.guard: fetchLock.}: seq[(string, string, bool)]   ## the address, what went wrong, to open
   fetching: Table[string, ref Thread[FetchJob]]
 
 proc fetchNow(j: FetchJob) {.thread.} =
   var err = ""
   try:
-    let r = httpRequest("GET", j.url, timeoutSec = 60)
-    if r.ok: writeFile(j.path, r.body)
+    var r: HttpResponse
+    if j.plainHttp and j.url.isAesgcm:
+      # (a server of your own, for trying: its files may be on plain http)
+      r = httpRequest("GET", "http://" & fetchUrlOf(j.url)[8 .. ^1], timeoutSec = 10)
+    if r.status == 0: r = httpRequest("GET", fetchUrlOf(j.url), timeoutSec = 60)
+    if r.ok:
+      # (a file of an encrypted talk: opened with the key in its address)
+      {.cast(gcsafe).}:
+        writeFile(j.path, if j.url.isAesgcm: decryptFile(j.url, r.body) else: r.body)
     else: err = "the server says " & $r.status
   except CatchableError as e: err = e.msg
   {.cast(gcsafe).}:
-    withLock fetchLock: fetchDone.add (j.url, err)
+    withLock fetchLock: fetchDone.add (j.url, err, j.open)
+
+proc fetchFile(url: string; open: bool) =
+  if not fetching.hasKey(url):
+    var th = new Thread[FetchJob]
+    createThread(th[], fetchNow, FetchJob(url: url, path: voicePath(url), open: open, plainHttp: insecure))
+    fetching[url] = th
+
+proc openFile(url: string) =
+  ## A file sent in a talk: an encrypted one fetched and opened here first;
+  ## another opened where it is.
+  if not url.isAesgcm: discard openUrl(url)
+  elif fileExists(voicePath(url)): discard openUrl(voicePath(url))
+  else: fetchFile(url, true)
 
 proc stopPlaying() =
   if playId != NoSound: stopSound(playId)
@@ -607,10 +676,7 @@ proc playVoice(url: string) =
   stopPlaying()
   let path = voicePath(url)
   if not fileExists(path):
-    if not fetching.hasKey(url):
-      var th = new Thread[FetchJob]
-      createThread(th[], fetchNow, FetchJob(url: url, path: path))
-      fetching[url] = th
+    fetchFile(url, false)
     playing = url
     return
   playing = url
@@ -632,15 +698,18 @@ proc playVoice(url: string) =
 
 proc voiceTick() =
   ## Each frame: the fetched ones played, the ended ones let go.
-  var done: seq[(string, string)]
+  var done: seq[(string, string, bool)]
   withLock fetchLock:
     done = move fetchDone
     fetchDone = @[]
-  for (url, err) in done:
+  for (url, err, open) in done:
     if fetching.hasKey(url):
       joinThread(fetching[url][])
       fetching.del url
-    if url == playing:
+    if open:
+      if err.len > 0: said = "Could not get the file: " & err
+      else: discard openUrl(voicePath(url))
+    elif url == playing:
       if err.len > 0:
         playing = ""
         said = "Could not get the voice message: " & err
@@ -673,6 +742,27 @@ proc startSync() =
   syncing = if last.len > 0: askArchive(after = last, max = 100)
             else: askArchive(start = (now().utc - 30.days).format("yyyy-MM-dd'T'HH:mm:ss'Z'"), max = 100)
 
+proc unlock(e: XmppEvent; l: var Line): bool =
+  ## An encrypted message's words put in its line (false: it had none -- a
+  ## message that only moves the keys on -- and shows nothing).
+  if not isEncrypted(e): return true
+  l.locked = true
+  if keys == nil:
+    l.text = "(An encrypted message: this device cannot read OMEMO.)"
+    return true
+  let (ok, words, why) = keys.omemoDecrypt(e)
+  if ok and words.len == 0: return false
+  if ok:
+    l.text = words
+    l.url = ""
+    # (a file in an encrypted talk: its address alone, aesgcm://)
+    if ' ' notin words and '\n' notin words and (words.isAesgcm or (words.startsWith("http") and isAudio(words))):
+      l.url = words
+      l.text = plainPath(words).extractFilename.decodeUrl
+  else:
+    l.text = "(An encrypted message this device cannot read: " & why & ".)"
+  true
+
 proc archivedLine(e: XmppEvent): Line =
   Line(who: (if e.mine: localOf(myJid) else: nameOf(e.jid)), text: e.text, url: e.url, mine: e.mine,
        at: atOf(e.stamp),
@@ -692,6 +782,7 @@ proc buddy(jid: string): Buddy =
 
 proc takeEvents() =
   for e in xmppEvents():
+    if keys != nil and keys.omemoHandle(e): continue      # (OMEMO's own answers)
     case e.kind
     of xeConnecting: said = e.text & "..."
     of xeOnline:
@@ -703,6 +794,17 @@ proc takeEvents() =
       if myState == 3: goInvisible()
       askVcard("")
       play(doorOpen)
+      # (this device's keys: published, and the friends' devices asked for)
+      if omemoAvailable():
+        try:
+          if keys == nil or keys.account != bareJid(address).toLowerAscii:
+            keys = omemoOpen(dataDir(App) / "keys", address)
+          keys.omemoStart()
+          for t in talks:
+            if not t.room: keys.omemoRefresh(t.jid, force = true)
+        except CatchableError as x:
+          keys = nil
+          said = "Encryption is off: " & x.msg
     of xeOffline:
       signing = false
       archiveOn = false
@@ -722,9 +824,9 @@ proc takeEvents() =
           inc retries
     of xeError:
       if e.id.len > 0 and uploads.hasKey(e.id):
-        let (t, path) = uploads[e.id]
+        let up = uploads[e.id]
         uploads.del e.id
-        t.systemLine("Could not send " & path.extractFilename & ": " & e.text)
+        up.t.systemLine("Could not send " & up.path.extractFilename & ": " & e.text)
       elif e.jid.len > 0:
         for t in talks:
           if t.jid == e.jid: t.systemLine(e.text)
@@ -765,28 +867,33 @@ proc takeEvents() =
       if (e.archiveId.len > 0 and ("a:" & e.archiveId) in seen(e.jid)) or
          (e.id.len > 0 and ("i:" & e.id) in seen(e.jid)):
         continue                   # (the archive brought it already)
+      let when2 = if e.stamp.len > 0: stampTime(e.stamp) else: now12()
+      var l = if e.carbon:
+                Line(who: localOf(myJid), text: e.text, url: e.url, time: when2, mine: true, delivered: true,
+                     id: e.id, aid: e.archiveId, at: atOf(e.stamp))
+              else:
+                Line(who: nameOf(e.jid), text: e.text, url: e.url, time: when2, id: e.id, aid: e.archiveId,
+                     at: atOf(e.stamp))
+      if not unlock(e, l): continue
       let t = talkWith(e.jid)
       t.win.open = true
       let b = buddies.getOrDefault(e.jid)
       if b != nil: b.typing = ""
-      let when2 = if e.stamp.len > 0: stampTime(e.stamp) else: now12()
       if e.archiveId.len > 0:
         if syncing.len > 0: liveLast = e.archiveId
         else: noteArchived(e.archiveId)
-      if e.carbon:
-        t.addLine Line(who: localOf(myJid), text: e.text, url: e.url, time: when2, mine: true, delivered: true,
-                       id: e.id, aid: e.archiveId, at: atOf(e.stamp))
-      else:
-        t.addLine Line(who: nameOf(e.jid), text: e.text, url: e.url, time: when2, id: e.id, aid: e.archiveId,
-                       at: atOf(e.stamp))
+      t.addLine l
+      if l.locked and not t.secure and e.jid notin plainFor: t.secure = keys != nil
+      if not e.carbon:
         if not mdiIsActive(t.win): inc t.unread
         play(msgIn)
-        discard notify(nameOf(e.jid), (if e.url.len > 0: "sent a file" else: e.text), app = "Retro Communicator",
+        discard notify(nameOf(e.jid), (if l.url.len > 0: "sent a file" else: l.text), app = "Retro Communicator",
                        tag = e.jid)
         # (away: the away message, once a conversation)
         if myState in [1, 2] and not t.autoReplied and awayMessage.len > 0:
           t.autoReplied = true
-          discard sendChat(e.jid, "Auto response: " & awayMessage)
+          discard (if t.secure and keys != nil: keys.omemoSend(e.jid, "Auto response: " & awayMessage)
+                   else: sendChat(e.jid, "Auto response: " & awayMessage))
           t.systemLine("Your away message was sent.")
     of xeState:
       let b = buddies.getOrDefault(e.jid)
@@ -839,11 +946,13 @@ proc takeEvents() =
       talkWith(e.jid, room = true).subject = e.text
     of xeSlot:
       if uploads.hasKey(e.id):
-        let (_, path) = uploads[e.id]
+        let up = uploads[e.id]
         var th = new Thread[UploadJob]
-        createThread(th[], uploadNow, UploadJob(id: e.id, putUrl: e.putUrl, getUrl: e.url, path: path,
-                     mime: mimeOf(path), headers: e.headers))
+        createThread(th[], uploadNow, UploadJob(id: e.id, putUrl: e.putUrl, getUrl: e.url, path: up.sent,
+                     mime: (if up.secret.len > 0: "application/octet-stream" else: mimeOf(up.path)),
+                     headers: e.headers))
         upThreads.add th
+    of xeStanza: discard
     of xeServices:
       for (k, v) in e.fields:
         services[k] = v
@@ -853,16 +962,16 @@ proc takeEvents() =
     of xeArchived:
       if e.resource == syncing:
         # (said while this device was off, from another one or to it)
-        let l = archivedLine(e)
-        if not alreadyHere(e.jid, l):
+        var l = archivedLine(e)
+        if not alreadyHere(e.jid, l) and unlock(e, l):
           var open: Talk = nil
           for t in talks:
             if t.jid == e.jid: open = t
           if open != nil: open.addLine l
           else: logLine(e.jid, l)
       elif earlier.hasKey(e.resource):
-        let l = archivedLine(e)
-        if not alreadyHere(e.jid, l): earlier[e.resource].add l
+        var l = archivedLine(e)
+        if not alreadyHere(e.jid, l) and unlock(e, l): earlier[e.resource].add l
     of xeArchiveDone:
       if e.id == syncing:
         if e.text.len > 0: syncLast = e.text
@@ -882,6 +991,29 @@ proc takeEvents() =
             if got.len > 0:
               logEarlier(t.jid, got)
               t.lines = got & t.lines
+
+proc keysTick() =
+  ## What OMEMO says: a message that could not go, a friend's devices known.
+  if keys == nil: return
+  for n in keys.omemoNotes():
+    case n.kind
+    of onSent: discard
+    of onFailed:
+      for t in talks:
+        if t.jid == n.jid:
+          for l in t.lines.mitems:
+            if l.id == n.id: l.failed = true
+          t.systemLine("Not sent: " & n.text & ". The lock button off sends it unencrypted.")
+    of onDevices:
+      for t in talks:
+        if t.jid == n.jid and not t.room and n.jid notin plainFor and keys.omemoKnows(n.jid): t.secure = true
+    of onError:
+      var told = false
+      for t in talks:
+        if t.jid == n.jid:
+          t.systemLine(n.text)
+          told = true
+      if not told: said = n.text
 
 # ---- the screens ---------------------------------------------------------------------------------
 
@@ -1100,7 +1232,7 @@ proc conversation(t: Talk) =
   let b = buddies.getOrDefault(t.jid)
   # (who it is takes what the picture and the buttons leave: a long name
   # or a room's address must not push the buttons off the window)
-  row(if t.room: @[36, -1, 0, 0] else: @[36, -1, 0, 0, 0]):
+  row(if t.room: @[36, -1, 0, 0] else: @[36, -1, 0, 0, 0, 0]):
     if t.room:
       icon(nfComments, brand, 1.4)
       col:
@@ -1112,6 +1244,25 @@ proc conversation(t: Talk) =
         label(nameOf(t.jid), bold = true)
         let sh = if b != nil: b.showOf else: "unavailable"
         label(if b != nil and b.status.len > 0: b.status else: stateName(sh), color = stateColor(sh))
+    if not t.room and toolButton(if t.secure: nfLock else: nfUnlock,
+                                 (if t.secure: "Encrypted (OMEMO): click to send unencrypted"
+                                  else: "Not encrypted: click to encrypt (OMEMO)"),
+                                 down = t.secure, enabled = keys != nil):
+      if t.secure:
+        t.secure = false
+        if t.jid notin plainFor: plainFor.add t.jid
+        keep()
+        t.systemLine("Messages to " & nameOf(t.jid) & " go unencrypted now: the server can read them.")
+      else:
+        plainFor.keepItIf(it != t.jid)
+        keep()
+        if keys.omemoKnows(t.jid):
+          t.secure = true
+          t.systemLine("Messages to " & nameOf(t.jid) & " go encrypted now (OMEMO).")
+        else:
+          keys.omemoRefresh(t.jid, force = true)
+          t.systemLine("No device of " & nameOf(t.jid) & " with OMEMO is known yet: asking their server; " &
+                       "encryption turns on when one is found.")
     if toolButton(nfMicrophone, (if recTalk == t: "Stop and send" else: "Voice message"),
                   down = recTalk == t, enabled = canRecord() and (recTalk == nil or recTalk == t)):
       if recTalk == t: stopRecording(true)
@@ -1145,7 +1296,9 @@ proc conversation(t: Talk) =
           row:
             label(l.who, bold = true, color = (if l.mine: me else: them), literal = true)
             label(l.time, color = idle)
-            if l.url.len == 0: label(l.text, literal = true)
+            if l.locked: label(nfLock, color = (if l.failed: busyC else: good), literal = true)
+            if l.url.len == 0: label(l.text & (if l.failed: "   (not sent)" else: ""), literal = true,
+                                     color = (if l.failed: busyC else: Color()))
           if l.url.len > 0 and isAudio(l.url):
             row:
               space(16)
@@ -1158,8 +1311,10 @@ proc conversation(t: Talk) =
           elif l.url.len > 0:
             row:
               space(16)
-              if link(nfPaperclip & " " & (if l.text != l.url: l.text else: l.url.extractFilename) & "   Open"):
-                discard openUrl(l.url)
+              let getting = fetching.hasKey(l.url)
+              if link(nfPaperclip & " " & (if l.text != l.url: l.text else: l.url.extractFilename) &
+                      (if getting: "   Getting it..." else: "   Open")) and not getting:
+                openFile(l.url)
     if not t.room and t.lines.len > 0 and t.lines[^1].mine and t.lines[^1].delivered:
       label("Delivered", color = idle)
     let bottom = place(0, 1, fill = true)
@@ -1256,6 +1411,33 @@ proc dialogs() =
               label(v, literal = true)
         label("Sees you: " & (if b.subscription in ["from", "both"]: "yes" else: "no") &
               "    You see them: " & (if b.subscription in ["to", "both"]: "yes" else: "no"), color = idle)
+      if keys != nil:
+        # (their devices' fingerprints: compare them with what their app shows)
+        label(nfLock & "  Encryption (OMEMO): their devices", bold = true, literal = true)
+        let devs = keys.omemoDevices(infoJid)
+        if devs.len == 0: label("None known: their app may not have OMEMO.", color = idle)
+        for i, d in devs:
+          withId("dev" & $d.id):
+            let fp = d.fingerprint
+            let c = if d.trust == tDistrusted: busyC elif d.trust == tVerified: good else: Color()
+            if fp.len > 0:
+              # (in two lines of four groups, as the other apps show it)
+              styledText(fp[0 ..< 35], style(mono = true), color = c)
+              styledText(fp[36 .. ^1] & (if d.active: "" else: "   (gone)"), style(mono = true), color = c)
+            else: label("Device " & $d.id & " (no key seen yet)", color = c)
+            row:
+              label(case d.trust
+                    of tVerified: "Verified"
+                    of tDistrusted: "Not trusted: gets no messages"
+                    of tUndecided: "Trusted until you verify one of theirs", color = idle)
+              spring()
+              if d.trust != tVerified and fp.len > 0 and button("&Verified", w = 80):
+                keys.omemoTrust(infoJid, d.id, tVerified)
+              if d.trust != tDistrusted and button("&Don't Trust", w = 96):
+                keys.omemoTrust(infoJid, d.id, tDistrusted)
+        label("Yours:", color = idle)
+        styledText(keys.omemoFingerprint[0 ..< 35], style(mono = true), color = idle)
+        styledText(keys.omemoFingerprint[36 .. ^1], style(mono = true), color = idle)
       row:
         spring()
         if button("OK", isDefault = true): showInfo = false
@@ -1318,6 +1500,11 @@ proc dialogs() =
         field "&About:": edit profileAbout
       addMeCode(2)
       label("Friends scan this to add you", color = idle)
+      if keys != nil:
+        label(nfLock & "  This device's fingerprint (OMEMO):", bold = true, literal = true)
+        styledText(keys.omemoFingerprint[0 ..< 35], style(mono = true))
+        styledText(keys.omemoFingerprint[36 .. ^1], style(mono = true))
+        label("Friends compare it with what their app shows for you.", color = idle)
       row:
         spring()
         if button("OK", isDefault = true):
@@ -1349,7 +1536,7 @@ proc dialogs() =
   if showSendFile and sendTo != nil:
     if fileDialog(showSendFile, sendPath, fmOpen, ["All Files (*.*)"], title = "Send a File"):
       sendFile(sendTo, sendPath)
-  aboutBox(showAbout, "Retro Communicator", "1.1",
+  aboutBox(showAbout, "Retro Communicator", "1.2",
            ["An instant messenger on XMPP: any public server, any XMPP app.",
             "Developed by Sultan Al Isaiee @foxoman"])
 
@@ -1421,6 +1608,7 @@ myNote = conf.getOrDefault("note", "")
 awayMessage = conf.getOrDefault("away", awayMessage)
 soundsOn = conf.getOrDefault("sounds", "1") == "1"
 closedGroups = conf.getOrDefault("closed", "Offline").split('\t')
+plainFor = conf.getOrDefault("plain", "").split('\t')
 initLock(upLock)
 initLock(fetchLock)
 addExitProc(proc () =
@@ -1434,6 +1622,7 @@ if address.len > 0:
 
 app "Retro Communicator", 760, 520:
   takeEvents()
+  keysTick()
   uploadsDone()
   voiceTick()
   # (the connection lost: tried again, more slowly each time)

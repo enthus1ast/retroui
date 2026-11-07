@@ -1207,6 +1207,26 @@ app "Chat", 400, 300:
   if xmppRunning(): wakeIn(250)
 ```
 
+`retroui/omemo` locks the messages end to end, as Conversations, Monal,
+Gajim, Dino and Siskin do (OMEMO 0.3, the Signal protocol: X3DH, then the
+double ratchet -- a new key for every message): the server carries words
+it cannot read. Each device has its own keys, kept in one file; trust is
+blind until you verify a device's fingerprint. Files go locked too
+(`encryptFile`, aesgcm://). The cryptography is OpenSSL's libcrypto
+(X25519, Ed25519, AES), loaded when needed:
+
+```nim
+import retroui/omemo
+let keys = omemoOpen(dataDir("chat"), "me@yax.im")
+for e in xmppEvents():
+  if keys.omemoHandle(e): continue                 # its own answers
+  if e.kind == xeOnline: keys.omemoStart()          # this device's keys published
+  if e.kind == xeMessage and isEncrypted(e):
+    let (ok, words, why) = keys.omemoDecrypt(e)
+discard keys.omemoSend("friend@xmpp.jp", "Hello!")  # when their keys are here
+for n in keys.omemoNotes(): echo n                  # sent, could not send, devices
+```
+
 ![Retro Communicator: the friends list and a talk](docs/communicator.png)
 
 Build with `-d:ssl` (OpenSSL, loaded at run time). `examples/communicator.nim`
@@ -1217,7 +1237,10 @@ and the history synced from the server when you sign on (Earlier messages
 in a talk goes further back), and **voice messages**: the microphone
 button records (Termux:API on a phone, PulseAudio or ALSA on Linux; AAC in
 an .m4a with ffmpeg, as Conversations and Monal play it) and sends it, and
-a voice message that comes plays in the talk.
+a voice message that comes plays in the talk -- and **encryption**: the
+lock button in a talk (on by itself when the other one's app has OMEMO),
+the fingerprints in Info and My Profile, files and voice messages locked
+too.
 
 ## Whiteboard
 
@@ -1826,6 +1849,7 @@ needed. `nimble test` runs them all; `nimble fuzz` runs the fuzzers.
 | `test_apk` | the APK tool's SHA-256, CRC-32, deflate and PNG |
 | `test_board`, `test_boardapp` | the whiteboard: ink, shapes, arrows held by shapes, typing, undo, files, PDF, the memory kept; Retro Board as a program -- its docked panels, Tab, the panels kept between runs, Zen and View mode and the button that leaves them |
 | `test_xmpp` | chat on XMPP with a small server of the test's own: signing on, the account's archive found, a page of it (yours and theirs, in order, with their archive ids), a forged answer from someone else left out; a port where nothing answers |
+| `test_omemo` | OMEMO: X25519, Ed25519 and HKDF against the RFCs' vectors, XEdDSA (the identity's X25519 key and its signatures, keys of both signs), AES-GCM, protobuf; two devices talking (a session from a bundle, answers, messages out of order, one twice, a changed one, one not for this device, the store read back from its file), trust (a verified device: only it), a bundle not signed right; files (aesgcm://) |
 | `android_mock/run.sh` | the real Android driver against a fake Android (looper, input queue, window, JNI): frames, taps, keyboard, Arabic text, insets, cancelled touches, keys, rotation, Back |
 
 ## Examples
@@ -1837,7 +1861,7 @@ needed. `nimble test` runs them all; `nimble fuzz` runs the fuzzers.
 | `examples/filemanager.nim` | Retro Files: an Explorer-class file manager (also an APK: `nimble apk`) |
 | `examples/ledger.nim` | a small accounting app: grids, forms, CSV, reports |
 | `examples/notepad.nim` | a 3.1 Notepad: open, save, cut / copy / paste, time and date, find, print to PDF, "Save changes?" |
-| `examples/communicator.nim` | Retro Communicator: chat on XMPP -- friends, groups, rooms, away messages, profiles, files, the history synced from the server, voice messages (`-d:ssl`) |
+| `examples/communicator.nim` | Retro Communicator: chat on XMPP -- friends, groups, rooms, away messages, profiles, files, the history synced from the server, voice messages, OMEMO encryption (`-d:ssl`) |
 | `examples/charts.nim` | Chart Viewer: open a CSV, pick a chart, save a PNG |
 | `examples/invoice.nim` | an invoice from an HTML template: preview, PDF, print |
 | `examples/native.nim` | calling the system's own APIs on each platform |

@@ -64,6 +64,7 @@ type
     xeServices       ## the server's services: `fields` ("upload", jid), ("rooms", jid), ("archive", jid)
     xeArchived       ## a message from the archive (`askArchive`): `jid` the other one, `text`, `id`, `stamp`, `url`, `mine`, `archiveId`; `resource` the asking's id
     xeArchiveDone    ## an `askArchive` answered: `id` its id, `text` the last one's `archiveId` ("" none), `show` "complete" when there is no more; `fields` ("first", id), ("count", n)
+    xeStanza         ## a stanza as it came (`text` its XML): the answer to an iq you sent with an id that starts "q-" (`id`), or a server's notice of a change (pubsub)
 
   Contact* = object
     ## Someone on the contact list.
@@ -90,6 +91,7 @@ type
     carbon*: bool              ## xeMessage: you sent it, from another device
     mine*: bool                ## xeArchived: you sent it (from this device or another)
     archiveId*: string         ## xeMessage, xeArchived: its id in the server's archive ("" none)
+    raw*: string               ## xeMessage, xeArchived: the whole message's XML when it is encrypted (`retroui/omemo`)
 
   Config = object
     jid, password, host, resource, show, status: string
@@ -424,13 +426,18 @@ proc runWorker(cfg: Config) {.thread.} =
             put("<iq type='result' id='" & esc(id) & "' to='" & esc(n.attr("from")) & "'>" &
                 "<query xmlns='http://jabber.org/protocol/disco#info'><identity category='client' type='pc' name='Retro Communicator'/>" &
                 "<feature var='http://jabber.org/protocol/chatstates'/><feature var='urn:xmpp:receipts'/>" &
-                "<feature var='jabber:x:oob'/><feature var='urn:xmpp:ping'/></query></iq>")
+                "<feature var='jabber:x:oob'/><feature var='urn:xmpp:ping'/>" &
+                "<feature var='eu.siacs.conversations.axolotl.devicelist+notify'/></query></iq>")
           elif q != nil and q.attr("xmlns") == "jabber:iq:version":
             put("<iq type='result' id='" & esc(id) & "' to='" & esc(n.attr("from")) & "'>" &
                 "<query xmlns='jabber:iq:version'><name>Retro Communicator</name><version>1</version></query></iq>")
           else:
             put("<iq type='error' id='" & esc(id) & "' to='" & esc(n.attr("from")) & "'><error type='cancel'>" &
                 "<service-unavailable xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></iq>")
+          return
+        if id.startsWith("q-"):
+          # (asked with an id of its own: the answer, whole, to whoever asked)
+          emit(XmppEvent(kind: xeStanza, id: id, text: $n))
           return
         if typ == "error":
           let e = n.child("error")
@@ -525,7 +532,8 @@ proc runWorker(cfg: Config) {.thread.} =
           let fw = res.child("forwarded")
           if fw == nil or fw.child("message") == nil: return
           let am = fw.child("message")
-          if am.attr("type") == "groupchat" or am.attr("type") == "error" or am.child("body") == nil: return
+          let locked = am.child("encrypted") != nil
+          if am.attr("type") == "groupchat" or am.attr("type") == "error" or (am.child("body") == nil and not locked): return
           var stamp = ""
           if fw.child("delay") != nil: stamp = fw.child("delay").attr("stamp")
           let mine = bareJid(am.attr("from")) == bareJid(full)
@@ -533,8 +541,9 @@ proc runWorker(cfg: Config) {.thread.} =
           for x in am.findAll("x"):
             if x.attr("xmlns") == "jabber:x:oob" and x.child("url") != nil: url = x.child("url").innerText
           emit(XmppEvent(kind: xeArchived, jid: bareJid(if mine: am.attr("to") else: am.attr("from")),
-                         text: am.child("body").innerText, id: am.attr("id"), stamp: stamp, url: url,
-                         mine: mine, archiveId: res.attr("id"), resource: res.attr("queryid")))
+                         text: (if am.child("body") != nil: am.child("body").innerText else: ""), id: am.attr("id"),
+                         stamp: stamp, url: url, mine: mine, archiveId: res.attr("id"), resource: res.attr("queryid"),
+                         raw: (if locked: $am else: "")))
           return
         var m = n
         var carbon = false
@@ -546,6 +555,11 @@ proc runWorker(cfg: Config) {.thread.} =
             if fw != nil and fw.child("message") != nil:
               m = fw.child("message")
               carbon = tag == "sent"
+        # (a server's notice: what someone published changed)
+        for ev in n.findAll("event"):
+          if ev.attr("xmlns") == "http://jabber.org/protocol/pubsub#event":
+            emit(XmppEvent(kind: xeStanza, text: $n))
+            return
         let typ = m.attr("type")
         let sender = m.attr("from")
         var stamp = ""
@@ -568,7 +582,8 @@ proc runWorker(cfg: Config) {.thread.} =
         let rc = m.child("received")
         if rc != nil and rc.attr("xmlns") == "urn:xmpp:receipts":
           emit(XmppEvent(kind: xeReceipt, jid: other, id: rc.attr("id")))
-        if m.child("body") != nil:
+        let locked = m.child("encrypted") != nil
+        if m.child("body") != nil or locked:
           var url = ""
           for x in m.findAll("x"):
             if x.attr("xmlns") == "jabber:x:oob" and x.child("url") != nil: url = x.child("url").innerText
@@ -576,8 +591,10 @@ proc runWorker(cfg: Config) {.thread.} =
           var aid = ""
           for sid in n.findAll("stanza-id"):
             if sid.attr("xmlns") == "urn:xmpp:sid:0" and sid.attr("by") == bareJid(full): aid = sid.attr("id")
-          emit(XmppEvent(kind: xeMessage, jid: other, resource: resourceOf(sender), text: m.child("body").innerText,
-                         id: m.attr("id"), stamp: stamp, url: url, carbon: carbon, archiveId: aid))
+          emit(XmppEvent(kind: xeMessage, jid: other, resource: resourceOf(sender),
+                         text: (if m.child("body") != nil: m.child("body").innerText else: ""),
+                         id: m.attr("id"), stamp: stamp, url: url, carbon: carbon, archiveId: aid,
+                         raw: (if locked: $m else: "")))
           # (a receipt asked for: given)
           let rq = m.child("request")
           if rq != nil and rq.attr("xmlns") == "urn:xmpp:receipts" and not carbon and m.attr("id").len > 0:

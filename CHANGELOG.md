@@ -1,5 +1,40 @@
 # Changes
 
+## 0.23.0
+
+- **`retroui/omemo`: end-to-end encryption for chat**, as Conversations,
+  Monal, Gajim, Dino and Siskin do it: OMEMO 0.3
+  (eu.siacs.conversations.axolotl), the Signal protocol underneath -- X3DH
+  to begin a session from the keys a device published, then the double
+  ratchet, a new key for every message, messages that come late or out of
+  order opened. Each device has an identity (XEdDSA: its X25519 key
+  published, its signatures Ed25519's), a signed key and 100 one-time keys,
+  kept in one file readable by you alone; a one-time key used is replaced
+  and published again. Its devices' list and keys go to the server (PEP),
+  others' are fetched when needed; a message waits for them and goes to
+  each device of the other one and your own others (`omemoSend`, then
+  onSent or onFailed). Trust is blind until you verify a device
+  (`omemoTrust`, the fingerprints with `omemoFingerprint` and
+  `fingerprint`); a device whose key changes is not trusted. Files are
+  locked as the apps do it (XEP-0454: `encryptFile`, `aesgcmUrl`,
+  `decryptFile`). The cryptography is OpenSSL's libcrypto (1.1.1 or
+  later), loaded when needed (`omemoAvailable`). Tested against
+  python-omemo's oldmemo (the libsignal-compatible one) over a server:
+  sessions begun from either side, answers, restarts.
+- `retroui/xmpp`: `xeStanza` -- the answer to an iq whose id starts "q-",
+  whole, and the server's pubsub notices; `raw`, an encrypted message's
+  XML (live and from the archive); a message with no words but encrypted
+  comes too; the disco answer says it follows OMEMO's device lists.
+- **Retro Communicator 1.2: encrypted talks.** The lock button in a talk:
+  on by itself when the other one's app has OMEMO (off again by a click,
+  remembered), locked lines show a green lock, a message that could not go
+  encrypted says so and is not sent in the clear. Files and voice messages
+  in an encrypted talk are locked before they go (aesgcm://), and the ones
+  that come are opened here. Info shows the other one's devices with their
+  fingerprints (Verified, Don't Trust), My Profile this device's.
+- `test_omemo`: the RFCs' vectors, XEdDSA, two devices talking, trust, files.
+- Retro Gallery and the small examples are 0.23.0.
+
 ## 0.22.0
 
 - **`retroui/xmpp`: the server's history (the message archive, XEP-0313).**

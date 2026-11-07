@@ -71,7 +71,9 @@ Windows the OpenSSL DLLs beside the .exe). `examples/communicator.nims`
 turns it on for the example. Its voice messages record with Termux:API's
 `termux-microphone-record` (a phone, in Termux) or PulseAudio's `parecord`
 or ALSA's `arecord` (Linux), and ffmpeg, where it is, makes them AAC; they
-play with the system's sound, or mpv or ffplay.
+play with the system's sound, or mpv or ffplay. Its encryption
+(`retroui/omemo`) uses libcrypto 1.1.1 or later, the same OpenSSL; where
+it is missing, talks go unencrypted and the lock button is grayed.
 
 ---
 
