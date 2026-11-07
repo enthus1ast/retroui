@@ -530,6 +530,7 @@ proc onFocusLeave(ctrl: pointer; data: pointer) {.cdecl.} =
 # sizing are X11's only (a button of 0 to GDK); Wayland has none.
 
 proc gtk_window_set_decorated(win: pointer; setting: gboolean) {.importc, nodecl, cdecl.}
+proc gtk_window_set_resizable(win: pointer; setting: gboolean) {.importc, nodecl, cdecl.}
 proc gtk_window_unmaximize(win: pointer) {.importc, nodecl, cdecl.}
 proc gtk_window_minimize(win: pointer) {.importc, nodecl, cdecl.}
 proc gtk_window_is_maximized(win: pointer): gboolean {.importc, nodecl, cdecl.}
@@ -571,6 +572,12 @@ proc gtkSetSystemFrame(on: bool): bool =
   systemFrame = on
   if win != nil: gtk_window_set_decorated(win, if on: G_TRUE else: G_FALSE)
   true
+
+var resizable = true   ## the user may size the window
+
+proc gtkSetResizable(on: bool) =
+  resizable = on
+  if win != nil: gtk_window_set_resizable(win, if on: G_TRUE else: G_FALSE)
 
 proc gtkDragWindow(part: WindowPart; keyboard: bool): bool =
   if win == nil or part == wpClient: return false
@@ -713,6 +720,7 @@ proc gtkCreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
   gtk_window_set_icon_name(win, instName.cstring)
   # (without the system's frame: asked for before the window is shown)
   if not systemFrame: gtk_window_set_decorated(win, G_FALSE)
+  if not resizable: gtk_window_set_resizable(win, G_FALSE)
   discard g_signal_connect_data(win, "notify::maximized",
     cast[GCallback](onMaximizedChanged), nil, nil, 0)
   discard g_signal_connect_data(win, "notify::is-active",
@@ -1163,7 +1171,8 @@ proc initGtk4Driver*() =
     getText: gtkGetClipboardText, putText: gtkPutClipboardText)
   frameRelays = FrameRelays(
     setSystemFrame: gtkSetSystemFrame, dragWindow: gtkDragWindow,
-    setMaximized: gtkSetMaximized, maximized: gtkMaximized, active: gtkActive)
+    setMaximized: gtkSetMaximized, maximized: gtkMaximized, active: gtkActive,
+    setResizable: gtkSetResizable)
   systemRelays.minimize = proc (): bool =
     if win == nil: return false
     gtk_window_minimize(win)

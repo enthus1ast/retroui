@@ -939,6 +939,17 @@ proc workArea(hwnd: HWND): tuple[monitor, work: WINAPIRECT] =
 
 proc styleWord(style: uint32): int {.inline.} = cast[int](uint(style))
 
+var gResizable = true     ## the user may size and maximize the window
+
+proc frameStyle(): uint32 =
+  ## (the window's style: Windows' frame or the app's; without the sizing
+  ## border and the maximize box when it is not to be sized -- the app's
+  ## frame keeps the border, which its hit test answers, and refuses itself)
+  result = if gSystemFrame: WS_OVERLAPPEDWINDOW else: WS_FRAMELESS
+  if not gResizable:
+    result = result and not WS_MAXIMIZEBOX
+    if gSystemFrame: result = result and not WS_THICKFRAME
+
 # ---- the app's item in the system menu ----
 var
   gMenuLabel = ""              # the app's item in the system menu ("" none)
@@ -1357,7 +1368,7 @@ proc winCreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
                         right: int32(layout.width * gUiScale div 100),
                         bottom: int32(layout.height * gUiScale div 100))
     # (without Windows' frame the window is all inside)
-    if gSystemFrame: discard AdjustWindowRectEx(addr rc, WS_OVERLAPPEDWINDOW, 0, 0)
+    if gSystemFrame: discard AdjustWindowRectEx(addr rc, frameStyle(), 0, 0)
     outerW = rc.right - rc.left
     outerH = rc.bottom - rc.top
     # No bigger than the desktop without the taskbar.
@@ -1380,7 +1391,7 @@ proc winCreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
     0,
     cast[ptr uint16](className[0].addr),
     cast[ptr uint16](title[0].addr),
-    (if gSystemFrame: WS_OVERLAPPEDWINDOW else: WS_FRAMELESS) or WS_VISIBLE,
+    frameStyle() or WS_VISIBLE,
     x, y, outerW, outerH,
     nil, nil, gHinstance, nil)
 
@@ -1819,20 +1830,27 @@ proc winSetWindowTitle(title: string) =
 
 # ---- Frame hook implementations ----
 
+proc restyle() =
+  ## The style changes and the frame is worked out again (WM_NCCALCSIZE);
+  ## the window stays where it is, as large as it was.
+  if gHwnd == nil: return
+  let keep = uint32(GetWindowLongPtrW(gHwnd, GWL_STYLE) and 0xFFFFFFFF) and
+             (WS_VISIBLE or WS_MINIMIZE or WS_MAXIMIZE)
+  discard SetWindowLongPtrW(gHwnd, GWL_STYLE, styleWord(keep or frameStyle()))
+  discard SetWindowPos(gHwnd, nil, 0, 0, 0, 0,
+    SWP_FRAMECHANGED or SWP_NOMOVE or SWP_NOSIZE or SWP_NOZORDER or
+    SWP_NOACTIVATE or SWP_NOOWNERZORDER)
+
 proc winSetSystemFrame(on: bool): bool =
   if on != gSystemFrame:
     gSystemFrame = on
-    if gHwnd != nil:
-      # The style changes and the frame is worked out again (WM_NCCALCSIZE);
-      # the window stays where it is, as large as it was.
-      let keep = uint32(GetWindowLongPtrW(gHwnd, GWL_STYLE) and 0xFFFFFFFF) and
-                 (WS_VISIBLE or WS_MINIMIZE or WS_MAXIMIZE)
-      discard SetWindowLongPtrW(gHwnd, GWL_STYLE,
-        styleWord(keep or (if on: WS_OVERLAPPEDWINDOW else: WS_FRAMELESS)))
-      discard SetWindowPos(gHwnd, nil, 0, 0, 0, 0,
-        SWP_FRAMECHANGED or SWP_NOMOVE or SWP_NOSIZE or SWP_NOZORDER or
-        SWP_NOACTIVATE or SWP_NOOWNERZORDER)
+    restyle()
   true
+
+proc winSetResizable(on: bool) =
+  if on != gResizable:
+    gResizable = on
+    restyle()
 
 proc winDragWindow(part: WindowPart; keyboard: bool): bool =
   if gHwnd == nil or part == wpClient: return false
@@ -2352,7 +2370,8 @@ proc initWinapiDriver*() =
   frameRelays = FrameRelays(
     setSystemFrame: winSetSystemFrame, dragWindow: winDragWindow,
     setMaximized: winSetMaximized, maximized: winMaximized, active: winActive,
-    menuItem: winMenuItem, menuItemChosen: winMenuItemChosen)
+    menuItem: winMenuItem, menuItemChosen: winMenuItemChosen,
+    setResizable: winSetResizable)
   systemRelays.minimize = winMinimize
   textCaretRelay = winTextCaret
   fileDragRelays = FileDragRelays(dragOut: winDragFilesOut)

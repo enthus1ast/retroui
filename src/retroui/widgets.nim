@@ -3306,8 +3306,10 @@ proc statusbar*(parts: varargs[string]) =
   hline(0, r.y + 1, ui.w, th.light)
   ui.bottom = r.y
   # the parts, the first one taking the spare room, between etched lines
+  # (the last one left of the frame's size grip, in the bar's corner)
   let ty = r.y + 1 + (h - 1 - FontH) div 2
-  var x = r.x + r.w - 6 - ui.safe.right
+  let grip = sizeGrip()
+  var x = r.x + r.w - 6 - ui.safe.right - (if grip.y >= r.y: grip.w else: 0)
   for i in countdown(parts.high, 1):
     let part = tr(parts[i])
     let w = textWidth(part) + 14
@@ -3331,7 +3333,10 @@ proc beginStatusBar*(): Rect =
   hline(0, r.y, ui.w, th.shadow)
   hline(0, r.y + 1, ui.w, th.light)
   ui.bottom = r.y
-  pushFrame(rect(r.x + dp(4) + ui.safe.left, r.y + 3, r.w - dp(8) - ui.safe.left - ui.safe.right, h - 4))
+  let grip = sizeGrip()
+  let gw = if grip.y >= r.y: grip.w else: 0     # (the frame's size grip at its end)
+  pushFrame(rect(r.x + dp(4) + ui.safe.left, r.y + 3,
+                 r.w - dp(8) - ui.safe.left - ui.safe.right - gw, h - 4))
   beginClipped()                 # (not the page's content: it does not scroll it)
   r
 
@@ -3584,7 +3589,8 @@ proc frameLayout*(): FrameLayout =
   ## The parts of the 3.1 frame (`setClassicFrame`): the sizing border all
   ## round, the title bar inside it with the control-menu box at its left
   ## and the minimize and maximize buttons at its right. All empty when the
-  ## frame is not drawn.
+  ## frame is not drawn. A window that keeps its size (`setResizable`) has
+  ## no maximize button: the minimize button is at the right.
   if not ui.ownFrame: return
   let b = ui.frameBorder
   let h = max(1, ui.captionH - 1)
@@ -3592,8 +3598,11 @@ proc frameLayout*(): FrameLayout =
   result.corner = b + h          # (in line with the title bar's bottom)
   result.caption = rect(b, b, ui.w - 2 * b, h)
   result.controlBox = rect(b, b, h, h)
-  result.maximize = rect(ui.w - b - h, b, h, h)
-  result.minimize = rect(ui.w - b - 2 * h, b, h, h)
+  if resizable():
+    result.maximize = rect(ui.w - b - h, b, h, h)
+    result.minimize = rect(ui.w - b - 2 * h, b, h, h)
+  else:
+    result.minimize = rect(ui.w - b - h, b, h, h)
 
 proc framePartAt*(x, y: int): FramePart =
   ## Which part of the 3.1 frame is at `x`, `y` (`fpNone`: the content, or
@@ -3606,8 +3615,10 @@ proc framePartAt*(x, y: int): FramePart =
   if f.minimize.contains(p): return fpMinimize
   if f.maximize.contains(p): return fpMaximize
   if rect(f.caption.x, f.caption.y, f.caption.w, ui.captionH).contains(p): return fpCaption
+  # (the size grip sizes the window as the corner does)
+  if sizeGrip().contains(p): return fpBottomRight
   let b = f.border
-  if b <= 0 or x < 0 or y < 0 or x >= ui.w or y >= ui.h: return fpNone
+  if b <= 0 or not resizable() or x < 0 or y < 0 or x >= ui.w or y >= ui.h: return fpNone
   let left = x < b
   let right = x >= ui.w - b
   let top = y < b
@@ -3674,12 +3685,29 @@ proc frameCursor(p: FramePart): CursorKind =
   of fpTopRight, fpBottomLeft: curSizeNESW
   else: curDefault
 
+proc sizeGripMark*(r: Rect) =
+  ## A size grip in `r` (the bottom right corner of a window): three
+  ## ridges across the corner, light over dark, as on the status bars of
+  ## the Windows that came after 3.1. Right to left, it is drawn mirrored,
+  ## in the bottom left corner.
+  if r.w <= 0 or r.h <= 0: return
+  let u = max(1, r.w div 16)               # (16: a scroll bar's width at 100 %)
+  let x1 = r.x + r.w - 1 - u
+  let y1 = r.y + r.h - 1 - u
+  for k in 0 .. 2:
+    let d = (3 + 4 * k) * u
+    for i in 0 ..< u:
+      line(x1 - d - i, y1, x1, y1 - d - i, th.light)
+    for i in 1 .. 2 * u:
+      line(x1 - d - u - i + 1, y1, x1, y1 - d - u - i + 1, th.shadow)
+
 proc sizingBorder*(r: Rect; border, corner: int) =
   ## The 3.1 window's sizing border round `r`: the gray band between two
   ## black lines, cut by dark lines `corner` pixels from each corner -- the
-  ## parts that size the window both ways.
+  ## parts that size the window both ways. A window that keeps its size
+  ## (`setResizable`) has the band without the cuts, as 3.1's dialogs had.
   windowFrame(r, border)
-  if border < 3: return
+  if border < 3 or not resizable(): return
   let band = border - 2
   for x in [r.x + corner, r.x + r.w - corner]:
     vline(x, r.y + 1, band, th.frame)
@@ -3723,8 +3751,8 @@ proc classicCaption() =
         classicHeld = part
         ui.redraw = true
       of fpCaption:
-        if ui.clicks >= 2: maximizeWindow(not maxed)
-        else: startWindowMove()
+        if ui.clicks >= 2 and resizable(): maximizeWindow(not maxed)
+        elif ui.clicks < 2: startWindowMove()
       else:
         startWindowResize(systemPart(part))
   if classicHeld != fpNone and (ui.released or not ui.mouseDown):
@@ -3756,6 +3784,7 @@ proc classicCaption() =
   vline(cb.x + cb.w, cap.y, cap.h, th.frame)
   controlMenuMark(cb)
   for (r, p) in [(f.minimize, fpMinimize), (f.maximize, fpMaximize)]:
+    if r.w <= 0: continue            # (no maximize button: a window that keeps its size)
     vline(r.x, r.y, r.h, th.frame)
     let face = rect(r.x + 1, r.y, r.w - 1, r.h)
     let down = classicHeld == p and part == p and ui.mouseDown
@@ -3774,16 +3803,19 @@ proc classicCaption() =
     ui.blockers.add rect(0, 0, f.border, ui.h)
     ui.blockers.add rect(ui.w - f.border, 0, f.border, ui.h)
     ui.blockers.add rect(0, ui.h - f.border, ui.w, f.border)
+  let grip = sizeGrip()
+  if grip.w > 0: ui.blockers.add grip
   # the control menu
   # (hanging from the box, as a menu bar's menu from its title)
   if ui.popup == ClassicMenuId and
      beginPopupMenu(ClassicMenuId, cb.x, cap.y + ui.captionH, fixedTop = true):
+    let sizes = resizable()
     if menuItem("&Restore", enabled = maxed): maximizeWindow(false)
     if menuItem("&Move", enabled = not maxed): startWindowMove(keyboard = true)
-    if menuItem("&Size", enabled = not maxed):
+    if menuItem("&Size", enabled = sizes and not maxed):
       startWindowResize(wpBottomRight, keyboard = true)
     if menuItem("Mi&nimize"): minimizeApp()
-    if menuItem("Ma&ximize", enabled = not maxed): maximizeWindow(true)
+    if menuItem("Ma&ximize", enabled = sizes and not maxed): maximizeWindow(true)
     menuSeparator()
     if menuItem("&Close", "Alt+F4"): requestClose()
     menuSeparator()
@@ -3810,6 +3842,12 @@ proc classicFrameEnd() =
   if f.border > 0:
     pushLayer(LayerBase)
     sizingBorder(rect(0, 0, ui.w, ui.h), f.border, f.corner)
+    # (the size grip, over what is in the corner: the content's, a scroll
+    # bar's corner, the status bar's end)
+    let grip = sizeGrip()
+    if grip.w > 0:
+      fill(grip, th.face)
+      sizeGripMark(grip)
     popLayer()
   if ui.popup == 0 and ui.active == 0 and not ui.mouseDown:
     let c = frameCursor(framePartAt(ui.mx, ui.my))

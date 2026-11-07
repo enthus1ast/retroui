@@ -6280,13 +6280,18 @@ Windows' ClearType does. It is off by default.
 
 A desktop app has the system's own frame, or the one Windows 3.1 had: the
 gray sizing border, the navy title bar with the control-menu box at its
-left and the minimize and maximize buttons at its right. The app draws it
-itself, and the system still does the rest: drag the title bar to move the
-window (Aero Snap on Windows), the border to size it, a double click to
-maximize it, Alt+Space for the control menu.
+left and the minimize and maximize buttons at its right, and a size grip in
+the bottom right corner. The app draws it itself, in the theme's colors, and
+the system still does the rest: drag the title bar to move the window (Aero
+Snap on Windows), the border or the grip to size it (a finger takes the grip
+too), a double click to maximize it, Alt+Space for the control menu.
+`resizable = false` keeps the window's size: no sizing border, no maximize
+button, no grip, and the system's frame the same.
 
 ```nim
 app "Ledger", 640, 480, frame = wfClassic:   # wfAsBuilt (the default), wfSystem, wfClassic
+  ...
+app "Calculator", 260, 320, resizable = false:   # the window keeps its size
   ...
 ```
 

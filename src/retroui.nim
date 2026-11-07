@@ -88,7 +88,7 @@ proc keepLook*(name: string) =
 
 proc openApp*(title: string; w, h: int; theme = ui.theme; frame = wfAsBuilt;
               userFrame = true; gpu = gpuMode(); zoom = 0; scale = 0;
-              font = uiFont(); id = ""; icon = ""; look = "") =
+              font = uiFont(); id = ""; icon = ""; look = ""; resizable = true) =
   ## `app`'s start: opens the window with `app`'s options, which are the
   ## same by name (see `app` for each and its default). For an app that runs
   ## its own frame loop instead of `app`'s block:
@@ -111,6 +111,7 @@ proc openApp*(title: string; w, h: int; theme = ui.theme; frame = wfAsBuilt;
   if gpu != gpuMode(): setGpuMode(gpu)
   if font != uiFont(): setUiFont(font)
   if scale > 0: setUiScale(scale)
+  if not resizable: setResizable(false)
   if icon.len > 0: windowIcon = windowIconFromPng(icon)
   startApp(title, w, h, theme, zoom)
   appLook = look
@@ -160,9 +161,15 @@ macro app*(args: varargs[untyped]): untyped =
   ## - `icon`: the window's picture, a PNG's bytes (a `const` of `staticRead`)
   ## - `look`: the settings to keep the look in (`appearanceSettings`'s
   ##   colors, sizes, font...): brought back at the start, kept as it changes
+  ## - `resizable`: the user may size and maximize the window (true, the
+  ##   default); false keeps the size the app gave it -- no sizing border,
+  ##   no maximize button, no size grip on the 3.1 frame (`setResizable`)
   ##
   ## $RETRO_FRAME, $RETRO_GPU, $RETRO_SCALE, $RETRO_THEME, $RETRO_SIZE and
-  ## $RETRO_ZOOM win over them, for tests and screenshots.
+  ## $RETRO_ZOOM win over them, for tests and screenshots. $RETRO_WINDOW=1
+  ## (`retrokit run --window`) opens the app as a window in its 3.1 frame,
+  ## in the middle of a desktop the toolkit draws, where the screen has no
+  ## window manager (Termux:X11).
   if args.len < 4 or args[^1].kind notin {nnkStmtList, nnkStmtListExpr}:
     error("app: a title, a width, a height, options by name, then the block " &
           "(app \"Hello\", 320, 120: ...)", args)

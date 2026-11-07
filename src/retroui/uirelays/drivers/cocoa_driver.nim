@@ -129,6 +129,7 @@ proc cSetWindowTitle(title: cstring) {.importc: "cocoa_setWindowTitle", cdecl.}
 proc cStartTextInput() {.importc: "cocoa_startTextInput", cdecl.}
 proc cShutdown() {.importc: "cocoa_shutdown", cdecl.}
 proc cSetSystemFrame(on: cint): cint {.importc: "cocoa_setSystemFrame", cdecl.}
+proc cSetResizable(on: cint): cint {.importc: "cocoa_setResizable", cdecl.}
 proc cDragWindow(part, keyboard: cint): cint {.importc: "cocoa_dragWindow", cdecl.}
 proc cSetMaximized(on: cint) {.importc: "cocoa_setMaximized", cdecl.}
 proc cIsMaximized(): cint {.importc: "cocoa_isMaximized", cdecl.}
@@ -437,7 +438,8 @@ proc initCocoaDriver*() =
     setSystemFrame: cocoaSetSystemFrame, dragWindow: cocoaDragWindow,
     setMaximized: cocoaSetMaximized, maximized: cocoaMaximized,
     active: cocoaActive,
-    menuItem: cocoaMenuItem, menuItemChosen: cocoaMenuItemChosen)
+    menuItem: cocoaMenuItem, menuItemChosen: cocoaMenuItemChosen,
+    setResizable: proc (on: bool) = discard cSetResizable(on.cint))
   systemRelays.minimize = cocoaMinimize
   textCaretRelay = proc (x, y, w, h: int) = cSetTextCaret(x.cint, y.cint, w.cint, h.cint)
   fileDragRelays = FileDragRelays(dragOut: cocoaDragFilesOut)

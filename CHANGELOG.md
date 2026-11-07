@@ -1,5 +1,47 @@
 # Changes
 
+## 0.24.0
+
+- **The syntax, studied: [docs/syntax.md](docs/syntax.md).** The whole way
+  of writing an app, every form of it as a small program with a picture of
+  what it draws: what each number in `row([50, -1, 0, -2])` gives (the
+  pictures measure the widths in red), binding, events, containers, forms,
+  menus, dialogs, message boxes, ids in loops, shortcuts, time; a frame step
+  by step; how the syntax is built and why it is easy to follow; the rules
+  that prevent most mistakes, shown; and a whole app that stays easy to
+  read. The README links it first. Its pictures are made by
+  `tools/syntaxshots` from the very programs the page shows (`sh
+  tools/syntaxshots/make.sh`, which also checks the page's code is theirs).
+- **`retrokit run --window`: an app as a desktop window on Termux:X11.**
+  With no window manager the toolkit draws a desktop (the 3.1 teal) over the
+  screen and opens the app on it at its own size, grown by the tablet's
+  density, in the middle, in its 3.1 frame: moved by its title bar, sized by
+  its border or its grip, maximized, its control menu; keys go to it, also
+  after a tap on the desktop; the desktop follows the tablet when it turns.
+  It is `RETRO_WINDOW=1` for any program built with the kit (on a bare X
+  server too); with a window manager it gives the 3.1 frame. `retrokit run`
+  also takes `--scale:N` (everything and the window N %), `--size:WxH` and
+  `--theme:NAME`, before or after the file; the rest goes to the compiler.
+- **The 3.1 frame has a size grip** in its bottom right corner (the bottom
+  left right to left): drag it with the mouse or a finger to size the
+  window, on every platform the frame is drawn. A status bar leaves it its
+  end, the window's scroll bars stop short of it; `sizeGrip()` says where it
+  is. The frame takes the theme's colors and follows the user's theme.
+- **`resizable = false`** (`app`'s option; `setResizable`, `resizable()`):
+  a window that keeps its size. The 3.1 frame has no sizing border to drag
+  (the plain band of 3.1's dialogs), no maximize button and no grip; a double
+  click on its title bar does not maximize it; its control menu has Size and
+  Maximize grayed. The system's frame is told the same through the new
+  `FrameRelays.setResizable`: Windows drops the sizing border and the
+  maximize box, macOS the resize edges and the zoom button, X11 window
+  managers get the same least and largest size, GTK 4 and SDL 2 / SDL 3
+  make the window fixed.
+- `RETRO_SCALE` (and `app`'s `scale`) make the window larger with
+  everything in it, so it all still fits.
+- `test_frame`: the grip (where it is, what a press on it does, its ridges)
+  and a window that keeps its size.
+- Retro Gallery and the small examples are 0.24.0.
+
 ## 0.23.0
 
 - **`retroui/omemo`: end-to-end encryption for chat**, as Conversations,

@@ -379,5 +379,50 @@ block noFrameWhereItCannot:
   run()
   doAssert classicFrame()
 
+block sizeGripAndResizable:
+  # the size grip: a scroll bar's width square inside the frame's bottom
+  # right corner (over the status bar's end here); it sizes the window as
+  # that corner does
+  run(2)
+  let g = sizeGrip()
+  doAssert g == rect(W - 5 - SbW, H - 5 - SbW, SbW, SbW), $g
+  doAssert framePartAt(g.x + 2, g.y + 2) == fpBottomRight
+  doAssert windowPartAt(g.x + 2, g.y + 2) == wpBottomRight, "a system's hit test is told"
+  var light, dark = 0
+  for y in g.y ..< g.y + g.h:
+    for x in g.x ..< g.x + g.w:
+      if px(x, y) == White: inc light
+      elif px(x, y) == 0x808080'u32: inc dark
+  doAssert light > 0 and dark > light, "its ridges: " & $(light, dark)
+  drags.setLen 0
+  down(g.x + g.w div 2, g.y + g.h div 2)
+  run(2)
+  doAssert drags == @[(wpBottomRight, false)], $drags
+  # a window that keeps its size (`app`'s `resizable = false`): the system
+  # is told, and the frame has no grip, no sizing border, no maximize button
+  var told: seq[bool]
+  frameRelays.setResizable = proc (on: bool) = told.add on
+  setResizable(false)
+  run(2)
+  doAssert told == @[false] and not resizable()
+  doAssert sizeGrip().w == 0
+  let f = frameLayout()
+  doAssert f.maximize.w == 0 and f.minimize == rect(W - 5 - ch, 5, ch, ch), $f.minimize
+  doAssert framePartAt(W - 10, 10) == fpMinimize
+  for (x, y) in [(2, 240), (W - 2, H - 2), (320, 1), (g.x + 2, g.y + 2)]:
+    doAssert framePartAt(x, y) == fpNone, $(x, y) & ": " & $framePartAt(x, y)
+  doAssert px(c, 2) == Gray, "no sizing marks across the border"
+  # a double click on the title bar does not maximize it
+  maxed = false
+  drags.setLen 0
+  down(320, 12, clicks = 2)
+  run(2)
+  up(320, 12)
+  run(2)
+  doAssert not maxed
+  setResizable(true)
+  run(2)
+  doAssert sizeGrip().w > 0 and told == @[false, true]
+
 removeDir(keepHome)
 echo "test_frame: ok"

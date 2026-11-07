@@ -8,6 +8,11 @@ A **Windows 3.1 style UI toolkit for Nim** that builds business and desktop
 apps for **Windows, macOS, Linux, Android and iOS** from one code base. The
 package and its module are called `retroui`: `nimble install retroui`, `import retroui`.
 
+**Learn the syntax: [docs/syntax.md](docs/syntax.md)** -- the whole way of
+writing an app, every form of it as a small program with a picture of what
+it draws: what `row([50, -1])` does with the 50 and the -1, binding, events,
+containers, dialogs, how it is built and why it is easy to follow.
+
 **Documentation: [docs/controls.md](docs/controls.md)** -- every control with
 pictures: getting started, layout, each control's example and API, the looks.
 
@@ -74,7 +79,7 @@ every module is in `docs/api/` (open `docs/api/retro.html`).
 
 ## Contents
 
-[Install](#install) · [Your first app](#your-first-app) ·
+[The syntax, studied](docs/syntax.md) · [Install](#install) · [Your first app](#your-first-app) ·
 [How it works](#how-it-works) · [Controls](#controls) · [Layout](#layout) ·
 [Text and icons](#text-and-icons) · [Business apps](#business-apps) ·
 [Charts](#charts) · [Reports, PDF and printing](#reports-pdf-and-printing) ·
@@ -187,7 +192,19 @@ border or a corner to size it; a double click or the maximize button
 maximizes it, down to the taskbar; Alt+Space opens the control menu
 (Restore, Move, Size, Minimize, Maximize, Close, the UI's size). The menu bar,
 tool bars and the content move down under it as under a phone's title bar,
-so an app needs no change.
+so an app needs no change. A **size grip** sits in the bottom right corner
+inside the frame (in the status bar's end when there is one; the bottom
+left, right to left): drag it to size the window, with the mouse or a
+finger, on every platform the 3.1 frame is drawn. The frame takes the
+theme's colors, and follows when the user picks another theme.
+
+**A window that keeps its size:** `app "Calculator", 260, 320, resizable = false:`
+(or `setResizable(false)`). The 3.1 frame then has no sizing border to drag,
+no maximize button and no grip (its border is the plain band 3.1's dialogs
+had), and the system's frame is told the same: Windows drops the sizing
+border and the maximize box, macOS the resize edges and the zoom button,
+X11 window managers get the same least and largest size, GTK 4 and SDL
+make the window fixed.
 
 ```sh
 RETRO_FRAME=classic nimble mailexe    # Retro Mail for Windows with the 3.1 frame
@@ -254,6 +271,26 @@ retroapk hello.nim --install      # on a phone in Termux
 In Termux the same `nim c -r` runs it in a window on Termux:X11 (see
 BUILDING.md, "A desktop app in Termux").
 
+**Working on an app in Termux.** Without a window manager, Termux:X11 gives
+an app the whole screen, as Android does. To see it as a desktop window
+while you work on it:
+
+```sh
+retrokit run --window app.nim              # its own size, in its 3.1 frame, in the middle
+retrokit run --window --scale:125 app.nim  # everything (and the window) a quarter larger
+retrokit run --window --theme:Dark --size:420x840 app.nim
+```
+
+The toolkit draws a desktop (the 3.1 teal) over the screen and puts the
+window on it at the size the app asked for, grown by the screen's own scale
+(its density, so a 2K tablet shows it at its real size), with the title bar
+to move it, the border and the grip to size it, the maximize button and the
+control menu. Keys go to the window, also after a tap on the desktop. When
+the tablet turns, the desktop follows and the window stays in view. The
+line it prints says what it came to (`RETRO_WINDOW: 660 x 304 pixels on a
+2560 x 1600 screen; the screen's scale 200 %`); `--scale:N` makes it
+larger or smaller. `retrokit run` passes anything else to the compiler.
+
 On Windows from Linux: `nim c -d:release -d:useMalloc -d:lto --opt:size --passL:-s -d:mingw
 --cpu:amd64 --app:gui hello.nim`.
 
@@ -284,13 +321,18 @@ app "Ledger", 900, 600,
     zoom = 0,                        # whole-pixel magnification (0: the display's)
     id = "ledger",                   # the app's name for what the toolkit keeps
     icon = ledgerIcon,               # the window's picture (a PNG's bytes)
+    resizable = true,                # false: the window keeps its size
     look = "ledger":                 # keep the look the user picks (appearanceSettings)
   label "Hello"
 ```
 
 A misspelled option is a compile error that lists them all.
 $RETRO_FRAME, $RETRO_GPU, $RETRO_SCALE, $RETRO_THEME, $RETRO_SIZE and
-$RETRO_ZOOM win over the options when the app starts (tests, screenshots).
+$RETRO_ZOOM win over the options when the app starts (tests, screenshots);
+$RETRO_SCALE makes the window larger with everything in it.
+$RETRO_WINDOW=1 opens the app as a window in its 3.1 frame, in the middle of
+a desktop the toolkit draws, where the screen has no window manager (see
+"Working on an app in Termux" below).
 
 ## How it works
 
@@ -416,7 +458,9 @@ sharp (2x, 3x) and the text and controls make up the rest (a 1.33x tablet
 gets 1x lines and 1.33x text). `setUiScale(125)` (and Ctrl + / - / 0, and
 the phone title bar's menu) scales everything; `setTextScale(120)` only
 the text (controls grow with it); `setBaseTextSize(14)` changes the 100%
-size (12 pixels per em on desktops and tablets, 15 on phones). Try layouts on a desktop with `RETRO_SIZE=420x840`, `RETRO_TOUCH=1`,
+size (12 pixels per em on desktops and tablets, 15 on phones).
+[docs/syntax.md](docs/syntax.md#widths-in-a-row) shows each kind of width
+with the pixels it came to. Try layouts on a desktop with `RETRO_SIZE=420x840`, `RETRO_TOUCH=1`,
 `RETRO_CAPTION=1` (the phone title bar), `RETRO_SCALE=150`, `RETRO_ZOOM=2`.
 
 ## Text and icons

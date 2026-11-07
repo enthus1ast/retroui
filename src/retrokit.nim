@@ -2,7 +2,14 @@
 ##
 ##   retrokit new myapp [--kind:hello|form|business|files|charts]
 ##   retrokit doctor                  what this machine has, what is missing
-##   retrokit run app.nim             build (release) and run it
+##   retrokit run app.nim [options]   build (release) and run it
+##       --window      on a screen with no window manager (Termux:X11): the
+##                     app as a window of its own size, in its 3.1 frame, in
+##                     the middle of a desktop, scaled to the screen
+##       --scale:N     everything N percent of its normal size (and the window)
+##       --size:WxH    the window this many design pixels (to try layouts)
+##       --theme:NAME  a built-in theme ("Dark", "OLED Black"...)
+##       other options go to the Nim compiler
 ##   retrokit small app.nim           the smallest build (optimized for size, stripped)
 ##   retrokit apk app.nim [options]   an Android APK (the retroapk tool)
 ##
@@ -19,7 +26,15 @@ retrokit -- start, check and build Retro Nim UI apps
   retrokit doctor
       checks Nim, the C compiler, the screen libraries and the Android tools
       (clang + lld or zig: APKs without the NDK)
-  retrokit run APP.nim         build it (release) and run it
+  retrokit run APP.nim [options]
+      build it (release) and run it; options:
+        --window      on a screen with no window manager (Termux:X11): the
+                      app as a window of its own size, in its 3.1 frame, in
+                      the middle of a desktop, scaled to the screen
+        --scale:N     everything N percent of its normal size (the window too)
+        --size:WxH    the window W x H design pixels, to try layouts
+        --theme:NAME  a built-in theme ("Dark", "OLED Black"...)
+      anything else goes to the Nim compiler (-d:..., --opt:...)
   retrokit small APP.nim       the smallest build: optimized for size, stripped
   retrokit apk APP.nim [...]   an Android APK (same options as retroapk)
 """
@@ -326,6 +341,26 @@ proc build(app: string; extra: openArray[string]; run: bool): int =
   result = p.waitForExit()
   p.close()
 
+proc runOptions(args: openArray[string]): seq[string] =
+  ## `run`'s own options, put in the environment the app starts with; what
+  ## is left goes to the compiler.
+  for a in args:
+    let (key, value) =
+      if a.startsWith("--") and (':' in a or '=' in a):
+        let i = a.find({':', '='})
+        (a[2 ..< i], a[i + 1 .. ^1])
+      else: (a.strip(chars = {'-'}), "")
+    case key
+    of "window", "w": putEnv("RETRO_WINDOW", "1")
+    of "scale":
+      try: putEnv("RETRO_SCALE", $clamp(parseInt(value.strip(chars = {'%'})), 50, 300))
+      except ValueError: quit "retrokit: --scale wants a percent, like --scale:150"
+    of "size":
+      if 'x' notin value: quit "retrokit: --size wants a width and a height, like --size:420x840"
+      putEnv("RETRO_SIZE", value)
+    of "theme": putEnv("RETRO_THEME", value)
+    else: result.add a
+
 proc main() =
   let args = commandLineParams()
   if args.len == 0 or args[0] in ["-h", "--help", "help"]:
@@ -341,8 +376,11 @@ proc main() =
     newApp(name, kind)
   of "doctor": doctor()
   of "run":
-    if args.len < 2: quit usage
-    quit build(args[1], args[2 .. ^1], true)
+    # (the file may come before or after the options)
+    let rest = runOptions(args[1 .. ^1])
+    let app = rest.filterIt(it.endsWith(".nim"))
+    if app.len == 0: quit usage
+    quit build(app[0], rest.filterIt(it != app[0]), true)
   of "small":
     if args.len < 2: quit usage
     let code = build(args[1], @["--opt:size", "-d:lto", "--passL:-s"] & args[2 .. ^1], false)

@@ -22,6 +22,12 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
   Android and macOS onto the release.
 - `tests/` -- headless tests on a fake screen driver (`tests/harness.nim`).
 - `docs/controls.md` -- every control with pictures, made by `tools/shots.nim`.
+- `docs/syntax.md` -- the study of the syntax: every form as a whole program
+  with a picture of what it draws. The programs are `tools/syntaxshots/ex/`
+  (the page's code plus `#>` script lines and `mark` lines it leaves out);
+  `sh tools/syntaxshots/make.sh` remakes `docs/syntax/*.png` and checks the
+  page's code is the programs' (needs Pillow). `docs/syntax/frame-loop.png`
+  is drawn by hand.
 
 ## Before you change anything
 
@@ -57,13 +63,17 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
 - **Keep these up to date with every change** to the API, the build or
   the behaviour: `skills/retroui/SKILL.md` (how to build apps with the
   kit), this file, `README.md`, `CHANGELOG.md` (the top section),
-  `BUILDING.md` (builds), `docs/controls.md` (controls), `llms.txt`.
+  `BUILDING.md` (builds), `docs/controls.md` (controls), `docs/syntax.md`
+  (when the syntax or what a form draws changes: run
+  `sh tools/syntaxshots/make.sh`), `llms.txt`.
 - **Looks:** the Windows 3.1 look and FreeSans drawn in gray (its heights
   on whole pixels, its strokes as the font has them; "Sharp" text is an
   option). Check a change by looking at a screenshot.
 - **The same everywhere:** behaviour and looks must match on Windows,
   macOS, Linux/BSD and Android; platform conventions (Cmd on macOS) go in
-  the drivers, not in the app code.
+  the drivers, not in the app code. A frame relay added to `FrameRelays`
+  (as `setResizable`) is filled in every desktop driver that can, and the
+  ones that cannot are named in its doc comment.
 - **Android: an app or a program in Termux.** Nim builds both with
   `--os:android`. `androidApp` (`uirelays/target`) is an APK (the
   activity, JNI, the app's folders); `androidShell` is a program run in

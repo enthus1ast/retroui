@@ -60,8 +60,8 @@ type
     ## where there is none; GTK 4 (Wayland's own windows too; the arrow keys
     ## on X11 only) and Siwin (not on macOS; no arrow keys) all but
     ## `menuItem`; SDL 3 and SDL 2 all but `menuItem` and `dragWindow`,
-    ## moving and sizing by `windowPartAt` instead. Android and iOS have no
-    ## windows to frame.
+    ## moving and sizing by `windowPartAt` instead. `setResizable`: all of
+    ## these but Siwin. Android and iOS have no windows to frame.
     setSystemFrame*: proc (on: bool): bool {.nimcall.}
       ## The system's frame and title bar on (true) or off: off, the app's
       ## drawing fills the whole window and the app draws a frame of its own.
@@ -98,6 +98,12 @@ type
       ## settings.
     menuItemChosen*: proc (): bool {.nimcall.}
       ## The item of `menuItem` was picked since the last call (once).
+    setResizable*: proc (on: bool) {.nimcall.}
+      ## The user may size and maximize the window (true, as windows are
+      ## made) or not: the system's frame then has no sizing border and no
+      ## maximize button, and the window keeps its size. Called before
+      ## `createWindow`, the window is made so. (The app's own frame does
+      ## the same on its side.)
 
   DragOutResult* = enum
     ## How a drag of files out of the window ended (`startFileDragOut`).
@@ -540,6 +546,10 @@ proc setFrameMenuItem*(label: string; checked = false): bool {.discardable.} =
 proc frameMenuItemChosen*(): bool =
   ## The item of `setFrameMenuItem` was picked since the last call.
   frameRelays.menuItemChosen != nil and frameRelays.menuItemChosen()
+proc setWindowResizable*(on: bool) =
+  ## The system's frame lets the user size and maximize the window, or not
+  ## (see `FrameRelays.setResizable`); nothing where the driver cannot say.
+  if frameRelays.setResizable != nil: frameRelays.setResizable(on)
 
 var fileDragRelays*: FileDragRelays
   ## Filled by the desktop drivers that can drag files out of the window

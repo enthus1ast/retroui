@@ -1392,14 +1392,15 @@ static NSString *appName(void) {
 @end
 
 static int systemFrame = 1;          /* the system draws the frame */
+static int resizable = 1;            /* the user may size the window */
 static NSRect unzoomedFrame;         /* where a borderless window was before
                                         it was maximized */
 
 static NSUInteger styleFor(int framed) {
-  return framed ? (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-                   NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
-                : (NSWindowStyleMaskBorderless | NSWindowStyleMaskMiniaturizable |
-                   NSWindowStyleMaskResizable);
+  NSUInteger style = framed ? (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                               NSWindowStyleMaskMiniaturizable)
+                            : (NSWindowStyleMaskBorderless | NSWindowStyleMaskMiniaturizable);
+  return resizable ? (style | NSWindowStyleMaskResizable) : style;
 }
 
 /* ---- Window management ------------------------------------------------ */
@@ -1699,6 +1700,21 @@ int cocoa_setSystemFrame(int on) {
       [mainWindow setFrame:frame display:YES];
       [mainWindow makeFirstResponder:mainView];
       noteContentSize();
+    }
+    return 1;
+  }
+}
+
+int cocoa_setResizable(int on) {
+  /* (no sizing edges, the zoom button grayed: the window keeps its size) */
+  @autoreleasepool {
+    resizable = on ? 1 : 0;
+    if (mainWindow) {
+      NSRect frame = [mainWindow frame];
+      [mainWindow setStyleMask:styleFor(systemFrame)];
+      [mainWindow setFrame:frame display:YES];
+      [[mainWindow standardWindowButton:NSWindowZoomButton] setEnabled:resizable ? YES : NO];
+      [mainWindow makeFirstResponder:mainView];
     }
     return 1;
   }

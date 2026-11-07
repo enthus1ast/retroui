@@ -301,6 +301,8 @@ proc sdlMinimizeWindow(window: sdl3.Window): bool
   {.importc: "SDL_MinimizeWindow", cdecl, dynlib: sdl3.LibName.}
 proc sdlGetWindowFlags(window: sdl3.Window): uint64
   {.importc: "SDL_GetWindowFlags", cdecl, dynlib: sdl3.LibName.}
+proc sdlSetWindowResizable(window: sdl3.Window; resizable: bool): bool
+  {.importc: "SDL_SetWindowResizable", cdecl, dynlib: sdl3.LibName.}
 
 const
   SdlWindowBorderless = 0x10'u64      ## SDL_WINDOW_BORDERLESS
@@ -308,6 +310,7 @@ const
   SdlWindowInputFocus = 0x200'u64     ## SDL_WINDOW_INPUT_FOCUS
 
 var systemFrame = true   ## the system draws the frame (else the app does)
+var resizable = true     ## the user may size the window
 
 proc hitTest(window: sdl3.Window; area: ptr sdl3.Point; data: pointer): cint {.cdecl.} =
   ## (SDL_HitTestResult: 0 the app's, 1 the title bar, 2..9 the border from
@@ -332,6 +335,10 @@ proc sdlSetSystemFrame(on: bool): bool =
   if on: discard sdlSetWindowHitTest(win, nil, nil)
   else: discard sdlSetWindowHitTest(win, hitTest, nil)
 
+proc sdlSetResizable(on: bool) =
+  resizable = on
+  if win != nil: discard sdlSetWindowResizable(win, on)
+
 proc sdlSetMaximized(on: bool) =
   if win != nil:
     discard (if on: sdlMaximizeWindow(win) else: sdlRestoreWindow(win))
@@ -354,7 +361,8 @@ proc sdlCreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
   let reqH = if layout.height < 0: 768 else: layout.height
   var winFlags =
     if layout.fullScreen: WINDOW_FULLSCREEN or WINDOW_HIGH_PIXEL_DENSITY
-    else: WINDOW_RESIZABLE or WINDOW_HIGH_PIXEL_DENSITY
+    elif resizable: WINDOW_RESIZABLE or WINDOW_HIGH_PIXEL_DENSITY
+    else: WINDOW_HIGH_PIXEL_DENSITY
   if maximized: winFlags = winFlags or WINDOW_MAXIMIZED
   if not systemFrame: winFlags = winFlags or SdlWindowBorderless
   discard createWindowAndRenderer(cstring"NimEdit",
@@ -938,5 +946,5 @@ proc initSdl3Driver*() =
   when not (defined(android) or defined(ios)):
     frameRelays = FrameRelays(
       setSystemFrame: sdlSetSystemFrame, setMaximized: sdlSetMaximized,
-      maximized: sdlMaximized, active: sdlActive)
+      maximized: sdlMaximized, active: sdlActive, setResizable: sdlSetResizable)
     systemRelays.minimize = proc (): bool = win != nil and sdlMinimizeWindow(win)

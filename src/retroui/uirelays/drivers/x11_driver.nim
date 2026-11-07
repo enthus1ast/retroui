@@ -461,6 +461,22 @@ proc XCreateSimpleWindow(dpy: pointer; parent: XID;
   {.cdecl, dynlib: libX11, importc.}
 proc XMapWindow(dpy: pointer; w: XID): cint
   {.cdecl, dynlib: libX11, importc.}
+proc XSetInputFocus(dpy: pointer; w: XID; revertTo: cint; time: XTime): cint
+  {.cdecl, dynlib: libX11, importc.}
+
+const RevertToParent = 2.cint
+
+type XSizeHints {.pure.} = object
+  ## (Xutil's: the sizes a window may take, WM_NORMAL_HINTS)
+  flags: clong
+  x, y, width, height: cint
+  minWidth, minHeight, maxWidth, maxHeight: cint
+  widthInc, heightInc: cint
+  minAspectX, minAspectY, maxAspectX, maxAspectY: cint
+  baseWidth, baseHeight, winGravity: cint
+
+proc XSetWMNormalHints(dpy: pointer; w: XID; hints: ptr XSizeHints)
+  {.cdecl, dynlib: libX11, importc.}
 proc XDestroyWindow(dpy: pointer; w: XID): cint
   {.cdecl, dynlib: libX11, importc.}
 proc XSelectInput(dpy: pointer; w: XID; mask: clong): cint
@@ -700,6 +716,7 @@ var
   gDepth: cint
   gWindow: XID
   gFillScreen = false   # the window fills the screen and follows it (Termux:X11, no window manager)
+  gDesk: XID            # the desktop drawn behind the window ($RETRO_WINDOW, no window manager)
   gGC: pointer         # Xlib GC for primitives
   gBackPixmap: XID     # double buffer
   gXftDraw: pointer    # Xft draw context on back pixmap
@@ -714,6 +731,7 @@ var
   gUiScale: int = 100
   gXim: pointer        # input method, nil if none could be opened
   gSystemFrame = true  # the window manager draws the frame (else the app does)
+  gResizable = true    # the user may size and maximize the window
   gFocused = true      # the window has the keyboard
   gMaximized = false   # _NET_WM_STATE says maximized, both ways
   gNetWmState: Atom
@@ -1407,6 +1425,19 @@ proc putFrameHints() =
     discard XChangeProperty(gDisplay, gWindow, hints, hints, 32,
                             PropModeReplace, addr v[0], 5)
 
+proc putSizeHints(w, h: int) =
+  ## WM_NORMAL_HINTS: a window that keeps its size has its least and its
+  ## largest size the same, and window managers then neither size nor
+  ## maximize it; otherwise no hints.
+  var hints = XSizeHints()
+  if not gResizable:
+    hints.flags = clong((1 shl 4) or (1 shl 5))     # PMinSize, PMaxSize
+    hints.minWidth = w.cint
+    hints.maxWidth = w.cint
+    hints.minHeight = h.cint
+    hints.maxHeight = h.cint
+  XSetWMNormalHints(gDisplay, gWindow, addr hints)
+
 proc wmSupports(name: cstring): bool =
   ## The window manager does what the EWMH atom `name` stands for: it says
   ## so in the root window's `_NET_SUPPORTED`. (None: no window manager, or
@@ -1440,6 +1471,18 @@ proc windowRect(): tuple[x, y, w, h: int] =
   discard XTranslateCoordinates(gDisplay, gWindow, XRootWindow(gDisplay, gScreen),
                                 0, 0, addr x, addr y, addr child)
   (x.int, y.int, gWidth.int, gHeight.int)
+
+const DeskPixel = 0x008080   ## the desktop's color, Windows 3.1's teal
+
+proc keepInView() =
+  ## (the screen changed size: the window back in view if it went out)
+  let sw = XDisplayWidth(gDisplay, gScreen).int
+  let sh = XDisplayHeight(gDisplay, gScreen).int
+  let r = windowRect()
+  let x = clamp(r.x, 0, max(0, sw - r.w))
+  let y = clamp(r.y, 0, max(0, sh - r.h))
+  if x != r.x or y != r.y:
+    discard XMoveResizeWindow(gDisplay, gWindow, x.cint, y.cint, r.w.cuint, r.h.cuint)
 
 var
   gHand: tuple[on, keyboard: bool; part: WindowPart; px, py, kx, ky: int;
@@ -1753,6 +1796,12 @@ proc processXEvent(xev: XEvent) =
       gFrameForced = true
 
   of ConfigureNotify:
+    if gDesk != None and xev.xconfigure.window == XRootWindow(gDisplay, gScreen):
+      # the screen changed size: the desktop with it, the window kept in view
+      discard XMoveResizeWindow(gDisplay, gDesk, 0, 0,
+                                xev.xconfigure.width.cuint, xev.xconfigure.height.cuint)
+      keepInView()
+      return
     if gFillScreen and xev.xconfigure.window == XRootWindow(gDisplay, gScreen):
       # the screen changed size: the window with it (its own ConfigureNotify
       # follows and does the rest)
@@ -1977,6 +2026,11 @@ proc dispatchXEvent(xev: var XEvent) =
   ## goes nowhere, the input method gets the first look at the rest, and
   ## what it leaves is ours.
   if x11EventHook != nil and x11EventHook(addr xev): return
+  if gDesk != None and xev.xany.window == gDesk:
+    # (a press on the desktop: the keys go back to the window)
+    if xev.theType == ButtonPress:
+      discard XSetInputFocus(gDisplay, gWindow, RevertToParent, CurrentTime)
+    return
   if xev.xkey.theType == KeyRelease and isAutoRepeatRelease(xev): return
   if xev.theType == GenericEvent:
     if gXiOpcode != 0 and xev.xcookie.extension == gXiOpcode: processXiEvent(xev)
@@ -2232,22 +2286,32 @@ proc putWindowName(title: string) =
 # window manager to place and size windows the window fills the screen and
 # follows it when the tablet turns, as an Android app does. With a window
 # manager running there (openbox, xfce...), windows are ordinary ones.
+#
+# $RETRO_WINDOW=1 (`retrokit run --window`) asks for the other way, the one
+# for working on an app: on a screen with no window manager -- Termux:X11, a
+# bare X server -- the driver draws a desktop (the 3.1 teal) over the whole
+# screen and puts the window on it at the app's own size, grown by the
+# screen's scale, in the middle. The app draws its 3.1 frame (core asks for
+# it with $RETRO_WINDOW), and the driver moves, sizes and maximizes the
+# window when that frame asks, as it does with no window manager anyway. The
+# desktop follows the screen when the tablet turns; the window stays where it
+# was, put back in view when the screen got too small for it.
+
+proc windowManagerRunning(): bool =
+  ## A window manager says so on the root window (EWMH).
+  let root = XRootWindow(gDisplay, XDefaultScreen(gDisplay))
+  var actualType: Atom
+  var actualFormat: cint
+  var n, after: culong
+  var data: pointer
+  # (33: XA_WINDOW)
+  if XGetWindowProperty(gDisplay, root, XInternAtom(gDisplay, "_NET_SUPPORTING_WM_CHECK", 0),
+                        0, 1, 0, 33.Atom, addr actualType, addr actualFormat, addr n,
+                        addr after, addr data) == 0 and data != nil:
+    result = actualFormat == 32 and n >= 1
+    discard XFree(data)
 
 when androidShell:
-  proc windowManagerRunning(): bool =
-    ## A window manager says so on the root window (EWMH).
-    let root = XRootWindow(gDisplay, XDefaultScreen(gDisplay))
-    var actualType: Atom
-    var actualFormat: cint
-    var n, after: culong
-    var data: pointer
-    # (33: XA_WINDOW)
-    if XGetWindowProperty(gDisplay, root, XInternAtom(gDisplay, "_NET_SUPPORTING_WM_CHECK", 0),
-                          0, 1, 0, 33.Atom, addr actualType, addr actualFormat, addr n,
-                          addr after, addr data) == 0 and data != nil:
-      result = actualFormat == 32 and n >= 1
-      discard XFree(data)
-
   proc termuxX11(): pointer =
     ## A connection to Termux:X11 -- started when it is not running yet --
     ## with its app in front; nil when it is not installed.
@@ -2287,10 +2351,13 @@ proc x11CreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
   gColormap = XDefaultColormap(gDisplay, gScreen)
   gDepth = XDefaultDepth(gDisplay, gScreen)
 
-  when androidShell:
-    if not windowManagerRunning():
-      gFillScreen = true
-      layout.fullScreen = true
+  let windowed = getEnv("RETRO_WINDOW") == "1"
+  if not windowManagerRunning():
+    if windowed: gDesk = XID(1)       # (made below, once the size is known)
+    else:
+      when androidShell:
+        gFillScreen = true
+        layout.fullScreen = true
 
   if layout.fullScreen:
     layout.width = XDisplayWidth(gDisplay, gScreen)
@@ -2312,8 +2379,27 @@ proc x11CreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
     let bar = if gSystemFrame: 32 * gUiScale div 100 else: 0
     layout.height = min(layout.height * gUiScale div 100, max(100, screenRect().h - bar))
 
+  var x0, y0: cint = 0
+  if gDesk != None:
+    # (see "Termux:X11": the desktop first, so the window is above it)
+    let sw = XDisplayWidth(gDisplay, gScreen)
+    let sh = XDisplayHeight(gDisplay, gScreen)
+    gDesk = XCreateSimpleWindow(gDisplay, XRootWindow(gDisplay, gScreen), 0, 0,
+                                sw.cuint, sh.cuint, 0, DeskPixel, DeskPixel)
+    discard XSelectInput(gDisplay, gDesk, ButtonPressMask.clong)
+    discard XMapWindow(gDisplay, gDesk)
+    discard XSelectInput(gDisplay, XRootWindow(gDisplay, gScreen), StructureNotifyMask.clong)
+    x0 = max(0, (sw - layout.width.cint) div 2)
+    y0 = max(0, (sh - layout.height.cint) div 2)
+    # (what the window came to, and why: worth knowing while working on it)
+    let appScale = getEnv("RETRO_SCALE")
+    stderr.writeLine "RETRO_WINDOW: ", layout.width, " x ", layout.height,
+                     " pixels on a ", sw, " x ", sh, " screen; the screen's scale ", gUiScale,
+                     " %", (if appScale.len > 0: ", the app's " & appScale & " %" else: ""),
+                     " (retrokit run --scale:N to change)"
+
   gWindow = XCreateSimpleWindow(gDisplay, XRootWindow(gDisplay, gScreen),
-    0, 0, layout.width.cuint, layout.height.cuint, 0,
+    x0, y0, layout.width.cuint, layout.height.cuint, 0,
     XBlackPixel(gDisplay, gScreen), XBlackPixel(gDisplay, gScreen))
 
   openInputMethod()
@@ -2430,12 +2516,16 @@ proc x11CreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
                               startupId.len.cint)
 
   # Without the window manager's frame (the app draws its own): said before
-  # the map, so the window never shows with one.
+  # the map, so the window never shows with one. The same for a window that
+  # keeps its size.
   gNetWmState = XInternAtom(gDisplay, "_NET_WM_STATE", 0)
   if not gSystemFrame: putFrameHints()
+  if not gResizable: putSizeHints(layout.width, layout.height)
 
   putWindowName(instName)
   discard XMapWindow(gDisplay, gWindow)
+  # (no window manager gives it the keys: the window takes them itself)
+  if gDesk != None: discard XSetInputFocus(gDisplay, gWindow, RevertToParent, CurrentTime)
 
   if maximized:
     # _NET_WM_STATE_MAXIMIZED_{HORZ,VERT} is what a panel's maximize button
@@ -3010,6 +3100,12 @@ proc x11SetSystemFrame(on: bool): bool =
     discard XFlush(gDisplay)
   true
 
+proc x11SetResizable(on: bool) =
+  gResizable = on
+  if gDisplay != nil and gWindow != None:
+    putSizeHints(gWidth.int, gHeight.int)
+    discard XFlush(gDisplay)
+
 proc x11DragWindow(part: WindowPart; keyboard: bool): bool =
   if gDisplay == nil or gWindow == None or part == wpClient: return false
   var root, child: XID
@@ -3546,7 +3642,8 @@ proc initX11Driver*() =
     setSystemFrame: x11SetSystemFrame, dragWindow: x11DragWindow,
     setMaximized: x11SetMaximized,
     maximized: proc (): bool = gMaximized,
-    active: proc (): bool = gFocused)
+    active: proc (): bool = gFocused,
+    setResizable: x11SetResizable)
   systemRelays.minimize = x11Minimize
   fileDragRelays = FileDragRelays(dragOut: x11DragFilesOut)
   inputRelays = InputRelays(

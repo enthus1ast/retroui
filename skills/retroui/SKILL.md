@@ -63,9 +63,19 @@ app "Hello", 320, 120:                 # title, width, height, then the frame's 
 name after the size: `theme`, `frame` (wfAsBuilt, wfSystem, wfClassic),
 `userFrame`, `gpu` (gmAuto, gmGpu, gmCpu), `scale`, `font` (ufSans, ufSerif,
 ufMono), `zoom`, `id`, `icon` (PNG bytes, `staticRead`), `look` (keeps the
-look the user picks). A misspelled option is a compile error. An app with
-its own loop uses `openApp(...)`, `while beginFrame(): ...; endFrame();
-appFrameDone()`, `closeApp()`.
+look the user picks), `resizable` (false: the window keeps its size). A
+misspelled option is a compile error. An app with its own loop uses
+`openApp(...)`, `while beginFrame(): ...; endFrame(); appFrameDone()`,
+`closeApp()`.
+
+The whole syntax, every form as a small program with a picture of what it
+draws (what each number in `row([50, -1, 0, -2])` gives, binding, events,
+containers, dialogs, ids in loops, the rules), is in `docs/syntax.md`
+(github.com/foxoman/retroui/blob/main/docs/syntax.md). Row widths, in short:
+a number above 0 is that many design pixels, `0` the control's own width,
+`-1` one share of what is left, `-2` two shares; no list is each control at
+its own width; more controls than widths start the widths again on a new
+line.
 
 ## 4. Immediate mode: the rules that prevent most mistakes
 
@@ -215,7 +225,11 @@ costs what its visible rows cost.
   right to left by itself: its lists' bullets, its quotes' bars and its
   tables' first column at the right.
 - The window frame: the system's or the Windows 3.1 frame (`frame` option;
-  users switch from the control or system menu; kept per app).
+  users switch from the control or system menu; kept per app). The 3.1
+  frame takes the theme's colors and has a size grip in its bottom right
+  corner (the status bar's end; `sizeGrip()` says where). `resizable = false`
+  (`setResizable`) keeps the window's size: no sizing border, maximize
+  button or grip, and the system's frame fixed too.
 
 ## 9. Build and package
 
@@ -230,7 +244,11 @@ retrokit small app.nim                                         # smallest deskto
 In Termux on Android, `nim c -r app.nim` runs the app on Termux:X11
 (`pkg install x11-repo termux-x11-nightly libx11`): it starts the X server
 when none runs, brings Termux:X11 to the front and fills its screen;
-`retroapk` makes the APK. (`uirelays/target`: `androidApp` is an APK,
+`retroapk` makes the APK. To see the app as a desktop window while working
+on it: `retrokit run --window app.nim` (`RETRO_WINDOW=1`): a desktop drawn
+over the screen, the app at its own size grown by the tablet's density, in
+the middle, in its 3.1 frame, moved and sized there; `--scale:N`,
+`--size:WxH`, `--theme:NAME` too. (`uirelays/target`: `androidApp` is an APK,
 `androidShell` a program in Termux.) A program that manages other X11
 windows (a window manager, a desktop) gets every event first with
 `x11EventHook` (`retroui/uirelays/drivers/x11_driver`; `x11Display`,

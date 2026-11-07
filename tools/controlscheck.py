@@ -57,7 +57,7 @@ NOT_CONTROLS = {
         "beginToolbar", "endToolbar", "beginStatusBar", "endStatusBar",
         "beginDialog", "endDialog",
         # the 3.1 window frame's own parts (drawn by the toolkit for the app)
-        "frameLayout", "framePartAt", "systemPart", "sizingBorder",
+        "frameLayout", "framePartAt", "systemPart", "sizingBorder", "sizeGripMark",
         # a converter, and the picture of a button
         "toButtonPic",
     },

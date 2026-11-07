@@ -16,7 +16,7 @@ import uirelays/services
 import gfx, busy
 export busy
 
-const RetroVersion* = "0.23.0"
+const RetroVersion* = "0.24.0"
   ## The toolkit's version (shown in About boxes' Credits).
 const
   RetroDeveloper* = "Sultan Al Isaiee"
@@ -2262,6 +2262,30 @@ proc classicFrameWanted*(): bool = frameWanted
   ## The 3.1 frame was asked for (by the build, RETRO_FRAME or
   ## `setClassicFrame`), drawn or not.
 
+var resizableWanted = true
+
+proc setResizable*(on: bool) =
+  ## The user may size and maximize the window (true, the default) or not:
+  ## the frame then has no sizing border to drag, no maximize button and no
+  ## size grip, and the window keeps the size the app gave it -- the 3.1
+  ## frame and the system's alike. `app`'s `resizable` option sets it.
+  resizableWanted = on
+  setWindowResizable(on)
+  ui.force = true
+
+proc resizable*(): bool = resizableWanted
+  ## The user may size the window (`setResizable`).
+
+proc sizeGrip*(): Rect =
+  ## Where the 3.1 frame's size grip is -- the square the size of a scroll
+  ## bar's width in the bottom right corner inside the frame (the bottom
+  ## left, right to left), a handle for a finger as much as for the mouse --
+  ## and empty where there is none: the system's frame, a window that keeps
+  ## its size, a maximized one. The status bar and the window's scroll bars
+  ## leave it its corner.
+  if not ui.ownFrame or not resizableWanted or ui.frameBorder <= 0: return
+  rect(ui.w - ui.frameBorder - SbW, ui.h - ui.frameBorder - SbW, SbW, SbW)
+
 proc startApp*(title: string; w, h: int; theme = ui.theme; zoom = 0) =
   ## Open the window. `zoom` forces whole-pixel magnification (0 = the
   ## display's own scale).
@@ -2290,6 +2314,9 @@ proc startApp*(title: string; w, h: int; theme = ui.theme; zoom = 0) =
     of "classic": frameWanted = true
     of "system": frameWanted = false
     else: discard
+  # (a window on a desktop the toolkit draws, `retrokit run --window`: the
+  # 3.1 frame is what moves and sizes it there)
+  if getEnv("RETRO_WINDOW") == "1": frameWanted = true
   case getEnv("RETRO_FRAME")
   of "classic": frameWanted = true
   of "system": frameWanted = false
@@ -2302,6 +2329,10 @@ proc startApp*(title: string; w, h: int; theme = ui.theme; zoom = 0) =
     if h >= 0: h += 2 * FrameDesignBorder + MenuH + 1
   # (the system's menu offers the 3.1 frame where it takes an item)
   showFrameMenuItem()
+  # (everything larger -- $RETRO_SCALE -- the window too, so it all still fits)
+  if ui.uiScale != 100:
+    if w > 0: w = w * ui.uiScale div 100
+    if h > 0: h = h * ui.uiScale div 100
   let l = createWindow(w * max(1, ui.zoomWanted), h * max(1, ui.zoomWanted), icon = windowIcon)
   setWindowTitle(title)
   # (a file there while the GPU is started: a crash then is not repeated)
@@ -2731,12 +2762,19 @@ proc endPage() =
     # the standard 3.1 scroll bars, on touch screens too (where a finger can
     # also drag the content itself)
     pushLayer(LayerBase)
+    # (the frame's size grip keeps its corner: a bar that would reach it
+    # stops short, as the two bars stop at the corner between them)
+    let grip = sizeGrip()
     if ui.pageOn and pageBar != nil:
-      let bar = rect(ui.w - ui.safe.right - SbW, view.y, SbW, view.h)
+      var bar = rect(ui.w - ui.safe.right - SbW, view.y, SbW, view.h)
+      if grip.h > 0 and ui.pageMaxX == 0 and bar.y + bar.h > grip.y:
+        bar.h = max(0, grip.y - bar.y)
       discard pageBar(bar, y, ui.pageMax)
     if ui.pageMaxX > 0 and pageBarX != nil:
-      let bar = rect(ui.safe.left, view.y + view.h,
+      var bar = rect(ui.safe.left, view.y + view.h,
                      ui.w - ui.safe.left - ui.safe.right - (if ui.pageOn: SbW - 1 else: 0), SbW)
+      if grip.w > 0 and not ui.pageOn and bar.y + bar.h > grip.y and bar.x + bar.w > grip.x:
+        bar.w = max(0, grip.x - bar.x)
       discard pageBarX(bar, x, ui.pageMaxX)
       if ui.pageOn:                        # the corner between the two bars
         fill(rect(bar.x + bar.w, bar.y, SbW - 1, SbW), ui.theme.face)

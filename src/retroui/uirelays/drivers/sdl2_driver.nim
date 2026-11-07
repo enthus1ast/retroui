@@ -61,6 +61,10 @@ proc sdlSetWindowHitTest(window: WindowPtr;
   {.importc: "SDL_SetWindowHitTest", cdecl, dynlib: sdl2.LibName.}
 
 var systemFrame = true   ## the system draws the frame (else the app does)
+var resizable = true     ## the user may size the window
+
+proc sdlSetWindowResizable(window: WindowPtr; on: Bool32)
+  {.importc: "SDL_SetWindowResizable", cdecl, dynlib: sdl2.LibName.}
 
 proc hitTest(window: WindowPtr; area: ptr SdlPoint; data: pointer): cint {.cdecl.} =
   ## (SDL_HitTestResult: 0 the app's, 1 the title bar, 2..9 the border from
@@ -86,6 +90,10 @@ proc sdlSetSystemFrame(on: bool): bool =
   else: discard sdlSetWindowHitTest(window, hitTest, nil)
   true
 
+proc sdlSetResizable(on: bool) =
+  resizable = on
+  if window != nil: sdlSetWindowResizable(window, if on: True32 else: False32)
+
 proc sdlSetMaximized(on: bool) =
   if window != nil:
     if on: window.maximize() else: window.restore()
@@ -106,8 +114,9 @@ proc sdlCreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
   var flags =
     if layout.fullScreen:
       SDL_WINDOW_FULLSCREEN_DESKTOP or SDL_WINDOW_SHOWN
-    else:
+    elif resizable:
       SDL_WINDOW_RESIZABLE or SDL_WINDOW_SHOWN
+    else: SDL_WINDOW_SHOWN
   if maximized: flags = flags or SDL_WINDOW_MAXIMIZED
   if not systemFrame: flags = flags or SDL_WINDOW_BORDERLESS
   window = createWindow("NimEdit",
@@ -527,7 +536,7 @@ proc initSdl2Driver*() =
   when not (defined(android) or defined(ios)):
     frameRelays = FrameRelays(
       setSystemFrame: sdlSetSystemFrame, setMaximized: sdlSetMaximized,
-      maximized: sdlMaximized, active: sdlActive)
+      maximized: sdlMaximized, active: sdlActive, setResizable: sdlSetResizable)
     systemRelays.minimize = proc (): bool =
       if window == nil: return false
       window.minimizeWindow()
