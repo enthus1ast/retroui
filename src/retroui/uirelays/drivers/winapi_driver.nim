@@ -863,6 +863,10 @@ type
 
 proc ScreenToClient(hWnd: HWND; lpPoint: ptr WINAPIPOINT): BOOL
   {.stdcall, dynlib: "user32", importc.}
+proc ClientToScreen(hWnd: HWND; lpPoint: ptr WINAPIPOINT): BOOL
+  {.stdcall, dynlib: "user32", importc.}
+proc IsIconic(hWnd: HWND): BOOL
+  {.stdcall, dynlib: "user32", importc.}
 
 var
   gPointerApi = 0     ## 0: not looked up yet; 1: there; -1: not there
@@ -940,6 +944,19 @@ proc workArea(hwnd: HWND): tuple[monitor, work: WINAPIRECT] =
 proc styleWord(style: uint32): int {.inline.} = cast[int](uint(style))
 
 var gResizable = true     ## the user may size and maximize the window
+var gAsked: tuple[w, h: int]  ## the inside's size the app asked for, scaled
+
+proc noteWindowPlace() =
+  ## (where the window's inside is on the screen, and its size: for the next
+  ## run of the app, `keepWindowPlace`; not while maximized or minimized)
+  if gHwnd == nil or not keepsWindowPlace(): return
+  if IsZoomed(gHwnd) != 0 or IsIconic(gHwnd) != 0: return
+  var pt: WINAPIPOINT
+  discard ClientToScreen(gHwnd, addr pt)
+  var rc: WINAPIRECT
+  discard GetClientRect(gHwnd, addr rc)
+  keepWindowPlace(pt.x.int, pt.y.int, int(rc.right - rc.left), int(rc.bottom - rc.top),
+                  gAsked.w, gAsked.h)
 
 proc frameStyle(): uint32 =
   ## (the window's style: Windows' frame or the app's; without the sizing
@@ -1094,7 +1111,12 @@ proc wndProc(hwnd: HWND; msg: UINT; wp: WPARAM; lp: LPARAM): LRESULT {.stdcall.}
     # (no frame of Windows' to show in the active or the inactive colors)
     if not gSystemFrame: return DefWindowProcW(hwnd, msg, wp, -1)
 
+  of 0x0003'u32:                  # WM_MOVE: where it is, for the next run
+    noteWindowPlace()
+    return 0
+
   of WM_SIZE:
+    noteWindowPlace()
     let newW = loWord(lp).int32
     let newH = hiWord(lp).int32
     if newW > 0 and newH > 0 and (newW != gWidth or newH != gHeight):
@@ -1364,18 +1386,31 @@ proc winCreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
   var work: WINAPIRECT
   let hasWork = SystemParametersInfoW(0x0030, 0, addr work, 0) != 0   # SPI_GETWORKAREA
   if layout.width >= 0 and layout.height >= 0:
-    var rc = WINAPIRECT(left: 0, top: 0,
-                        right: int32(layout.width * gUiScale div 100),
-                        bottom: int32(layout.height * gUiScale div 100))
+    gAsked = (layout.width * gUiScale div 100, layout.height * gUiScale div 100)
+    # where the last run left it ($RETRO_WINDOW_STATE): the inside there, at
+    # the size the user gave it unless the app asks for another one now
+    let kept = keptWindowPlace(gAsked.w, gAsked.h)
+    var rc = WINAPIRECT(left: 0, top: 0, right: int32(gAsked.w), bottom: int32(gAsked.h))
+    if kept.found:
+      let (w, h) = if kept.w > 0 and gResizable: (kept.w, kept.h) else: gAsked
+      rc = WINAPIRECT(left: int32(kept.x), top: int32(kept.y),
+                      right: int32(kept.x + w), bottom: int32(kept.y + h))
     # (without Windows' frame the window is all inside)
     if gSystemFrame: discard AdjustWindowRectEx(addr rc, frameStyle(), 0, 0)
+    if kept.found:
+      x = rc.left
+      y = rc.top
     outerW = rc.right - rc.left
     outerH = rc.bottom - rc.top
     # No bigger than the desktop without the taskbar.
     if hasWork:
       outerW = min(outerW, work.right - work.left)
       outerH = min(outerH, work.bottom - work.top)
-      if not gSystemFrame:
+      if kept.found:
+        # (all of it on the desktop, should the screen be another one now)
+        x = clamp(x, work.left, max(work.left, work.right - outerW))
+        y = clamp(y, work.top, max(work.top, work.bottom - outerH))
+      elif not gSystemFrame:
         # CW_USEDEFAULT places only windows with a caption: this one is
         # put in the middle of the desktop.
         x = work.left + (work.right - work.left - outerW) div 2

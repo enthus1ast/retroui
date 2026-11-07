@@ -1,5 +1,34 @@
 # Changes
 
+## 0.25.0
+
+- **`retrokit run --watch`: see each change as you save, on any desktop.**
+  It builds the app again whenever a `.nim` file in its folder (or two
+  levels below: hidden folders, caches and links to folders left out) is
+  saved, starts the new one where the window was, then closes the one
+  before, so the window never goes blank. The same on Windows, macOS, Linux
+  (any window manager, or none) and Termux, where `--live` is `--window` and
+  `--watch` together. Only what changed is compiled again (the compiler's
+  usual cache): about 4 seconds from a save to the new window, most of it
+  Nim reading the kit. Code that does not build leaves the window running
+  what it had, with the compiler's message; an app that crashes starts again
+  with the next save; closing the window ends it. The app's variables start
+  fresh each time.
+- **The window keeps its place between runs**: `RETRO_WINDOW_STATE` names a
+  file where the driver keeps where the window's inside is and the size the
+  user gave it (unless the app now asks for another size), and `--watch`
+  gives each run the same one. X11 (with a window manager: said as the
+  user's place, StaticGravity; without: on the desktop of `--window`),
+  Windows, macOS, SDL 2 and SDL 3 do it; GTK 4 and Siwin cannot place a
+  window. `keptWindowPlace` and `keepWindowPlace` in `uirelays/services`.
+- **The window stays in view when the screen changes size** on the desktop
+  of `--window` -- the tablet turns, Termux:X11's window is made floating or
+  sized: it keeps its middle where it was in proportion, is made smaller
+  while the screen is, gets its size again once there is room; maximized,
+  it takes the new screen.
+- `test_retrokit`: run's options, what `--watch` watches.
+- Retro Gallery and the small examples are 0.25.0.
+
 ## 0.24.0
 
 - **The syntax, studied: [docs/syntax.md](docs/syntax.md).** The whole way

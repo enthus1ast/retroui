@@ -247,8 +247,14 @@ when none runs, brings Termux:X11 to the front and fills its screen;
 `retroapk` makes the APK. To see the app as a desktop window while working
 on it: `retrokit run --window app.nim` (`RETRO_WINDOW=1`): a desktop drawn
 over the screen, the app at its own size grown by the tablet's density, in
-the middle, in its 3.1 frame, moved and sized there; `--scale:N`,
-`--size:WxH`, `--theme:NAME` too. (`uirelays/target`: `androidApp` is an APK,
+the middle, in its 3.1 frame, moved and sized there, kept in view when the
+screen changes size; `--scale:N`, `--size:WxH`, `--theme:NAME` too.
+`retrokit run --live app.nim` (`--window` + `--watch`) builds it again on
+every save and shows the new one where the window was; the app's variables
+start fresh each time. `retrokit run --watch app.nim` does the same on any
+desktop (Windows, macOS, Linux): the X11, Windows, macOS and SDL drivers
+reopen the window where it was ($RETRO_WINDOW_STATE, `keptWindowPlace` /
+`keepWindowPlace` in `uirelays/services`). (`uirelays/target`: `androidApp` is an APK,
 `androidShell` a program in Termux.) A program that manages other X11
 windows (a window manager, a desktop) gets every event first with
 `x11EventHook` (`retroui/uirelays/drivers/x11_driver`; `x11Display`,

@@ -12,6 +12,8 @@
 #import <CoreText/CoreText.h>
 #import <CoreGraphics/CoreGraphics.h>
 #include <mach/mach_time.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 /* ---- Event queue (ring buffer) ---------------------------------------- */
 
@@ -1295,6 +1297,51 @@ static NSString *appName(void) {
   return n ? n : @"";
 }
 
+/* ---- the window's place, kept between runs ($RETRO_WINDOW_STATE) ----
+   A program started again and again while it is worked on (`retrokit run
+   --watch`) opens its window where the last run left it, as uirelays'
+   services.nim has it: one line, "x y w h aw ah" -- the window's inside on
+   the screen, from the top left of the first screen, in points, and the
+   size the app asked for then (a size the app asks for that is not that one
+   is a change to its code, and wins over the size the user gave). */
+
+static int askedW = 0, askedH = 0;     /* the inside's size the app asked for */
+
+static CGFloat screensTop(void) {
+  NSArray *screens = [NSScreen screens];
+  return [screens count] > 0 ? NSMaxY([[screens objectAtIndex:0] frame]) : 0;
+}
+
+static void notePlace(NSWindow *w) {
+  const char *path = getenv("RETRO_WINDOW_STATE");
+  if (!path || !*path || !w || [w isMiniaturized] || cocoa_isMaximized()) return;
+  NSRect c = [w contentRectForFrameRect:[w frame]];
+  FILE *f = fopen(path, "w");
+  if (!f) return;
+  fprintf(f, "%d %d %d %d %d %d\n", (int)c.origin.x, (int)(screensTop() - NSMaxY(c)),
+          (int)c.size.width, (int)c.size.height, askedW, askedH);
+  fclose(f);
+}
+
+static BOOL keptPlace(BOOL sizable, NSRect *r) {
+  /* (`r`, the inside asked for, moved -- and sized -- where the last run left it) */
+  const char *path = getenv("RETRO_WINDOW_STATE");
+  if (!path || !*path) return NO;
+  FILE *f = fopen(path, "r");
+  if (!f) return NO;
+  int x, y, w, h, aw, ah;
+  int n = fscanf(f, "%d %d %d %d %d %d", &x, &y, &w, &h, &aw, &ah);
+  fclose(f);
+  if (n != 6) return NO;
+  if (sizable && aw == askedW && ah == askedH && w > 0 && h > 0) {
+    r->size.width = w;
+    r->size.height = h;
+  }
+  r->origin.x = x;
+  r->origin.y = screensTop() - y - r->size.height;
+  return YES;
+}
+
 @interface NimEditWindowDelegate : NSObject <NSWindowDelegate>
 @end
 
@@ -1319,6 +1366,11 @@ static NSString *appName(void) {
   e.x = (int)frame.size.width;
   e.y = (int)frame.size.height;
   pushEvent(e);
+  notePlace(w);
+}
+
+- (void)windowDidMove:(NSNotification *)n {
+  notePlace(n.object);
 }
 
 - (void)windowDidChangeBackingProperties:(NSNotification *)n {
@@ -1546,6 +1598,12 @@ void cocoa_createWindow(int w, int h, int *outW, int *outH,
     NSRect visible = [[NSScreen mainScreen] visibleFrame];
     NSRect maxContent = [NSWindow contentRectForFrameRect:visible styleMask:style];
     NSRect rect = NSMakeRect(100, 100, w, h);
+    /* (where the last run left it, $RETRO_WINDOW_STATE: see notePlace) */
+    if (w >= 0 && h >= 0) {
+      askedW = w;
+      askedH = h;
+      keptPlace(resizable != 0, &rect);
+    }
     if (w < 0) {
       rect.size.width = maxContent.size.width;
       rect.origin.x = maxContent.origin.x;

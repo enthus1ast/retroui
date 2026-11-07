@@ -205,10 +205,15 @@ screen and opens the app on it at its own size grown by the tablet's density,
 in the middle, in its 3.1 frame: move it by the title bar, size it by the
 border or the grip in its corner (fingers too), maximize it, use its control
 menu. Keys go to it, also after a tap on the desktop; the desktop follows the
-tablet when it turns. It prints the size it came to and the scales behind it;
+tablet when it turns and when Termux:X11's window is made floating or sized,
+and the window stays in view. It prints the size it came to and the scales behind it;
 `--scale:125` (or `RETRO_SCALE=125`) makes everything and the window larger,
 `--size:420x840` and `--theme:Dark` try a layout and a look. With a window
 manager running, `--window` just gives the app its 3.1 frame.
+`retrokit run --live app.nim` does the same and builds the app again on
+every save of a `.nim` file in its folder, starting the new one where the
+window was (code that does not build leaves the old one running).
+`--watch` alone does that on any desktop: Windows, macOS, Linux.
 
 A program can be the window manager itself: the X11 driver hands each event
 to `x11EventHook` (in `retroui/uirelays/drivers/x11_driver`) before it looks

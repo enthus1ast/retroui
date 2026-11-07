@@ -717,6 +717,9 @@ var
   gWindow: XID
   gFillScreen = false   # the window fills the screen and follows it (Termux:X11, no window manager)
   gDesk: XID            # the desktop drawn behind the window ($RETRO_WINDOW, no window manager)
+  gDeskScreen: tuple[w, h: int]  # the screen's size the window was placed for, on the desktop
+  gWant: tuple[w, h: int]        # the window's size when the screen has room (the app's, the user's)
+  gAsked: tuple[w, h: int]       # the size the app asked for, scaled
   gGC: pointer         # Xlib GC for primitives
   gBackPixmap: XID     # double buffer
   gXftDraw: pointer    # Xft draw context on back pixmap
@@ -732,6 +735,7 @@ var
   gXim: pointer        # input method, nil if none could be opened
   gSystemFrame = true  # the window manager draws the frame (else the app does)
   gResizable = true    # the user may size and maximize the window
+  gPlaced = false      # the window was put where the last run left it (StaticGravity)
   gFocused = true      # the window has the keyboard
   gMaximized = false   # _NET_WM_STATE says maximized, both ways
   gNetWmState: Atom
@@ -1425,17 +1429,26 @@ proc putFrameHints() =
     discard XChangeProperty(gDisplay, gWindow, hints, hints, 32,
                             PropModeReplace, addr v[0], 5)
 
-proc putSizeHints(w, h: int) =
+proc putSizeHints(w, h: int; x = 0, y = 0) =
   ## WM_NORMAL_HINTS: a window that keeps its size has its least and its
   ## largest size the same, and window managers then neither size nor
-  ## maximize it; otherwise no hints.
+  ## maximize it. A window put where the last run left it (`gPlaced`) says
+  ## its place and size are the user's, its inside at that place
+  ## (StaticGravity: the frame goes round it, not at it).
   var hints = XSizeHints()
   if not gResizable:
-    hints.flags = clong((1 shl 4) or (1 shl 5))     # PMinSize, PMaxSize
+    hints.flags = hints.flags or clong((1 shl 4) or (1 shl 5))     # PMinSize, PMaxSize
     hints.minWidth = w.cint
     hints.maxWidth = w.cint
     hints.minHeight = h.cint
     hints.maxHeight = h.cint
+  if gPlaced:
+    hints.flags = hints.flags or clong(1 or 2 or 512)   # USPosition, USSize, PWinGravity
+    hints.x = x.cint
+    hints.y = y.cint
+    hints.width = w.cint
+    hints.height = h.cint
+    hints.winGravity = 10                              # StaticGravity
   XSetWMNormalHints(gDisplay, gWindow, addr hints)
 
 proc wmSupports(name: cstring): bool =
@@ -1474,15 +1487,38 @@ proc windowRect(): tuple[x, y, w, h: int] =
 
 const DeskPixel = 0x008080   ## the desktop's color, Windows 3.1's teal
 
-proc keepInView() =
-  ## (the screen changed size: the window back in view if it went out)
-  let sw = XDisplayWidth(gDisplay, gScreen).int
-  let sh = XDisplayHeight(gDisplay, gScreen).int
+proc saveWindowState() =
+  ## (see `keepWindowPlace`: where the window is and the size it wants, for
+  ## the next run of the app; not while it fills the screen or is maximized)
+  if not keepsWindowPlace() or gFillScreen or gMaximized: return
   let r = windowRect()
-  let x = clamp(r.x, 0, max(0, sw - r.w))
-  let y = clamp(r.y, 0, max(0, sh - r.h))
-  if x != r.x or y != r.y:
-    discard XMoveResizeWindow(gDisplay, gWindow, x.cint, y.cint, r.w.cuint, r.h.cuint)
+  let size = if gDesk != None: gWant else: (r.w, r.h)
+  keepWindowPlace(r.x, r.y, size.w, size.h, gAsked.w, gAsked.h)
+
+proc fitToScreen(sw, sh: int) =
+  ## (the screen changed size -- the tablet turned, Termux:X11's window was
+  ## made floating or sized: the window keeps its middle where it was, in
+  ## proportion; it is made smaller when the screen is, and its size again
+  ## once there is room; all of it stays in view. Maximized, it takes the
+  ## new screen.)
+  if gMaximized:
+    discard XMoveResizeWindow(gDisplay, gWindow, 0, 0, sw.cuint, sh.cuint)
+    gDeskScreen = (sw, sh)
+    return
+  let r = windowRect()
+  var w = r.w
+  var h = r.h
+  if gResizable and gWant.w > 0:
+    w = min(gWant.w, sw)
+    h = min(gWant.h, sh)
+  let (ow, oh) = gDeskScreen
+  let cx = if ow > 0: (r.x + r.w div 2) * sw div ow else: sw div 2
+  let cy = if oh > 0: (r.y + r.h div 2) * sh div oh else: sh div 2
+  let x = clamp(cx - w div 2, 0, max(0, sw - w))
+  let y = clamp(cy - h div 2, 0, max(0, sh - h))
+  if x != r.x or y != r.y or w != r.w or h != r.h:
+    discard XMoveResizeWindow(gDisplay, gWindow, x.cint, y.cint, w.cuint, h.cuint)
+  gDeskScreen = (sw, sh)
 
 var
   gHand: tuple[on, keyboard: bool; part: WindowPart; px, py, kx, ky: int;
@@ -1797,10 +1833,10 @@ proc processXEvent(xev: XEvent) =
 
   of ConfigureNotify:
     if gDesk != None and xev.xconfigure.window == XRootWindow(gDisplay, gScreen):
-      # the screen changed size: the desktop with it, the window kept in view
+      # the screen changed size: the desktop with it, the window in view
       discard XMoveResizeWindow(gDisplay, gDesk, 0, 0,
                                 xev.xconfigure.width.cuint, xev.xconfigure.height.cuint)
-      keepInView()
+      fitToScreen(xev.xconfigure.width.int, xev.xconfigure.height.int)
       return
     if gFillScreen and xev.xconfigure.window == XRootWindow(gDisplay, gScreen):
       # the screen changed size: the window with it (its own ConfigureNotify
@@ -1810,6 +1846,10 @@ proc processXEvent(xev: XEvent) =
       return
     let newW = xev.xconfigure.width
     let newH = xev.xconfigure.height
+    if xev.xconfigure.window == gWindow and gDesk != None and gHand.on and
+       gHand.part != wpCaption and newW > 0 and newH > 0:
+      # (on the desktop: a size the user gave it is the one it wants from now on)
+      gWant = (newW.int, newH.int)
     if newW > 0 and newH > 0 and (newW != gWidth or newH != gHeight):
       gWidth = newW
       gHeight = newH
@@ -1821,6 +1861,8 @@ proc processXEvent(xev: XEvent) =
       e.scaleY = 1
       e.uiScale = gUiScale
       pushEvent(e)
+    # (where it is and its size go to the next run, wherever it is)
+    if xev.xconfigure.window == gWindow: saveWindowState()
 
   of ClientMessage:
     let kind = xev.xclient.message_type
@@ -2294,8 +2336,12 @@ proc putWindowName(title: string) =
 # screen's scale, in the middle. The app draws its 3.1 frame (core asks for
 # it with $RETRO_WINDOW), and the driver moves, sizes and maximizes the
 # window when that frame asks, as it does with no window manager anyway. The
-# desktop follows the screen when the tablet turns; the window stays where it
-# was, put back in view when the screen got too small for it.
+# desktop follows the screen when it changes size (the tablet turns,
+# Termux:X11's window is made floating or sized): the window keeps its middle
+# where it was in proportion, smaller while the screen is, its size again
+# when there is room, all of it in view. $RETRO_WINDOW_STATE names a file
+# where it keeps its place and the size the user gave it, for the next run:
+# `retrokit run --watch` starts the app again on every save, where it was.
 
 proc windowManagerRunning(): bool =
   ## A window manager says so on the root window (EWMH).
@@ -2380,6 +2426,21 @@ proc x11CreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
     layout.height = min(layout.height * gUiScale div 100, max(100, screenRect().h - bar))
 
   var x0, y0: cint = 0
+  gAsked = (layout.width, layout.height)
+  gWant = gAsked
+  # where the last run left it ($RETRO_WINDOW_STATE): the place, and the size
+  # the user gave it unless the app asks for another one now (with a window
+  # manager: said in WM_NORMAL_HINTS below, as the user's)
+  let kept = if layout.fullScreen or maximized: KeptPlace() else: keptWindowPlace(gAsked.w, gAsked.h)
+  if kept.found and gDesk == None:
+    let r = screenRect()
+    if kept.w > 0 and gResizable:
+      layout.width = min(kept.w, r.w)
+      layout.height = min(kept.h, r.h)
+      gWant = (kept.w, kept.h)
+    x0 = clamp(kept.x, r.x, max(r.x, r.x + r.w - layout.width)).cint
+    y0 = clamp(kept.y, r.y, max(r.y, r.y + r.h - layout.height)).cint
+    gPlaced = true
   if gDesk != None:
     # (see "Termux:X11": the desktop first, so the window is above it)
     let sw = XDisplayWidth(gDisplay, gScreen)
@@ -2389,8 +2450,17 @@ proc x11CreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
     discard XSelectInput(gDisplay, gDesk, ButtonPressMask.clong)
     discard XMapWindow(gDisplay, gDesk)
     discard XSelectInput(gDisplay, XRootWindow(gDisplay, gScreen), StructureNotifyMask.clong)
-    x0 = max(0, (sw - layout.width.cint) div 2)
-    y0 = max(0, (sh - layout.height.cint) div 2)
+    gDeskScreen = (sw.int, sh.int)
+    if kept.found:
+      if kept.w > 0 and gResizable:
+        gWant = (kept.w, kept.h)
+        layout.width = min(kept.w, sw)
+        layout.height = min(kept.h, sh)
+      x0 = clamp(kept.x, 0, max(0, sw - layout.width)).cint
+      y0 = clamp(kept.y, 0, max(0, sh - layout.height)).cint
+    else:
+      x0 = max(0, (sw - layout.width.cint) div 2)
+      y0 = max(0, (sh - layout.height.cint) div 2)
     # (what the window came to, and why: worth knowing while working on it)
     let appScale = getEnv("RETRO_SCALE")
     stderr.writeLine "RETRO_WINDOW: ", layout.width, " x ", layout.height,
@@ -2520,7 +2590,7 @@ proc x11CreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
   # keeps its size.
   gNetWmState = XInternAtom(gDisplay, "_NET_WM_STATE", 0)
   if not gSystemFrame: putFrameHints()
-  if not gResizable: putSizeHints(layout.width, layout.height)
+  if not gResizable or gPlaced: putSizeHints(layout.width, layout.height, x0, y0)
 
   putWindowName(instName)
   discard XMapWindow(gDisplay, gWindow)
@@ -3103,7 +3173,8 @@ proc x11SetSystemFrame(on: bool): bool =
 proc x11SetResizable(on: bool) =
   gResizable = on
   if gDisplay != nil and gWindow != None:
-    putSizeHints(gWidth.int, gHeight.int)
+    let r = windowRect()
+    putSizeHints(gWidth.int, gHeight.int, r.x, r.y)
     discard XFlush(gDisplay)
 
 proc x11DragWindow(part: WindowPart; keyboard: bool): bool =

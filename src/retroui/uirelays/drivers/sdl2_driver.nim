@@ -62,6 +62,16 @@ proc sdlSetWindowHitTest(window: WindowPtr;
 
 var systemFrame = true   ## the system draws the frame (else the app does)
 var resizable = true     ## the user may size the window
+var asked: tuple[w, h: int]  ## the size the app asked for
+
+proc notePlace() =
+  ## (where the window is and its size, for the next run: `keepWindowPlace`)
+  if window == nil or not keepsWindowPlace() or
+     (window.getFlags() and (SDL_WINDOW_MAXIMIZED or SDL_WINDOW_MINIMIZED)) != 0: return
+  var x, y, w, h: cint
+  window.getPosition(x, y)
+  window.getSize(w, h)
+  keepWindowPlace(x.int, y.int, w.int, h.int, asked.w, asked.h)
 
 proc sdlSetWindowResizable(window: WindowPtr; on: Bool32)
   {.importc: "SDL_SetWindowResizable", cdecl, dynlib: sdl2.LibName.}
@@ -119,9 +129,14 @@ proc sdlCreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
     else: SDL_WINDOW_SHOWN
   if maximized: flags = flags or SDL_WINDOW_MAXIMIZED
   if not systemFrame: flags = flags or SDL_WINDOW_BORDERLESS
+  # (where the last run left it, $RETRO_WINDOW_STATE: `keptWindowPlace`)
+  asked = (reqW, reqH)
+  let kept = if layout.fullScreen or maximized: KeptPlace() else: keptWindowPlace(reqW, reqH)
+  let (startW, startH) = if kept.w > 0 and resizable: (kept.w, kept.h) else: (reqW, reqH)
   window = createWindow("NimEdit",
-    SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-    reqW.cint, reqH.cint, flags)
+    (if kept.found: kept.x.cint else: SDL_WINDOWPOS_CENTERED),
+    (if kept.found: kept.y.cint else: SDL_WINDOWPOS_CENTERED),
+    startW.cint, startH.cint, flags)
   if not systemFrame and window != nil: discard sdlSetWindowHitTest(window, hitTest, nil)
   renderer = createRenderer(window, -1, Renderer_Software)
   var w, h: cint
@@ -427,7 +442,11 @@ proc sdlPollEvent(e: var input.Event; flags: set[InputFlag]): bool =
   of WindowEvent:
     let wev = sdlEvent.window
     case wev.event
+    of WindowEvent_Moved:
+      notePlace()
+      e.kind = NoEvent
     of WindowEvent_Resized, WindowEvent_SizeChanged:
+      notePlace()
       e.kind = WindowMetricsEvent
       e.x = wev.data1
       e.y = wev.data2

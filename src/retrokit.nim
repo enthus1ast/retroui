@@ -9,13 +9,15 @@
 ##       --scale:N     everything N percent of its normal size (and the window)
 ##       --size:WxH    the window this many design pixels (to try layouts)
 ##       --theme:NAME  a built-in theme ("Dark", "OLED Black"...)
+##       --watch       built again and started again on every save, in the
+##                     same place (with --window); --live is both
 ##       other options go to the Nim compiler
 ##   retrokit small app.nim           the smallest build (optimized for size, stripped)
 ##   retrokit apk app.nim [options]   an Android APK (the retroapk tool)
 ##
 ## No dependencies but Nim and a C compiler.
 
-import std/[os, osproc, strutils, dynlib, sequtils]
+import std/[os, osproc, strutils, dynlib, sequtils, times, hashes]
 
 const usage = """
 retrokit -- start, check and build Retro Nim UI apps
@@ -34,6 +36,10 @@ retrokit -- start, check and build Retro Nim UI apps
         --scale:N     everything N percent of its normal size (the window too)
         --size:WxH    the window W x H design pixels, to try layouts
         --theme:NAME  a built-in theme ("Dark", "OLED Black"...)
+        --watch       on every save of a .nim file in the app's folder, built
+                      again and started again where the window was; the old
+                      one runs on while the code does not build
+        --live        --window and --watch together
       anything else goes to the Nim compiler (-d:..., --opt:...)
   retrokit small APP.nim       the smallest build: optimized for size, stripped
   retrokit apk APP.nim [...]   an Android APK (same options as retroapk)
@@ -341,6 +347,99 @@ proc build(app: string; extra: openArray[string]; run: bool): int =
   result = p.waitForExit()
   p.close()
 
+# ---- run --watch: built again on every save ------------------------------------------------
+#
+# The app is built to one of two files in turn (a running program's file
+# cannot be written over), the new one is started, and the one before is
+# ended once the new one is up: the window is never gone in between, and
+# with --window it opens where the last one was ($RETRO_WINDOW_STATE). The
+# compiler's cache is the usual one, so only what changed is compiled again.
+# Closing the window ends it; an app that crashes is started again with the
+# next save.
+
+var watching = false
+
+proc sourcesStamp(dir: string): Hash =
+  ## (the sources in the app's folder and two levels below it, and when each
+  ## was written: hidden folders, caches and links to folders -- Termux's
+  ## ~/storage -- left out, so an app in the home folder is cheap to watch)
+  var h: Hash = 0
+  var todo = @[(dir, 0)]
+  while todo.len > 0:
+    let (d, depth) = todo.pop()
+    for kind, f in walkDir(d):
+      let n = f.extractFilename
+      if n.startsWith("."): continue
+      case kind
+      of pcFile:
+        if n.endsWith(".nim") or n.endsWith(".nims") or n == "nim.cfg":
+          try: h = h !& hash(f) !& hash(getLastModificationTime(f).toUnixFloat)
+          except OSError: discard
+      of pcDir:
+        if depth < 2 and n notin ["nimcache", "build", "node_modules", "storage"]:
+          todo.add (f, depth + 1)
+      else: discard
+  !$h
+
+proc watchRun(app: string; extra: seq[string]): int =
+  let name = app.splitFile.name
+  let dir = app.absolutePath.parentDir
+  let work = getTempDir() / "retrokit-" & name & "-" & $getCurrentProcessId()
+  createDir(work)
+  putEnv("RETRO_WINDOW_STATE", work / "window")
+  var running: Process = nil
+  var slot = 0
+  var builds = 0
+
+  proc buildOnce(): string =
+    ## The app built again; its file, or "" when it does not build.
+    slot = 1 - slot
+    let exe = work / (name & $slot & ExeExt)
+    var args = @["c", "-d:release", "-d:useMalloc", "--hints:off", "-o:" & exe]
+    for e in extra: args.add e
+    args.add app
+    if builds == 0: echo "nim ", args.join(" ")
+    inc builds
+    let t0 = epochTime()
+    let p = startProcess(findExe("nim"), args = args, options = {poParentStreams})
+    let code = p.waitForExit()
+    p.close()
+    if code != 0: return ""
+    echo "retrokit: built in ", formatFloat(epochTime() - t0, ffDecimal, 1), " s"
+    exe
+
+  proc start(exe: string) =
+    let p = startProcess(exe, workingDir = getCurrentDir(), options = {poParentStreams})
+    # (the one before goes once the new one is up: no blank screen between)
+    sleep(700)
+    if running != nil:
+      running.terminate()
+      if running.waitForExit(2000) == -1 or running.running: running.kill()
+      running.close()
+    running = p
+
+  var stamp = sourcesStamp(dir)
+  let first = buildOnce()
+  if first.len > 0: start(first)
+  echo "retrokit: watching ", dir, " -- save to see the change; close the window or Ctrl+C to stop"
+  while true:
+    sleep(300)
+    if running != nil and not running.running:
+      let code = running.peekExitCode
+      running.close()
+      running = nil
+      if code == 0:
+        removeDir(work)
+        return 0                                  # (the window was closed)
+      echo "retrokit: the app ended (", code, "); save a fix to start it again"
+    let now = sourcesStamp(dir)
+    if now != stamp:
+      sleep(150)                                  # (an editor may write in steps)
+      stamp = sourcesStamp(dir)
+      let exe = buildOnce()
+      if exe.len > 0: start(exe)
+      elif running != nil: echo "retrokit: the window keeps the code before; fix it and save"
+
 proc runOptions(args: openArray[string]): seq[string] =
   ## `run`'s own options, put in the environment the app starts with; what
   ## is left goes to the compiler.
@@ -359,6 +458,10 @@ proc runOptions(args: openArray[string]): seq[string] =
       if 'x' notin value: quit "retrokit: --size wants a width and a height, like --size:420x840"
       putEnv("RETRO_SIZE", value)
     of "theme": putEnv("RETRO_THEME", value)
+    of "watch": watching = true
+    of "live":
+      putEnv("RETRO_WINDOW", "1")
+      watching = true
     else: result.add a
 
 proc main() =
@@ -380,6 +483,8 @@ proc main() =
     let rest = runOptions(args[1 .. ^1])
     let app = rest.filterIt(it.endsWith(".nim"))
     if app.len == 0: quit usage
+    if not fileExists(app[0]): quit "retrokit: no file " & app[0]
+    if watching: quit watchRun(app[0], rest.filterIt(it != app[0]))
     quit build(app[0], rest.filterIt(it != app[0]), true)
   of "small":
     if args.len < 2: quit usage

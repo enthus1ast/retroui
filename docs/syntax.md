@@ -1,6 +1,6 @@
 # Retro Nim UI: a study of its syntax
 
-By Sultan Al Isaiee ([@foxoman](https://github.com/foxoman)), for Retro Nim UI 0.24.0.
+By Sultan Al Isaiee ([@foxoman](https://github.com/foxoman)), for Retro Nim UI 0.25.0.
 
 The syntax is immediate mode written as plain Nim: a window is a block that runs every frame, a control is a proc call, its result is the event, and your own variables are the state. That one choice removes callbacks, widget objects and data binding, the three things that make most UI code hard to follow.
 
@@ -217,7 +217,7 @@ app "Notepad", 360, 100:      # title, width, height
 
 ![A window titled Notepad with one line of text](syntax/f-window.png)
 
-`app` takes the title, the width and the height in design pixels, then the block. The block is one frame; it runs again on every input until the window closes. Built on one macro, `app`. In the 3.1 frame the user sizes the window by its border or by the grip in its bottom right corner, which a finger takes as well as the mouse. On a tablet in Termux, `retrokit run --window app.nim` shows the app the same way: a window of its own size in its frame, in the middle of a desktop, scaled to the screen.
+`app` takes the title, the width and the height in design pixels, then the block. The block is one frame; it runs again on every input until the window closes. Built on one macro, `app`. In the 3.1 frame the user sizes the window by its border or by the grip in its bottom right corner, which a finger takes as well as the mouse. On a tablet in Termux, `retrokit run --window app.nim` shows the app the same way: a window of its own size in its frame, in the middle of a desktop, scaled to the screen; `retrokit run --live app.nim` also builds it again each time you save, so a change to the code shows in the window a few seconds later (on Windows, macOS and Linux desktops, `retrokit run --watch app.nim`).
 
 ### Options by name
 

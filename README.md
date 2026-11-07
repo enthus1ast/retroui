@@ -277,6 +277,7 @@ while you work on it:
 
 ```sh
 retrokit run --window app.nim              # its own size, in its 3.1 frame, in the middle
+retrokit run --live app.nim                # the same, built again and shown again on every save
 retrokit run --window --scale:125 app.nim  # everything (and the window) a quarter larger
 retrokit run --window --theme:Dark --size:420x840 app.nim
 ```
@@ -286,10 +287,32 @@ window on it at the size the app asked for, grown by the screen's own scale
 (its density, so a 2K tablet shows it at its real size), with the title bar
 to move it, the border and the grip to size it, the maximize button and the
 control menu. Keys go to the window, also after a tap on the desktop. When
-the tablet turns, the desktop follows and the window stays in view. The
+the screen changes size (the tablet turns, Termux:X11's window is made
+floating or sized) the desktop follows, and the window stays in view: made
+smaller while the screen is, its size again when there is room. The
 line it prints says what it came to (`RETRO_WINDOW: 660 x 304 pixels on a
 2560 x 1600 screen; the screen's scale 200 %`); `--scale:N` makes it
 larger or smaller. `retrokit run` passes anything else to the compiler.
+
+**Live: see each change as you save**, on any desktop. `retrokit run --watch
+app.nim` builds the app again whenever a `.nim` file in its folder (or two
+levels below) is saved, starts the new one where the window was -- the place
+and the size you gave it -- and then closes the one before, so the window
+never goes blank. It is the same on Windows, macOS, Linux (any window
+manager, or none) and Termux, where `--live` is `--watch` with `--window`.
+Only what changed is compiled again: a few seconds, most of it Nim reading
+the kit. Code that does not build leaves the window running what it had,
+with the compiler's message in the terminal; an app that crashes starts
+again with the next save. The app starts fresh each time (its variables are
+new); closing its window, or Ctrl+C, ends it. The window's place is kept by
+the X11, Windows, macOS, SDL 2 and SDL 3 drivers (`RETRO_WINDOW_STATE`,
+`keptWindowPlace`); GTK 4 and Siwin cannot place a window, so theirs opens
+where the system puts it.
+
+```sh
+retrokit run --watch app.nim              # Windows, macOS, a Linux desktop
+retrokit run --live app.nim               # Termux:X11: --window and --watch
+```
 
 On Windows from Linux: `nim c -d:release -d:useMalloc -d:lto --opt:size --passL:-s -d:mingw
 --cpu:amd64 --app:gui hello.nim`.

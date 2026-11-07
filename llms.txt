@@ -5,7 +5,7 @@
 ## Docs
 
 - [The syntax, studied](https://github.com/foxoman/retroui/blob/main/docs/syntax.md): every form of writing an app as a small program with a picture of what it draws (row widths, binding, events, containers, dialogs, ids in loops), how it is built, why it is easy to follow, the rules
-- [README](https://github.com/foxoman/retroui/blob/main/README.md): what is in the kit, how it works, every module; `retrokit run --window` shows an app as a desktop window on Termux:X11
+- [README](https://github.com/foxoman/retroui/blob/main/README.md): what is in the kit, how it works, every module; `retrokit run --window` shows an app as a desktop window on Termux:X11, `--live` builds it again on every save
 - [Controls](https://github.com/foxoman/retroui/blob/main/docs/controls.md): every control with its signature, an example and pictures
 - [Building](https://github.com/foxoman/retroui/blob/main/BUILDING.md): desktop apps (Windows from any system, macOS, Linux AppImages), Android APKs without the SDK or NDK, iOS on a Mac, signing
 - [Changes](https://github.com/foxoman/retroui/blob/main/CHANGELOG.md): what changed in each release (newest first)
