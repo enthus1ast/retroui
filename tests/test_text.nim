@@ -418,6 +418,46 @@ block mdView:
          ((p shr 8) and 0xFF) < 80: found = true      # (navy in the 3.1 colors)
   doAssert found, "the link is drawn in the link color"
 
+proc inkIn(x0, x1, y0, y1: int): int =
+  ## Dark pixels (text, a bullet, a rule) in the box.
+  for y in y0 ..< y1:
+    for x in x0 ..< x1:
+      let p = px(x, y)
+      if (p and 0xFF) < 100 and ((p shr 8) and 0xFF) < 100 and ((p shr 16) and 0xFF) < 100: inc result
+
+block mdRightToLeft:
+  # a list in Arabic: its bullets and words at the right; in English at the left
+  var r: Rect
+  for (md, rtl) in [("- بند أول\n- بند ثان\n", true), ("- first\n- second\n", false)]:
+    view = proc () =
+      discard markdownView(md, height = 200, w = 400)
+      r = ui.lastRect
+    run(2)
+    let left = inkIn(r.x + 4, r.x + 140, r.y + 4, r.y + 60)
+    let right = inkIn(r.x + r.w - 160, r.x + r.w - 20, r.y + 4, r.y + 60)
+    if rtl: doAssert right > 0 and left == 0, "the list at the right: " & $(left, right)
+    else: doAssert left > 0 and right == 0, "the list at the left: " & $(left, right)
+  # a table in Arabic: its first column at the right (the short "F1" near the
+  # right edge); in English at the left
+  for (md, rtl) in [("| المفتاح | عمله |\n|---|---|\n| F1 | التعليمات |\n", true),
+                    ("| Key | What it does |\n|---|---|\n| F1 | Help |\n", false)]:
+    view = proc () =
+      discard markdownView(md, height = 200, w = 400)
+      r = ui.lastRect
+    run(2)
+    # (the text's columns in the second row: ink that is not a grid line)
+    let rowH = lineHeight() + dp(12)
+    let y0 = r.y + 4 + rowH + 4
+    var lo = high(int)
+    var hi = -1
+    for x in r.x + 4 ..< r.x + r.w - 20:
+      let ink = inkIn(x, x + 1, y0, y0 + rowH - 8)
+      if ink > 0 and ink < rowH - 10:
+        lo = min(lo, x)
+        hi = max(hi, x)
+    if rtl: doAssert hi > r.x + r.w - 70, "the first column at the right: " & $(lo, hi, r)
+    else: doAssert lo < r.x + 60, "the first column at the left: " & $(lo, hi, r)
+
 block wrapping:
   let words = wrapLines("one two three four five six", textWidth("one two three"))
   doAssert words[0] == "one two three", $words

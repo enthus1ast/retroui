@@ -204,7 +204,9 @@ costs what its visible rows cost.
   the user choose (theme, font, text size, Sharp text, window frame) and
   `look = "myapp"` keeps it.
 - Arabic and right-to-left text work everywhere (joined, bidi);
-  `setRtlInterface(true)` mirrors the interface.
+  `setRtlInterface(true)` mirrors the interface. Markdown in Arabic reads
+  right to left by itself: its lists' bullets, its quotes' bars and its
+  tables' first column at the right.
 - The window frame: the system's or the Windows 3.1 frame (`frame` option;
   users switch from the control or system menu; kept per app).
 

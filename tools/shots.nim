@@ -1837,7 +1837,7 @@ example("htmlview", "htmlView, htmlBlock",
            "<ul><li>North<li>South</ul>", height = 210)
 
 example("markdownview", "markdownView, markdown",
-        "Markdown: headings, emphasis, code, lists, task lists (a click ticks them: `toggleTask`), tables, quotes and links.",
+        "Markdown: headings, emphasis, code, lists, task lists (a click ticks them: `toggleTask`), tables, quotes and links -- right to left where they are in Arabic.",
         420, 230, ["markdownView", "markdown"], focus4):
   markdownView("# Notes\n\nSome **bold**, *italic* and `code`.\n\n" &
                "- [x] Invoices sent\n- [ ] Stock count\n\n" &

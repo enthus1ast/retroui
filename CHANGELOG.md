@@ -1,5 +1,18 @@
 # Changes
 
+## 0.21.2
+
+- **Markdown in Arabic reads right to left:** a list item whose first words
+  are Arabic (Hebrew...) has its bullet, number or task box at the right and
+  its text from there; a quote in Arabic has its bar at the right; a table
+  whose first words are Arabic has its first column at the right, its cells
+  from the right (a `:---` column is the start side, `---:` the end), and,
+  narrower than the page, sits at the right. The paragraphs were already
+  right to left; now all of a help page in Arabic is.
+- A table's Arabic header in bold no longer wraps where it fits: its cells
+  are measured word by word, as its lines are made.
+- Retro Gallery and the small examples are 0.21.2.
+
 ## 0.21.1
 
 - **Retro Communicator's windows complete on tablets:** a room's window

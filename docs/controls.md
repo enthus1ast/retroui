@@ -5515,7 +5515,7 @@ in the browser.
 
 ### markdownView, markdown
 
-Markdown: headings, emphasis, code, lists, task lists (a click ticks them: `toggleTask`), tables, quotes and links.
+Markdown: headings, emphasis, code, lists, task lists (a click ticks them: `toggleTask`), tables, quotes and links -- right to left where they are in Arabic.
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
@@ -5543,7 +5543,10 @@ proc markdownView*(md: string; height = -1; w = 0; baseDir = "";
 Markdown in a framed view that scrolls (wheel, finger, scroll bar,
 arrows and Page keys). Returns the link or task box clicked; links to
 "#a-heading" scroll there themselves. Pictures load from `baseDir`.
-`key` tells views apart (each keeps where it is scrolled to).
+`key` tells views apart (each keeps where it is scrolled to). Arabic
+(Hebrew...) reads right to left: a paragraph, a list item or a quote
+whose first words are Arabic has its bullet, number or bar at the
+right, and such a table its first column at the right.
 
 ```nim
 proc markdown*(md: string; baseDir = ""; w = 0): MdEvent {.discardable.}

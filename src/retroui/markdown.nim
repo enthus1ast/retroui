@@ -1127,10 +1127,30 @@ proc layoutCode(lay: var Layout; code: string; x, w: int; y: var int) =
   y += pad
   lay.decos.add Deco(kind: dkFill, role: 0, r: rect(x, top, w, y - top))
 
+proc firstText(b: MdBlock): string =
+  ## The first words of a block (a list item's, a quote's): the direction it
+  ## reads in.
+  case b.kind
+  of bkPara, bkHeading, bkHtml: b.text
+  of bkTable:
+    for row in b.rows:
+      let s = row.join(" ").strip
+      if s.len > 0: return s
+    ""
+  else:
+    for k in b.kids:
+      let s = firstText(k)
+      if s.len > 0: return s
+    ""
+
 proc layoutTable(lay: var Layout; t: MdBlock; doc: MdDoc; x, w: int; y: var int;
                  dir: string) =
   let n = t.rows[0].len
   if n == 0: return
+  # a table whose first words are Arabic (Hebrew...) reads right to left: its
+  # first column at the right, its cells from the right ('l' is the start
+  # side, 'r' the end)
+  let rtlTable = textIsRtl(firstText(t))
   let pad = dp(6)
   var nat = newSeq[int](n)
   var least = newSeq[int](n)
@@ -1138,10 +1158,15 @@ proc layoutTable(lay: var Layout; t: MdBlock; doc: MdDoc; x, w: int; y: var int;
     for ci in 0 ..< n:
       let s = if ci < row.len: row[ci] else: ""
       let st = style(bold = ri == 0)
-      # (+2: words measured one by one may round up past the whole)
-      nat[ci] = max(nat[ci], textWidth(s, st) + 2 * pad + 2)
+      # (right to left the line is made of its words one by one, each as
+      # wide as it is alone -- a bold drawn twice, Arabic's, a pixel more
+      # for each; left to right of runs of them; +2: rounding)
+      var byWords = -textWidth(" ", st)
       for word in s.split(' '):
+        byWords += textWidth(" ", st) + textWidth(word, st)
         least[ci] = max(least[ci], min(textWidth(word, st) + 2 * pad, dp(160)))
+      let whole = if textIsRtl(s): max(textWidth(s, st), byWords) else: textWidth(s, st)
+      nat[ci] = max(nat[ci], whole + 2 * pad + 2)
   var widths = nat
   var total = 0
   for v in nat: total += v
@@ -1155,6 +1180,8 @@ proc layoutTable(lay: var Layout; t: MdBlock; doc: MdDoc; x, w: int; y: var int;
         widths[ci] = least[ci] + (nat[ci] - least[ci]) * (w - sumMin) div max(1, total - sumMin)
   var tw = 0
   for v in widths: tw += v
+  # (right to left: a table narrower than the page at its right)
+  let x = if rtlTable: x + max(0, w - tw) else: x
   let top = y
   # a header row of empty cells: a table without a header (from HTML)
   var headless = true
@@ -1164,27 +1191,34 @@ proc layoutTable(lay: var Layout; t: MdBlock; doc: MdDoc; x, w: int; y: var int;
     if ri == 0 and headless and t.rows.len > 1: continue
     let rowTop = y
     var rowBottom = y
-    var cx = x
+    var cx = if rtlTable: x + tw else: x
     let start = lay.pieces.len
     for ci in 0 ..< n:
+      if rtlTable: cx -= widths[ci]
       var cy = y + pad
       let s = if ci < row.len: row[ci] else: ""
       let first = lay.pieces.len
       layoutInline(lay, s, doc, cx + pad, widths[ci] - 2 * pad, cy, bold = ri == 0,
                    dir = dir)
       # alignment within the cell
-      if ci < t.aligns.len and t.aligns[ci] in {'c', 'r'}:
-        var lines: Table[int, int]
+      let a = if ci < t.aligns.len: t.aligns[ci] else: 'l'
+      if rtlTable or a in {'c', 'r'}:
+        let side = if a == 'c': 'c' elif rtlTable: (if a == 'r': 'l' else: 'r') else: a
+        var lo, hi: Table[int, int]
         for k in first ..< lay.pieces.len:
           let p = lay.pieces[k]
-          lines[p.y] = max(lines.getOrDefault(p.y, 0), p.x + p.w - (cx + pad))
+          lo[p.y] = min(lo.getOrDefault(p.y, high(int)), p.x)
+          hi[p.y] = max(hi.getOrDefault(p.y, low(int)), p.x + p.w)
         for k in first ..< lay.pieces.len:
-          let used = lines[lay.pieces[k].y]
-          let room = widths[ci] - 2 * pad - used
-          if room > 0:
-            lay.pieces[k].x += (if t.aligns[ci] == 'c': room div 2 else: room)
+          let ly = lay.pieces[k].y
+          let room = max(0, widths[ci] - 2 * pad - (hi[ly] - lo[ly]))
+          let want = case side
+            of 'c': cx + pad + room div 2
+            of 'r': cx + pad + room
+            else: cx + pad
+          lay.pieces[k].x += want - lo[ly]
       rowBottom = max(rowBottom, cy + pad)
-      cx += widths[ci]
+      if not rtlTable: cx += widths[ci]
     discard start
     if ri == 0:
       lay.decos.add Deco(kind: dkFill, role: 1, r: rect(x, rowTop, tw, rowBottom - rowTop))
@@ -1192,9 +1226,9 @@ proc layoutTable(lay: var Layout; t: MdBlock; doc: MdDoc; x, w: int; y: var int;
     y = rowBottom
   # grid
   lay.decos.add Deco(kind: dkBox, r: rect(x, top, tw + 1, y - top + 1))
-  var cx = x
+  var cx = if rtlTable: x + tw else: x
   for ci in 0 ..< n - 1:
-    cx += widths[ci]
+    if rtlTable: cx -= widths[ci] else: cx += widths[ci]
     lay.decos.add Deco(kind: dkHLine, r: rect(cx, top, 1, y - top))
   y += 1
 
@@ -1226,8 +1260,11 @@ proc layoutBlocks(lay: var Layout; blocks: seq[MdBlock]; doc: MdDoc; x, w: int;
     of bkQuote:
       let top = y
       let ind = dp(14)
-      layoutBlocks(lay, b.kids, doc, x + ind, w - ind, y, dir, depth, quoted = true)
-      lay.decos.add Deco(kind: dkBar, r: rect(x + dp(2), top, dp(4), max(FontH, y - top)))
+      # (right to left: the bar at the right)
+      let rtl = textIsRtl(firstText(b))
+      layoutBlocks(lay, b.kids, doc, (if rtl: x else: x + ind), w - ind, y, dir, depth, quoted = true)
+      lay.decos.add Deco(kind: dkBar, r: rect((if rtl: x + w - dp(6) else: x + dp(2)), top, dp(4),
+                                             max(FontH, y - top)))
     of bkList:
       let ind = if b.ordered: textWidth($(b.start + b.kids.len) & ".") + dp(10)
                 else: dp(22)
@@ -1235,22 +1272,26 @@ proc layoutBlocks(lay: var Layout; blocks: seq[MdBlock]; doc: MdDoc; x, w: int;
       for k, item in b.kids:
         if k > 0: y += dp(3)
         let top = y
-        let bx = x
         var cy = y
-        let textX = x + ind
+        # an item in Arabic (Hebrew...): its bullet or number at the right,
+        # its text from there
+        let rtl = textIsRtl(firstText(item))
+        let textX = if rtl: x else: x + ind
         if item.task >= 0:
           let bs = max(dp(13), FontH - 3)
-          lay.decos.add Deco(kind: dkCheck, r: rect(bx + 2, top + (FontH - bs) div 2 + 1, bs, bs),
+          lay.decos.add Deco(kind: dkCheck, r: rect((if rtl: x + w - bs - 2 else: x + 2),
+                                                    top + (FontH - bs) div 2 + 1, bs, bs),
                              checked: item.task == 1, task: item.taskIndex)
         elif b.ordered:
           let m = $(b.start + k) & "."
           let mw = textWidth(m)
-          lay.pieces.add Piece(x: textX - dp(6) - mw, y: top, w: mw, h: FontH, text: m,
-                               role: roText, link: -1)
+          lay.pieces.add Piece(x: (if rtl: x + w - ind + dp(6) else: textX - dp(6) - mw), y: top,
+                               w: mw, h: FontH, text: m, role: roText, link: -1)
         else:
           let bullet = ["•", "◦", "▪"][depth mod 3]
-          lay.pieces.add Piece(x: bx + dp(6), y: top, w: textWidth(bullet), h: FontH,
-                               text: bullet, role: roText, link: -1)
+          let bw = textWidth(bullet)
+          lay.pieces.add Piece(x: (if rtl: x + w - dp(6) - bw else: x + dp(6)), y: top, w: bw,
+                               h: FontH, text: bullet, role: roText, link: -1)
         layoutBlocks(lay, item.kids, doc, textX, w - ind, cy, dir, depth + 1,
                      quoted, tight = isTight)
         y = max(cy, top + FontH)
@@ -1364,7 +1405,10 @@ proc markdownView*(md: string; height = -1; w = 0; baseDir = "";
   ## Markdown in a framed view that scrolls (wheel, finger, scroll bar,
   ## arrows and Page keys). Returns the link or task box clicked; links to
   ## "#a-heading" scroll there themselves. Pictures load from `baseDir`.
-  ## `key` tells views apart (each keeps where it is scrolled to).
+  ## `key` tells views apart (each keeps where it is scrolled to). Arabic
+  ## (Hebrew...) reads right to left: a paragraph, a list item or a quote
+  ## whose first words are Arabic has its bullet, number or bar at the
+  ## right, and such a table its first column at the right.
   result.task = -1
   let r = place(if w > 0: w else: 0, if height < 0: remainingH() else: height,
                 fill = w <= 0)
