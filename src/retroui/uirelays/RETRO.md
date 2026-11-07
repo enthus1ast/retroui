@@ -59,6 +59,26 @@ is in `docs/uirelays-pr.md`.
   moving, sizing and maximizing without a window manager), GTK 4 (Wayland
   too), SDL 3 and SDL 2 (the hit test), Siwin; minimize for SDL and GTK.
 - `eglload.nim` -- EGL loaded at run time; `gpuRelays` in `screen.nim`.
+- Screen readers: `access.nim` (a tree of nodes -- role, name, value,
+  states, place, range, caret -- and `accessRelays` to hand it on, with the
+  requests that come back: press, focus, set a value, a step), `dbus.nim`
+  (a D-Bus client in Nim: the wire format, EXTERNAL sign-in, calls and
+  signals) and `atspi.nim` (AT-SPI 2 over it: Accessible, Component,
+  Action, Text, EditableText, Value, the events Orca follows); the X11
+  driver serves it, the WinAPI driver UI Automation (`drivers/winuia.nim`:
+  the provider's COM tables in Nim, WM_GETOBJECT), Cocoa NSAccessibility,
+  UIKit UIAccessibilityElement, Android an AccessibilityNodeProvider
+  through `systemRelays`.
+- Input methods: `TextEditingEvent` (what is being composed, its caret) and
+  `textCaretRelay`: X11 XIM (preedit callbacks, else the spot, else none),
+  WinAPI IMM (the composition string and its caret), Cocoa marked text,
+  GTK 4 preedit, Android an InputConnection.
+- `SurfaceRelays` in `screen.nim` (`lockSurface`, `presentSurface`): the
+  window's own pixels lent to draw into -- X11 MIT-SHM (libXext loaded at
+  run time; libandroid-shmem in Termux), a WinAPI DIB section with only
+  the changed rectangles painted, Cocoa redrawing only those; a program
+  that does not lock it draws through `putRGBA` as before. X11 also takes the scale of the monitor
+  the window is on (RandR).
 - `drivers/penaxes.nim` -- a pen's pressure, lean and turn from what each
   system reports.
 - `input.nim`, `screen.nim`: more keys, the mouse's side buttons,

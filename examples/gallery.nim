@@ -1124,6 +1124,8 @@ app "Control Gallery", 760, 540, look = "retro-gallery":
         group "Canvas":
           # (sizes through `dp`: the drawing grows with the UI's scale)
           let r = canvas(0, dp(200))
+          # (what a screen reader says of the drawing: canvas() draws no text of its own)
+          accessNode(arImage, "A drawing of bars and text", id = 0, r = r)
           fill(r, ui.theme.field)
           box(r, ui.theme.frame)
           if showGrid:
@@ -1145,6 +1147,8 @@ app "Control Gallery", 760, 540, look = "retro-gallery":
           for i, c in palette:
             if i mod 4 == 0: beginRow()
             let r = canvas(dp(32), dp(24))
+            accessNode(arButton, "Color " & $(i + 1), id = 0, r = r,
+                       states = if i == colorSel: {asSelected} else: {})
             fill(r, c)
             box(r, ui.theme.frame)
             if i == colorSel: box(inset(r, 2), if i == 0: palette[15] else: palette[0])

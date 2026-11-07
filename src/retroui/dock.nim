@@ -359,6 +359,15 @@ proc groupTabs(d: Dock; g: DockGroup; r: Rect; ev: var DockEvent; folding: bool)
     let tr = rect(x, r.y + (if front: 0 else: dp(2)), tw, r.h - (if front: 0 else: dp(2)))
     let tid = idOf("docktab:" & p.key)
     let hit = interact(tid, tr, focusable = false)
+    if accessOn:
+      let k = accessNode(arTab, tr(p.title), id = tid, r = tr,
+                         states = (if front: {asSelected} else: {}))
+      accessItem(k, i + 1, g.panels.len)
+    if accessPressed == tid:
+      if g.sel != i or g.folded: ev.picked = p.key
+      g.sel = i
+      g.folded = false
+      ui.redraw = true
     let l = if tw < natural[i]: ellipsize(tr(p.title), max(dp(8), tw - dp(10)), st) else: tr(p.title)
     if tw < natural[i] and hit.hover: ui.tip = tr(p.title)
     tabLook(tr, l, front, hit.showsHover, st)
@@ -388,7 +397,9 @@ proc groupTabs(d: Dock; g: DockGroup; r: Rect; ev: var DockEvent; folding: bool)
     let mr = rect(r.x + r.w - mw, r.y + dp(1), mw - dp(1), r.h - dp(3))
     let mh = interact(idOf("dockmenu:" & g.panels[0].key), mr, focusable = false)
     arrow(mr.x + mr.w div 2, mr.y + mr.h div 2, dRight, if mh.showsHover: th.select else: th.text, dp(4))
-    if mh.down and ui.pressed:
+    if accessOn:
+      accessNode(arButton, "The panel's menu", id = idOf("dockmenu:" & g.panels[0].key), r = mr)
+    if mh.down and ui.pressed or accessPressed == idOf("dockmenu:" & g.panels[0].key):
       d.menuFor = g.panels[clamp(g.sel, 0, g.panels.high)].key
       openPopupMenu("dock:menu", ui.mx, ui.my)
     ui.lastRect = mr
@@ -459,6 +470,7 @@ proc panelHeader*(r: Rect; id: Id; dir: Dir; tip = ""; side = hsRight): bool =
            of hsCenter: rect(r.x + (r.w - bw) div 2, r.y, bw, r.h)
            of hsRight: rect(r.x + r.w - bw, r.y, bw, r.h)
   let hit = interact(id, br, focusable = false)
+  if accessOn: accessNode(arButton, (if tip.len > 0: tip else: "Fold"), id = id, r = br)
   let ink = if hit.showsHover: mixColor(tfg, tbg, 0.35) else: tfg
   let cy = r.y + r.h div 2
   let s = max(2, r.h div 4)
@@ -603,6 +615,9 @@ proc iconColumn(d: Dock; ci: int; c: DockColumn; r: Rect; ev: var DockEvent) =
       let iid = idOf("dockicon:" & p.key)
       let hit = interact(iid, br, focusable = false)
       let on = d.fly == g and g.sel == i
+      if accessOn:
+        accessNode(arToggleButton, tr(p.title), id = iid, r = br,
+                   states = (if on: {asPressed, asChecked} else: {}))
       if on:
         fill(br, th.select)
         box(br, th.frame)

@@ -36,6 +36,12 @@ import java.lang.reflect.Method;
 public class RetroActivity extends NativeActivity {
   static native void nativeText(String text);
   static native void nativeInsets(int top, int left, int bottom, int right);
+  /** What a screen reader asked of node `id` (RetroAccess); -1 one came, -2 it went. */
+  static native void nativeAccess(int action, int id, String text, double num);
+  /** What the keyboard composes now (RetroInput): the app shows it in its text box. */
+  static native void nativeCompose(String text, int caret);
+  /** A key of the keyboard's (delete, Enter) as a key: `down` pressed, else let go. */
+  static native void nativeKey(int code, boolean down);
 
   @Override
   protected void onCreate(Bundle state) {
@@ -410,10 +416,17 @@ public class RetroActivity extends NativeActivity {
     super.onActivityResult(request, result, data);
   }
 
-  /** Show or hide the soft keyboard; called by native code on its thread. */
+  /** Show or hide the soft keyboard; called by native code on its thread.
+   *  The keyboard works through RetroInput's input connection (suggestions,
+   *  swipe and voice typing, what it composes); an app without the natives
+   *  it needs falls back to the window's. */
   public void keyboard(final boolean show) {
     runOnUiThread(new Runnable() {
       public void run() {
+        if (inputNatives) {
+          RetroInput.show(RetroActivity.this, show);
+          return;
+        }
         InputMethodManager imm =
             (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
         if (imm == null) return;
@@ -423,4 +436,8 @@ public class RetroActivity extends NativeActivity {
       }
     });
   }
+
+  /** The native side has nativeCompose and nativeKey (set by it). */
+  static volatile boolean inputNatives = false;
+  public static void haveInputNatives() { inputNatives = true; }
 }

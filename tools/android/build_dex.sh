@@ -20,8 +20,13 @@ groups = []
 for g in range(0, len(lines), 64):
     groups.append("  (" + " &\n   ".join(lines[g:g+64]) + ")")
 open(sys.argv[2], 'w').write(
-    "## classes.dex of tools/android/*.java (made by\n"
-    "## tools/android/build_dex.sh): the Java part of every retro APK.\n\n"
+    "## classes.dex of `tools/android/*.java` (made by\n"
+    "## `tools/android/build_dex.sh`): the Java part of every retro APK. Only the\n"
+    "## APK builder (`retroapk`) uses it; apps never import it.\n"
+    "##\n"
+    "## ```nim\n"
+    "## z.addFile(\"classes.dex\", classesDex.toBytes)   # into the APK's zip\n"
+    "## ```\n\n"
     "const classesDex* =\n" + " &\n".join(groups) + "\n")
 PY
 rm -rf "$work"

@@ -2,9 +2,9 @@
 # Uses a double-buffered GDI approach: draw to an off-screen bitmap,
 # BitBlt to window on refresh.
 
-import ../coords, ../input, ../screen, ../services
+import ../coords, ../input, ../screen, ../services, ../access
 import penaxes
-import std/[widestrs, strutils, os]
+import std/[widestrs, strutils, os, dynlib, unicode]
 
 {.passL: "-lgdi32 -luser32 -lkernel32".}
 
@@ -363,6 +363,8 @@ proc ImmSetCompositionWindow(imc: HANDLE; form: ptr COMPOSITIONFORM): BOOL
   {.stdcall, dynlib: "imm32", importc.}
 proc ImmSetCandidateWindow(imc: HANDLE; form: ptr CANDIDATEFORM): BOOL
   {.stdcall, dynlib: "imm32", importc.}
+proc ImmGetCompositionStringW(imc: HANDLE; index: DWORD; buf: pointer; len: DWORD): LONG
+  {.stdcall, dynlib: "imm32", importc.}
 proc Sleep(dwMilliseconds: DWORD)
   {.stdcall, dynlib: "kernel32", importc.}
 proc GlobalAlloc(uFlags: UINT; dwBytes: uint): HGLOBAL
@@ -603,6 +605,9 @@ var
   gBackDC: HDC        # off-screen DC for double buffering
   gBackBmp: HBITMAP   # off-screen bitmap
   gOldBmp: HGDIOBJ    # original bitmap selected into gBackDC
+  gBackBits: ptr UncheckedArray[uint32]   # gBackBmp's pixels (a DIB section)
+  gDirty: WINAPIRECT  # what changed since the last refresh
+  gDirtyAll = false   # ... or all of it (GDI drew somewhere)
   gWidth, gHeight: int32
   gQuitFlag: bool
   gSavedClipRgn: HRGN
@@ -733,7 +738,22 @@ proc currentUiScale(): int =
 
 proc recreateBackBuffer() =
   let screenDC = GetDC(gHwnd)
-  let newBmp = CreateCompatibleBitmap(screenDC, gWidth, gHeight)
+  # A DIB section, top row first: its pixels are lent to the app to draw
+  # the frame in (`lockSurface`), so nothing is copied on the way to the
+  # window; a compatible bitmap where that cannot be had.
+  var bmi = BITMAPINFO()
+  bmi.bmiHeader.biSize = DWORD(sizeof(BITMAPINFOHEADER))
+  bmi.bmiHeader.biWidth = max(1, gWidth).LONG
+  bmi.bmiHeader.biHeight = LONG(-max(1, gHeight))
+  bmi.bmiHeader.biPlanes = 1
+  bmi.bmiHeader.biBitCount = 32
+  bmi.bmiHeader.biCompression = BI_RGB
+  var bits: pointer
+  var newBmp = CreateDIBSection(screenDC, addr bmi, DIB_RGB_COLORS, addr bits, nil, 0)
+  if newBmp == nil or bits == nil:
+    bits = nil
+    newBmp = CreateCompatibleBitmap(screenDC, gWidth, gHeight)
+  gBackBits = cast[ptr UncheckedArray[uint32]](bits)
   if gBackDC == nil:
     gBackDC = CreateCompatibleDC(screenDC)
   if gBackBmp != nil:
@@ -1027,12 +1047,19 @@ proc winTextCaret(x, y, w, h: int) =
   gCaret = (true, x, y, w, h)
   placeIme()
 
+proc uiaGetObject(hwnd: HWND; wp: WPARAM; lp: LPARAM; handled: var bool): LRESULT
+  ## (winuia.nim: a screen reader asks for the window's tree)
+
 proc wndProc(hwnd: HWND; msg: UINT; wp: WPARAM; lp: LPARAM): LRESULT {.stdcall.} =
   # Capture gHwnd from the first message -- WM_SIZE etc. arrive
   # during CreateWindowExW, *before* it returns and assigns gHwnd.
   if gHwnd == nil and hwnd != nil:
     gHwnd = hwnd
   case msg
+  of 0x003D'u32:            # WM_GETOBJECT: a screen reader
+    var handled = false
+    let r = uiaGetObject(hwnd, wp, lp, handled)
+    if handled: return r
   of WM_DESTROY:
     PostQuitMessage(0)
     pushEvent(input.Event(kind: QuitEvent))
@@ -1158,7 +1185,11 @@ proc wndProc(hwnd: HWND; msg: UINT; wp: WPARAM; lp: LPARAM): LRESULT {.stdcall.}
       # Drawn with OpenGL: the app draws the window again.
       pushEvent(input.Event(kind: AppResumeEvent))
     elif gBackDC != nil:
-      discard BitBlt(hdc, 0, 0, gWidth, gHeight, gBackDC, 0, 0, SRCCOPY)
+      # (only the part that changed or was uncovered)
+      let r = ps.rcPaint
+      if r.right > r.left and r.bottom > r.top:
+        discard BitBlt(hdc, r.left, r.top, r.right - r.left, r.bottom - r.top,
+                       gBackDC, r.left, r.top, SRCCOPY)
     discard EndPaint(hwnd, addr ps)
     return 0
 
@@ -1225,6 +1256,40 @@ proc wndProc(hwnd: HWND; msg: UINT; wp: WPARAM; lp: LPARAM): LRESULT {.stdcall.}
     # (an input method begins: its windows where the caret is; DefWindowProc
     # does the rest)
     placeIme()
+
+  of 0x0281'u32:            # WM_IME_SETCONTEXT
+    # (what it composes is drawn in the text box: not in a window of its own;
+    # its candidates are still its own)
+    return DefWindowProcW(hwnd, msg, wp, lp and not LPARAM(0x80000000'u32))
+
+  of 0x010F'u32:            # WM_IME_COMPOSITION
+    if (lp and 0x0008) != 0:              # GCS_COMPSTR: what it composes now
+      let imc = ImmGetContext(hwnd)
+      if imc != nil:
+        let bytes = ImmGetCompositionStringW(imc, 0x0008, nil, 0)
+        var w = newSeq[uint16](max(0, bytes div 2) + 1)
+        if bytes > 0: discard ImmGetCompositionStringW(imc, 0x0008, addr w[0], DWORD(bytes))
+        let caret16 = ImmGetCompositionStringW(imc, 0x0080, nil, 0)   # GCS_CURSORPOS
+        discard ImmReleaseContext(hwnd, imc)
+        var e = input.Event(kind: TextEditingEvent)
+        var before = ""
+        var i = 0
+        let n = max(0, bytes div 2)
+        while i < n:
+          var cp = uint32(w[i])
+          if cp >= 0xD800 and cp <= 0xDBFF and i + 1 < n:
+            cp = 0x10000'u32 + ((cp - 0xD800) shl 10) + (uint32(w[i + 1]) - 0xDC00)
+            inc i
+          let piece = $Rune(int32(cp))
+          if i < caret16: before.add piece
+          e.composing.add piece
+          inc i
+        e.x = if caret16 >= 0: before.len else: e.composing.len
+        pushEvent(e)
+    # (what it settles on comes as WM_CHAR, through DefWindowProc)
+
+  of 0x010E'u32:            # WM_IME_ENDCOMPOSITION
+    pushEvent(input.Event(kind: TextEditingEvent))
 
   of WM_KILLFOCUS:
     pushEvent(input.Event(kind: WindowFocusLostEvent))
@@ -1470,9 +1535,36 @@ proc winGetWindowLayout(): ScreenLayout =
   ScreenLayout(width: gWidth.int, height: gHeight.int,
                scaleX: 1, scaleY: 1, uiScale: gUiScale)
 
+proc dirty(x, y, w, h: int) =
+  ## The back buffer's rectangle changed: the next refresh shows it.
+  if w <= 0 or h <= 0: return
+  let r = WINAPIRECT(left: x.int32, top: y.int32, right: int32(x + w), bottom: int32(y + h))
+  if gDirty.right <= gDirty.left or gDirty.bottom <= gDirty.top:
+    gDirty = r
+  else:
+    gDirty.left = min(gDirty.left, r.left)
+    gDirty.top = min(gDirty.top, r.top)
+    gDirty.right = max(gDirty.right, r.right)
+    gDirty.bottom = max(gDirty.bottom, r.bottom)
+
 proc winRefresh() =
-  discard InvalidateRect(gHwnd, nil, 0)
+  # (only what changed is copied to the window: a caret's blink is a few
+  # pixels, not the whole window)
+  if gDirtyAll or gDirty.right <= gDirty.left or gDirty.bottom <= gDirty.top:
+    discard InvalidateRect(gHwnd, nil, 0)
+  else:
+    discard InvalidateRect(gHwnd, addr gDirty, 0)
+  gDirty = WINAPIRECT()
+  gDirtyAll = false
   discard UpdateWindow(gHwnd)
+
+proc winLockSurface(w, h: int): ptr UncheckedArray[uint32] =
+  if gGpu or gBackBits == nil or w != gWidth.int or h != gHeight.int: return nil
+  discard GdiFlush()      # (GDI's own drawing on it finished first)
+  gBackBits
+
+proc winPresentSurface(r: coords.Rect) =
+  dirty(r.x, r.y, r.w, r.h)
 
 proc winSaveState() =
   # Save current clip region
@@ -1501,6 +1593,8 @@ proc winPutRGBA(pixels: ptr UncheckedArray[uint32]; w, h: int;
   ## relays. What it can do is take finished pixels from whoever does.
   if gBackDC == nil or pixels == nil: return false
   if w <= 0 or h <= 0 or dst.w <= 0 or dst.h <= 0: return false
+  dirty(dst.x, dst.y, (if scaleImage: dst.w else: min(w, dst.w)),
+        (if scaleImage: dst.h else: min(h, dst.h)))
   var bmi = BITMAPINFO()
   bmi.bmiHeader.biSize = DWORD(sizeof(BITMAPINFOHEADER))
   bmi.bmiHeader.biWidth = w.LONG
@@ -1759,6 +1853,7 @@ proc winDrawText(f: screen.Font; x, y: int; text: string;
   discard GetTextExtentPoint32W(gBackDC, cast[ptr uint16](wtext[0].addr),
     wlen, addr sz)
   discard SelectObject(gBackDC, oldFont)
+  dirty(x, y, sz.cx.int, sz.cy.int)
   result = TextExtent(w: sz.cx.int, h: sz.cy.int)
 
 proc winRenderText(f: screen.Font; text: string; fg: screen.Color;
@@ -1828,10 +1923,12 @@ proc winFillRect(r: coords.Rect; color: screen.Color) =
   var wr = WINAPIRECT(
     left: r.x.int32, top: r.y.int32,
     right: (r.x + r.w).int32, bottom: (r.y + r.h).int32)
+  dirty(r.x, r.y, r.w, r.h)
   discard FillRectGdi(gBackDC, addr wr, brush)
   discard DeleteObject(cast[HGDIOBJ](brush))
 
 proc winDrawLine(x1, y1, x2, y2: int; color: screen.Color) =
+  gDirtyAll = true
   let pen = CreatePen(0, 1, rgb(color)) # PS_SOLID = 0
   let oldPen = SelectObject(gBackDC, pen)
   discard MoveToEx(gBackDC, x1.int32, y1.int32, nil)
@@ -1840,6 +1937,7 @@ proc winDrawLine(x1, y1, x2, y2: int; color: screen.Color) =
   discard DeleteObject(pen)
 
 proc winDrawPoint(x, y: int; color: screen.Color) =
+  dirty(x, y, 1, 1)
   discard SetPixel(gBackDC, x.int32, y.int32, rgb(color))
 
 proc winSetCursor(c: CursorKind) =
@@ -2386,7 +2484,12 @@ proc initWinapiFontRelays*() =
   ## Installs only the Win32 font provider.
   fontRelays = winapiFontRelays()
 
+include winuia
+
 proc initWinapiDriver*() =
+  surfaceRelays = SurfaceRelays(lockSurface: winLockSurface,
+                                presentSurface: winPresentSurface)
+  accessRelays = AccessRelays(start: uiaStart, update: uiaUpdate)
   gpuRelays = GpuRelays(
     startGpu: winStartGpu, stopGpu: winStopGpu,
     swapGpu: proc (): bool = gGpu and SwapBuffers(gGlDC) != 0,

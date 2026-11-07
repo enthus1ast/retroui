@@ -29,7 +29,7 @@
 ##   discard propertyGrid(props, propSel, height = 200)
 ## ```
 
-import std/[strutils, tables, unicode, algorithm]
+import std/[strutils, tables, unicode, algorithm, hashes]
 import gfx, core, widgets, business, extras, pixelicons, nerdicons
 import uirelays/input
 
@@ -178,6 +178,16 @@ proc maskedEdit*(value: var string; mask: string; w = 0;
       v = cand
       return true
   var changed = false
+  if accessOn and enabled and accessValueFor(id):
+    # (a screen reader put a text in: what fits the slots goes in)
+    var nv = ""
+    for ch in accessSet.text:
+      let d = asciiDigit(Rune(ord(ch)))
+      discard tryPut(nv, nv.len, if d != '\0': d else: ch)
+    if nv != value:
+      value = nv
+      caret = nv.len
+      changed = true
   if enabled and canInput():
     if hit.down and ui.pressed or (hit.clicked and finger()):
       # the slot nearest to the click
@@ -266,6 +276,10 @@ proc maskedEdit*(value: var string; mask: string; w = 0;
       vline(slotX[st.caret], ty, FontH, th.fieldText)
     wakeIn(530 - (ui.now - maskCaretT) mod 530)
   popClip()
+  if accessOn:
+    let k = accessNode(arTextField, value = full, states = accessOff(enabled), id = id, r = r,
+                       help = mask)
+    accessText(k, st.caret, st.caret, st.caret)
   ui.lastId = id
   ui.lastRect = r
   changed
@@ -281,6 +295,9 @@ proc vcrButton(id: Id; kind: int; enabled: bool; size: int): bool =
   ## up and down).
   let r = place(size, CtrlH)
   var hit = interact(id, r, focusable = false, enabled = enabled)
+  if accessOn:
+    accessNode(arButton, ["First", "Previous", "Next", "Last", "Up", "Down"][clamp(kind, 0, 5)],
+               id = id, r = r, states = accessOff(enabled))
   buttonFace(r, hit.down, rounded = false, bevel = 1, hot = enabled and hovered(r))
   let c = if enabled: th.text else: th.gray
   let o = if hit.down: 1 else: 0
@@ -697,6 +714,52 @@ proc propertyGrid*(props: var seq[Prop]; sel: var int; height = -1;
         es.anchor = es.caret
         state(editId) = es
         ui.typed.setLen(0)
+  # a screen reader: a row picked (a category folded), a value put in
+  template catId(c: string): Id = accessSubId(id, 0x200000 + int(hash(c) and 0xFFFFF))
+  template valId(i: int): Id = accessSubId(id, 0x100000 + i)
+  if accessPress != 0:
+    for l in lines:
+      if l.prop < 0:
+        if accessPress == catId(l.cat):
+          accessPress = 0
+          let fk = key & "\0" & l.cat
+          propFold[fk] = not propFold.getOrDefault(fk, false)
+          ui.redraw = true
+      elif accessPress == accessSubId(id, l.prop) or accessPress == valId(l.prop):
+        let onValue = accessPress == valId(l.prop)
+        accessPress = 0
+        sel = l.prop
+        follow = true
+        ui.focus = id
+        if onValue and not props[sel].readOnly and props[sel].kind == pkBool:
+          props[sel].on = not props[sel].on
+          result = sel
+      if accessPress == 0: break
+  if accessOn:
+    for i in 0 ..< props.len:
+      if not props[i].readOnly and accessValueFor(valId(i)):
+        let t = accessSet.text
+        case props[i].kind
+        of pkText: props[i].text = t
+        of pkNumber:
+          var v: float
+          if parseNumber(t, v): props[i].num = v
+        of pkInt:
+          try: props[i].n = parseInt(t.strip) except ValueError: discard
+        of pkBool: props[i].on = t.toLowerAscii in ["yes", "1", "true", "on"]
+        of pkChoice:
+          let at = props[i].choices.find(t)
+          if at >= 0: props[i].n = at
+        of pkColor:
+          var c: Color
+          if parseHexColor(t, c): props[i].color = c
+        of pkDate:
+          var d: Date
+          if parseDate(t, d): props[i].date = d
+        else: discard
+        sel = i
+        result = i
+        break
   let selLine = block:
     var at = -1
     for k, l in lines:
@@ -813,6 +876,31 @@ proc propertyGrid*(props: var seq[Prop]; sel: var int; height = -1;
       else:
         propBuf.del editId
   popClip()
+  if accessOn:
+    # (a table of names and values; a category a row that folds)
+    accessBegin(arTable, "", gridR, id, takesLabel = true)
+    for k in first .. min(lines.high, first + area.h div rh + 1):
+      let y = area.y + k * rh - top
+      let l = lines[k]
+      if l.prop < 0:
+        let folded = propFold.getOrDefault(key & "\0" & l.cat, false)
+        accessNode(arRow, l.cat, id = catId(l.cat), r = rect(area.x, y, area.w, rh),
+                   states = {asExpandable} + (if folded: {} else: {asExpanded}))
+        continue
+      let i = l.prop
+      let p = props[i]
+      let row = accessBegin(arRow, p.name, rect(area.x, y, area.w, rh), accessSubId(id, i),
+                            (if i == sel: {asSelected} else: {}))
+      accessItem(row, i + 1, props.len)
+      accessNode(arCell, p.name, id = accessSubId(id, 0x300000 + i),
+                 r = rect(area.x + indent, y, nameW, rh))
+      let v = accessNode(if p.kind == pkBool: arCheckBox else: arCell, p.name, valueText(p),
+                         (if p.readOnly: {asReadOnly} else: {}) +
+                           (if p.kind == pkBool and p.on: {asChecked} else: {}),
+                         valId(i), rect(divX + 1, y, area.x + area.w - divX - 1, rh), help = p.help)
+      if i == sel and hit.focused: accessFocus(v)
+      accessEnd()
+    accessEnd()
   vline(divX, area.y + max(0, lines.len * rh - top), max(0, area.h - lines.len * rh + top), th.face)
   # the date of the chosen one: its calendar under the grid row
   if sel in 0 .. props.high and props[sel].kind == pkDate and not props[sel].readOnly and
@@ -1002,6 +1090,18 @@ proc treeGrid*(cols: var seq[Column]; rows: var seq[TreeRow]; sel: var int;
       at = k
       result.selChanged = true
       follow = true
+  if accessPress != 0:
+    # (a screen reader picked a row: selected, or opened / closed when it was)
+    for i in 0 ..< rows.len:
+      if accessPress == accessSubId(id, i):
+        accessPress = 0
+        ui.focus = id
+        if sel == i and hasKids(rows, i): toggleAt(i, result)
+        elif sel != i:
+          sel = i
+          result.selChanged = true
+          follow = true
+        break
   if result.toggled:
     # opened or closed: the rows shown again
     shown.setLen(0)
@@ -1092,6 +1192,27 @@ proc treeGrid*(cols: var seq[Column]; rows: var seq[TreeRow]; sel: var int;
     if selected and hit.focused: dots(rect(area.x, y, rowW, rowH - 1), th.selectText)
   popClip()
   popClip()
+  if accessOn:
+    # (a tree: each row an item at its depth, its other cells told after its name)
+    accessBegin(arTree, "", r, id, takesLabel = true)
+    for k in top ..< min(shown.len, top + vis + 2):
+      let i = shown[k]
+      let row = rows[i]
+      var more = ""
+      for ci in 1 ..< cols.len:
+        if ci < row.cells.len and row.cells[ci].len > 0:
+          if more.len > 0: more.add ", "
+          more.add cols[ci].title & ": " & row.cells[ci]
+      let parent = hasKids(rows, i)
+      let n = accessNode(arTreeItem, (if row.cells.len > 0: row.cells[0] else: ""),
+                         id = accessSubId(id, i), r = rect(area.x, body.y + k * rowH - oy, rowW, rowH),
+                         states = (if i == sel: {asSelected} else: {}) +
+                                  (if parent: {asExpandable} else: {}) +
+                                  (if parent and row.open: {asExpanded} else: {}),
+                         help = more)
+      accessItem(n, k + 1, shown.len, row.level + 1)
+      if i == sel and hit.focused: accessFocus(n)
+    accessEnd()
   st.scrollY = oy
   st.scrollX = sx
   state(id) = st

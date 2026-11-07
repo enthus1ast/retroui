@@ -1,0 +1,6 @@
+[package]
+name = "hello_slint"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+slint = "1.18"

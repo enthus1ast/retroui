@@ -2,10 +2,10 @@
 # Uses Xlib for windowing/events, Xft for antialiased font rendering.
 # Double-buffered via X Pixmap.
 
-import ../coords, ../input, ../screen, ../eglload, ../services, ../target
+import ../coords, ../input, ../screen, ../eglload, ../services, ../target, ../access, ../atspi
 import penaxes
 from ../pixelutils import resizedRGBA
-import std/[strutils, os, dynlib]
+import std/[strutils, os, dynlib, unicode]
 when defined(nimony):
   {.feature: "lenientnils".}
   import std/syncio  # for `quit`
@@ -406,6 +406,8 @@ const
   XK_KP_9 = 0xffb9'u
 
   # Input method
+  XIMPreeditCallbacks = 0x0002
+  XIMPreeditPosition = 0x0004
   XIMPreeditNothing = 0x0008
   XIMStatusNothing = 0x0400
   XBufferOverflow = -1.cint
@@ -584,6 +586,32 @@ proc XGetICValues(ic: pointer): cstring
   {.cdecl, dynlib: libX11, importc, varargs.}
 proc XDestroyIC(ic: pointer)
   {.cdecl, dynlib: libX11, importc.}
+proc XGetIMValues(im: pointer): cstring
+  {.cdecl, dynlib: libX11, importc, varargs.}
+proc XSetICValues(ic: pointer): cstring
+  {.cdecl, dynlib: libX11, importc, varargs.}
+proc XVaCreateNestedList(unused: cint): pointer
+  {.cdecl, dynlib: libX11, importc, varargs.}
+
+type
+  XIMCallback = object
+    clientData: pointer
+    callback: pointer
+  XIMText = object
+    length: cushort
+    feedback: pointer
+    encodingIsWchar: XBool
+    str: cstring                ## (the locale's multibyte text: UTF-8 here)
+  XIMPreeditDraw = object
+    caret, chgFirst, chgLength: cint
+    text: ptr XIMText
+  XIMPreeditCaret = object
+    position, direction, style: cint
+  XIMStyles = object
+    count: cushort
+    styles: ptr UncheckedArray[culong]
+  XPointShort = object
+    x, y: cshort
 proc XSetICFocus(ic: pointer)
   {.cdecl, dynlib: libX11, importc.}
 proc XUnsetICFocus(ic: pointer)
@@ -1815,6 +1843,9 @@ proc answerDragList(req: XSelectionRequestEvent) =
   discard XSendEvent(gDisplay, req.requestor, 0, 0, addr ev)
   discard XFlush(gDisplay)
 
+proc followMonitor()
+  ## (below: the window moved; on another monitor's density, the UI follows)
+
 proc processXEvent(xev: XEvent) =
   case xev.theType
   of Expose:
@@ -1862,7 +1893,9 @@ proc processXEvent(xev: XEvent) =
       e.uiScale = gUiScale
       pushEvent(e)
     # (where it is and its size go to the next run, wherever it is)
-    if xev.xconfigure.window == gWindow: saveWindowState()
+    if xev.xconfigure.window == gWindow:
+      saveWindowState()
+      followMonitor()
 
   of ClientMessage:
     let kind = xev.xclient.message_type
@@ -2146,11 +2179,14 @@ type
     x, y: cint
     width, height: cuint
 
-proc dpiFromMonitor(): int =
-  ## Pixels per inch of the main monitor from the size it reports (EDID),
-  ## 0 when that cannot be had or makes no sense (projectors say 0 mm).
+var gMonitors: seq[tuple[x, y, w, h, dpi: int; primary: bool]]
+  ## The connected monitors: where they are on the screen and their density.
+
+proc readMonitors() =
+  ## The monitors from RandR (their sizes from EDID).
+  gMonitors.setLen(0)
   let lib = loadOptional("libXrandr.so.2", "libXrandr.so")
-  if lib == nil: return 0
+  if lib == nil: return
   # (never unloaded: its first call hooks RandR -- through libXext -- into
   # the display, and XCloseDisplay calls those hooks; with the libraries
   # gone it jumped into whatever was mapped there since and crashed)
@@ -2168,27 +2204,38 @@ proc dpiFromMonitor(): int =
   let freeOut = cast[Free](lib.symAddr("XRRFreeOutputInfo"))
   let freeCrtc = cast[Free](lib.symAddr("XRRFreeCrtcInfo"))
   if getRes == nil or getOutput == nil or getCrtc == nil or freeRes == nil or
-     freeOut == nil or freeCrtc == nil: return 0
+     freeOut == nil or freeCrtc == nil: return
   let root = XRootWindow(gDisplay, gScreen)
   let res = getRes(gDisplay, root)
-  if res == nil: return 0
+  if res == nil: return
   defer: freeRes(res)
   let primary = if getPrimary != nil: getPrimary(gDisplay, root) else: 0
-  for pass in 0 .. 1:
-    for i in 0 ..< res.noutput:
-      let o = res.outputs[i]
-      if pass == 0 and o != primary: continue
-      let info = getOutput(gDisplay, res, o)
-      if info == nil: continue
-      if info.connection == 0 and info.crtc != 0 and info.mmWidth >= 100:
-        let crtc = getCrtc(gDisplay, res, info.crtc)
-        if crtc != nil:
-          let dpi = int(float(crtc.width) * 25.4 / float(info.mmWidth))
-          freeCrtc(crtc)
-          freeOut(info)
-          if dpi in 60 .. 600: return dpi
-          continue
-      freeOut(info)
+  for i in 0 ..< res.noutput:
+    let o = res.outputs[i]
+    let info = getOutput(gDisplay, res, o)
+    if info == nil: continue
+    if info.connection == 0 and info.crtc != 0:
+      let crtc = getCrtc(gDisplay, res, info.crtc)
+      if crtc != nil:
+        # (projectors and some cables say 0 mm: no density of their own)
+        let dpi = if info.mmWidth >= 100: int(float(crtc.width) * 25.4 / float(info.mmWidth)) else: 0
+        gMonitors.add (int(crtc.x), int(crtc.y), int(crtc.width), int(crtc.height),
+                       (if dpi in 60 .. 600: dpi else: 0), o == primary)
+        freeCrtc(crtc)
+    freeOut(info)
+
+proc dpiFromMonitor(at = (x: -1, y: -1)): int =
+  ## Pixels per inch of the monitor at `at` (a point of the screen), else of
+  ## the main one, from the size it reports (EDID); 0 when that cannot be
+  ## had or makes no sense (projectors say 0 mm).
+  if gMonitors.len == 0: readMonitors()
+  for m in gMonitors:
+    if at.x >= m.x and at.y >= m.y and at.x < m.x + m.w and at.y < m.y + m.h and m.dpi > 0:
+      return m.dpi
+  for m in gMonitors:
+    if m.primary and m.dpi > 0: return m.dpi
+  for m in gMonitors:
+    if m.dpi > 0: return m.dpi
 
 when androidShell:
   proc systemPropertyGet(name, value: cstring): cint
@@ -2202,6 +2249,10 @@ when androidShell:
     if systemPropertyGet("ro.sf.lcd_density", cast[cstring](addr buf[0])) > 0:
       try: result = parseInt($cast[cstring](addr buf[0]))
       except ValueError: result = 0
+
+var
+  gScaleOfMonitor = false     ## the scale is the monitors' (nothing else set it)
+  gWindowAt = (x: -1, y: -1)  ## the window's middle on the screen, when known
 
 proc computeUiScale(): int =
   ## X11 coordinates are raw device pixels and nothing on the way to the screen
@@ -2223,11 +2274,32 @@ proc computeUiScale(): int =
     let d = androidDensity()
     if d >= 120:
       return clamp(((d * 100 div 160) + 12) div 25 * 25, 100, 400)
-  let mon = dpiFromMonitor()
+  let mon = dpiFromMonitor(gWindowAt)
   if mon > 0:
     # 25% steps; a little over (a 110 dpi laptop) stays at 100%
+    gScaleOfMonitor = true
     return clamp(((mon * 100 div 96) + 8) div 25 * 25, 100, 400)
   100
+
+proc followMonitor() =
+  ## The window moved: on a monitor of another density (the scale coming
+  ## from the monitors, two or more of them), the UI takes that one's.
+  if not gScaleOfMonitor or gMonitors.len < 2 or gWindow == None: return
+  var x, y: cint
+  var child: XID
+  discard XTranslateCoordinates(gDisplay, gWindow, XRootWindow(gDisplay, gScreen),
+                                cint(gWidth div 2), cint(gHeight div 2), addr x, addr y, addr child)
+  gWindowAt = (x.int, y.int)
+  let s = computeUiScale()
+  if s != gUiScale:
+    gUiScale = s
+    var e = input.Event(kind: WindowMetricsEvent)
+    e.x = gWidth
+    e.y = gHeight
+    e.scaleX = 1
+    e.scaleY = 1
+    e.uiScale = gUiScale
+    pushEvent(e)
 
 # ---- Screen hook implementations ----
 
@@ -2287,6 +2359,61 @@ proc sendStartupInfo(msg: string) =
     if i > msg.len: break
   discard XFlush(gDisplay)
 
+# ---- what an input method composes ----
+#
+# With the "callbacks" style the input method hands us its text as it
+# composes it, a piece at a time (what changed, where), and we pass the whole
+# of it on as a TextEditingEvent: the app draws it in the text box. With the
+# "position" style it draws it itself, at the caret we tell it of.
+
+var
+  gImStyle = 0
+  gImCallbacks: array[4, XIMCallback]
+  gPreedit: seq[Rune]
+  gPreeditCaret = 0
+
+proc pushPreedit() =
+  var e = input.Event(kind: TextEditingEvent)
+  e.composing = $gPreedit
+  e.x = ($gPreedit[0 ..< clamp(gPreeditCaret, 0, gPreedit.len)]).len
+  pushEvent(e)
+
+proc preeditStart(ic, client, call: pointer): cint {.cdecl.} =
+  gPreedit.setLen(0)
+  gPreeditCaret = 0
+  -1                                  # (as long as it likes)
+
+proc preeditDone(ic, client, call: pointer) {.cdecl.} =
+  gPreedit.setLen(0)
+  gPreeditCaret = 0
+  pushPreedit()
+
+proc preeditDraw(ic, client: pointer; call: ptr XIMPreeditDraw) {.cdecl.} =
+  if call == nil: return
+  let first = clamp(int(call.chgFirst), 0, gPreedit.len)
+  let last = clamp(first + int(call.chgLength), first, gPreedit.len)
+  var put: seq[Rune]
+  if call.text != nil and call.text.encodingIsWchar == 0 and call.text.str != nil:
+    put = toRunes($call.text.str)
+  gPreedit = gPreedit[0 ..< first] & put & gPreedit[last .. ^1]
+  gPreeditCaret = int(call.caret)
+  pushPreedit()
+
+proc preeditCaret(ic, client: pointer; call: ptr XIMPreeditCaret) {.cdecl.} =
+  if call == nil: return
+  gPreeditCaret = clamp(int(call.position), 0, gPreedit.len)
+  pushPreedit()
+
+proc x11TextCaret(x, y, w, h: int) =
+  ## The caret of the text box being typed in: the input method's window of
+  ## candidates (and its own text, in the position style) goes there.
+  if gXic == nil or gImStyle == XIMPreeditNothing: return
+  var spot = XPointShort(x: cshort(x), y: cshort(y + h))
+  let attrs = XVaCreateNestedList(0, cstring"spotLocation", addr spot, nil)
+  if attrs != nil:
+    discard XSetICValues(gXic, cstring"preeditAttributes", attrs, nil)
+    discard XFree(attrs)
+
 proc openInputMethod() =
   ## The input method the environment asks for (`XMODIFIERS`, an IBus or
   ## Fcitx say), else the one built into Xlib, which does dead keys and
@@ -2299,11 +2426,51 @@ proc openInputMethod() =
     discard XSetLocaleModifiers("@im=none")
     gXim = XOpenIM(gDisplay, nil, nil, nil)
   if gXim == nil: return
-  gXic = XCreateIC(gXim,
-    cstring"inputStyle", cast[pointer](XIMPreeditNothing or XIMStatusNothing),
-    cstring"clientWindow", cast[pointer](gWindow),
-    cstring"focusWindow", cast[pointer](gWindow),
-    nil)
+  # What it can do: show what it composes through us (we draw it in the text
+  # box), or itself at the caret we tell it of, or in a window of its own.
+  var styles: ptr XIMStyles
+  var can: set[0 .. 2]
+  if XGetIMValues(gXim, cstring"queryInputStyle", addr styles, nil) == nil and styles != nil:
+    for i in 0 ..< int(styles.count):
+      case styles.styles[i]
+      of culong(XIMPreeditCallbacks or XIMStatusNothing): can.incl 0
+      of culong(XIMPreeditPosition or XIMStatusNothing): can.incl 1
+      else: discard
+    discard XFree(styles)
+  if 0 in can:
+    gImCallbacks[0] = XIMCallback(callback: cast[pointer](preeditStart))
+    gImCallbacks[1] = XIMCallback(callback: cast[pointer](preeditDone))
+    gImCallbacks[2] = XIMCallback(callback: cast[pointer](preeditDraw))
+    gImCallbacks[3] = XIMCallback(callback: cast[pointer](preeditCaret))
+    let attrs = XVaCreateNestedList(0,
+      cstring"preeditStartCallback", addr gImCallbacks[0],
+      cstring"preeditDoneCallback", addr gImCallbacks[1],
+      cstring"preeditDrawCallback", addr gImCallbacks[2],
+      cstring"preeditCaretCallback", addr gImCallbacks[3], nil)
+    gXic = XCreateIC(gXim,
+      cstring"inputStyle", cast[pointer](XIMPreeditCallbacks or XIMStatusNothing),
+      cstring"clientWindow", cast[pointer](gWindow),
+      cstring"focusWindow", cast[pointer](gWindow),
+      cstring"preeditAttributes", attrs, nil)
+    if attrs != nil: discard XFree(attrs)
+    if gXic != nil: gImStyle = XIMPreeditCallbacks
+  if gXic == nil and 1 in can:
+    var spot = XPointShort(x: 0, y: 0)
+    let attrs = XVaCreateNestedList(0, cstring"spotLocation", addr spot, nil)
+    gXic = XCreateIC(gXim,
+      cstring"inputStyle", cast[pointer](XIMPreeditPosition or XIMStatusNothing),
+      cstring"clientWindow", cast[pointer](gWindow),
+      cstring"focusWindow", cast[pointer](gWindow),
+      cstring"preeditAttributes", attrs, nil)
+    if attrs != nil: discard XFree(attrs)
+    if gXic != nil: gImStyle = XIMPreeditPosition
+  if gXic == nil:
+    gXic = XCreateIC(gXim,
+      cstring"inputStyle", cast[pointer](XIMPreeditNothing or XIMStatusNothing),
+      cstring"clientWindow", cast[pointer](gWindow),
+      cstring"focusWindow", cast[pointer](gWindow),
+      nil)
+    gImStyle = XIMPreeditNothing
   if gXic == nil:
     discard XCloseIM(gXim)
     gXim = nil
@@ -2984,6 +3151,173 @@ proc x11BlitRGBA(pixels: ptr UncheckedArray[uint32]; w, h: int;
   discard XFree(cast[pointer](img))
   result = true
 
+# ---- The window's pixels in shared memory (MIT-SHM) ----
+#
+# The frame is drawn straight into memory the X server reads too, and a
+# frame's changed parts go up with XShmPutImage: nothing is copied through
+# the connection (a whole 1920 x 1080 frame is 8 MB that way). libXext and
+# the System V calls are loaded at run time -- in Termux from
+# libandroid-shmem, which Termux's X servers share memory through -- and
+# whatever does not work (no extension, a server on another machine, no
+# shared memory) leaves `blitRGBA` doing it as before.
+
+type
+  XShmSegmentInfo = object
+    shmseg: XID
+    shmid: cint
+    shmaddr: pointer
+    readOnly: XBool
+  ShmQueryProc = proc (dpy: pointer): XBool {.cdecl.}
+  ShmCreateImageProc = proc (dpy, visual: pointer; depth: cuint; format: cint;
+                             data: pointer; info: ptr XShmSegmentInfo;
+                             w, h: cuint): ptr XImageObj {.cdecl.}
+  ShmAttachProc = proc (dpy: pointer; info: ptr XShmSegmentInfo): XBool {.cdecl.}
+  ShmPutImageProc = proc (dpy: pointer; d: XID; gc: pointer; img: ptr XImageObj;
+                          srcX, srcY, dstX, dstY: cint; w, h: cuint;
+                          sendEvent: XBool): XBool {.cdecl.}
+  ShmGetProc = proc (key: cint; size: csize_t; flags: cint): cint {.cdecl.}
+  ShmAtProc = proc (id: cint; at: pointer; flags: cint): pointer {.cdecl.}
+  ShmDtProc = proc (at: pointer): cint {.cdecl.}
+  ShmCtlProc = proc (id, cmd: cint; buf: pointer): cint {.cdecl.}
+
+var
+  gShmState = 0               ## 0 not tried, 1 working, -1 not to be had
+  gShmInfo: XShmSegmentInfo
+  gShmBytes = 0               ## the segment's size
+  gShmImg: ptr XImageObj      ## the frame's size, on the segment
+  gShmW, gShmH = 0
+  gShmPending = false         ## a put the server may still be reading
+  gShmCreateImage: ShmCreateImageProc
+  gShmAttach, gShmDetach: ShmAttachProc
+  gShmPutImage: ShmPutImageProc
+  gShmGet: ShmGetProc
+  gShmAt: ShmAtProc
+  gShmDt: ShmDtProc
+  gShmCtl: ShmCtlProc
+
+const
+  IpcPrivate = 0.cint
+  IpcCreat = 0o1000.cint
+  IpcRmid = 0.cint
+
+proc loadShm(): bool =
+  ## libXext's shared-memory calls and the system's, once.
+  if gDisplay == nil: return false
+  let ext = loadOptional("libXext.so.6", "libXext.so")
+  if ext == nil: return false
+  let query = cast[ShmQueryProc](ext.symAddr("XShmQueryExtension"))
+  gShmCreateImage = cast[ShmCreateImageProc](ext.symAddr("XShmCreateImage"))
+  gShmAttach = cast[ShmAttachProc](ext.symAddr("XShmAttach"))
+  gShmDetach = cast[ShmAttachProc](ext.symAddr("XShmDetach"))
+  gShmPutImage = cast[ShmPutImageProc](ext.symAddr("XShmPutImage"))
+  if query == nil or gShmCreateImage == nil or gShmAttach == nil or
+     gShmDetach == nil or gShmPutImage == nil: return false
+  if query(gDisplay) == 0: return false
+  let sys = when androidShell: loadOptional("libandroid-shmem.so", "libandroid-shmem.so")
+            else: loadOptional("libc.so.6", "libc.so")
+  if sys == nil: return false
+  gShmGet = cast[ShmGetProc](sys.symAddr("shmget"))
+  gShmAt = cast[ShmAtProc](sys.symAddr("shmat"))
+  gShmDt = cast[ShmDtProc](sys.symAddr("shmdt"))
+  gShmCtl = cast[ShmCtlProc](sys.symAddr("shmctl"))
+  gShmGet != nil and gShmAt != nil and gShmDt != nil and gShmCtl != nil
+
+proc dropShmImage() =
+  if gShmImg != nil:
+    gShmImg.data = nil
+    discard XFree(cast[pointer](gShmImg))
+    gShmImg = nil
+  gShmW = 0
+  gShmH = 0
+
+proc dropShm() =
+  ## The segment given back (the server first lets go of it).
+  dropShmImage()
+  if gShmBytes > 0:
+    if gDisplay != nil:
+      discard gShmDetach(gDisplay, addr gShmInfo)
+      discard XSync(gDisplay, 0)
+    discard gShmDt(gShmInfo.shmaddr)
+    gShmBytes = 0
+  gShmPending = false
+
+var gShmFailed = false
+proc shmErrorHandler(d: pointer; e: pointer): cint {.cdecl.} =
+  gShmFailed = true
+  0
+
+proc newShmSegment(bytes: int): bool =
+  ## A segment of `bytes`, attached on both sides; false when that cannot be.
+  let id = gShmGet(IpcPrivate, csize_t(bytes), IpcCreat or 0o600)
+  if id < 0: return false
+  let at = gShmAt(id, nil, 0)
+  if at == nil or cast[int](at) == -1:
+    discard gShmCtl(id, IpcRmid, nil)
+    return false
+  gShmInfo = XShmSegmentInfo(shmid: id, shmaddr: at, readOnly: 0)
+  discard XSync(gDisplay, 0)
+  gShmFailed = false
+  let previous = XSetErrorHandler(shmErrorHandler)
+  let attached = gShmAttach(gDisplay, addr gShmInfo) != 0
+  discard XSync(gDisplay, 0)
+  discard XSetErrorHandler(previous)
+  # (gone with the last one to let go of it: this program and the server)
+  discard gShmCtl(id, IpcRmid, nil)
+  if not attached or gShmFailed:
+    discard gShmDt(at)
+    return false
+  gShmBytes = bytes
+  true
+
+proc x11LockSurface(w, h: int): ptr UncheckedArray[uint32] =
+  if gShmState < 0 or gDisplay == nil or gBackPixmap == None or gGpu or w <= 0 or h <= 0:
+    return nil
+  if gShmState == 0:
+    gShmState = if loadShm(): 1 else: -1
+    if gShmState < 0: return nil
+  if gShmPending:
+    # (the server reads the segment while it does the put: once it has
+    # answered, it is done with it)
+    discard XSync(gDisplay, 0)
+    gShmPending = false
+  if w != gShmW or h != gShmH:
+    dropShmImage()
+    let bytes = w * h * 4
+    if bytes > gShmBytes:
+      # (room for the window a quarter bigger: a resize by hand is not a
+      # new segment every step)
+      dropShm()
+      if not newShmSegment(bytes + bytes div 4):
+        gShmState = -1
+        return nil
+    let img = gShmCreateImage(gDisplay, gVisual, gDepth.cuint, ZPixmap.cint,
+                              nil, addr gShmInfo, w.cuint, h.cuint)
+    let hostOrder = (if cpuEndian == littleEndian: LSBFirst else: MSBFirst).cint
+    if img == nil or img.bitsPerPixel != 32 or img.byteOrder != hostOrder or
+       img.bytesPerLine != cint(w * 4):
+      if img != nil: discard XFree(cast[pointer](img))
+      dropShm()
+      gShmState = -1
+      return nil
+    img.data = gShmInfo.shmaddr
+    gShmImg = img
+    gShmW = w
+    gShmH = h
+  cast[ptr UncheckedArray[uint32]](gShmInfo.shmaddr)
+
+proc x11PresentSurface(r: coords.Rect) =
+  if gShmImg == nil or gBackPixmap == None: return
+  let x = max(0, r.x)
+  let y = max(0, r.y)
+  let w = min(r.x + r.w, gShmW) - x
+  let h = min(r.y + r.h, gShmH) - y
+  if w <= 0 or h <= 0: return
+  damage(x, y, w, h)
+  mixFrame(9); mixFrame(x); mixFrame(y); mixFrame(w); mixFrame(h); mixFrame(gBlitSerial)
+  discard gShmPutImage(gDisplay, gBackPixmap, gGC, gShmImg, x.cint, y.cint,
+                       x.cint, y.cint, w.cuint, h.cuint, 0)
+  gShmPending = true
+
 proc x11DrawRGBA(pixels: ptr UncheckedArray[uint32]; w, h: int;
                  dst: coords.Rect; format: RGBAFormat): bool =
   if pixels == nil or w <= 0 or h <= 0 or dst.w <= 0 or dst.h <= 0:
@@ -3256,7 +3590,25 @@ proc x11Minimize(): bool =
 
 # ---- Input hook implementations ----
 
+# ---- screen readers (AT-SPI) ----
+
+var gAtspi = false            ## the session has AT-SPI: its sockets are waited on too
+
+proc x11AccessStart(): bool =
+  if gDisplay == nil or androidShell: return false
+  atspiOrigin = proc (): tuple[x, y: int] =
+    var x, y: cint
+    var child: XID
+    if gDisplay != nil and gWindow != None:
+      discard XTranslateCoordinates(gDisplay, gWindow, XRootWindow(gDisplay, gScreen),
+                                    0, 0, addr x, addr y, addr child)
+    (x.int, y.int)
+  atspiWake = proc () = pushEvent(input.Event(kind: NoEvent))
+  gAtspi = atspiStart()
+  gAtspi
+
 proc x11PollEvent(e: var input.Event; flags: set[InputFlag]): bool =
+  if gAtspi: atspiProcess()
   drainXEvents()
   if eventQueue.len > 0:
     e = eventQueue[0]
@@ -3277,15 +3629,22 @@ proc x11WaitEvent(e: var input.Event; timeoutMs: int;
   var fds {.noinit.}: XFdSet
   xFdZero(addr fds)
   xFdSet(xfd, addr fds)
+  var top = xfd
+  if gAtspi:
+    # (and the accessibility buses: a screen reader asking wakes it)
+    for fd in atspiFds():
+      xFdSet(fd, addr fds)
+      top = max(top, fd)
 
   if timeoutMs < 0:
-    discard xSelect(xfd + 1, addr fds, nil, nil, nil)
+    discard xSelect(top + 1, addr fds, nil, nil, nil)
   else:
     var tv = XTimeval(tv_sec: (timeoutMs div 1000).clong,
                       tv_usec: ((timeoutMs mod 1000) * 1000).clong)
-    discard xSelect(xfd + 1, addr fds, nil, nil, addr tv)
+    discard xSelect(top + 1, addr fds, nil, nil, addr tv)
 
   # select() returned -- drain whatever arrived
+  if gAtspi: atspiProcess()
   drainXEvents()
   if eventQueue.len > 0:
     e = eventQueue[0]
@@ -3672,12 +4031,17 @@ proc x11StartGpu(): bool =
   if gDisplay == nil or gWindow == None: return false
   result = eglload.current.openOnWindow(gDisplay, uint(gWindow), int(XVisualIDFromVisual(gVisual)))
   gGpu = result
+  if result and gShmBytes > 0: dropShm()     # (drawn with OpenGL from now on)
 
 proc x11StopGpu() =
   eglload.current.close()
   gGpu = false
 
 proc initX11Driver*() =
+  surfaceRelays = SurfaceRelays(lockSurface: x11LockSurface,
+                                presentSurface: x11PresentSurface)
+  accessRelays = AccessRelays(start: x11AccessStart, update: atspiUpdate)
+  textCaretRelay = x11TextCaret
   gpuRelays = GpuRelays(
     startGpu: x11StartGpu, stopGpu: x11StopGpu,
     swapGpu: proc (): bool = eglload.current.swap(),
@@ -3762,6 +4126,7 @@ proc presentSiwinSurface*() =
 proc detachSiwinSurface*() =
   ## Release our drawing resources without closing Siwin's borrowed connection.
   if gDisplay != nil:
+    if gShmBytes > 0: dropShm()
     for font in fonts.mitems:
       if font.xftFont != nil: XftFontClose(gDisplay, font.xftFont)
       font.xftFont = nil

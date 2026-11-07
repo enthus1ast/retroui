@@ -8,8 +8,10 @@ in more states too), and they are drawn from the very example beside them,
 so they always match the toolkit.
 
 Every control works with the mouse, the keyboard (Tab, the arrows, Space,
-Enter, Esc, `&` letters with Alt, the menu key) and fingers (a tap, a drag to
-scroll, a long press for the menu). The [README](../README.md) tells the rest:
+Enter, Esc, `&` letters with Alt, the menu key), fingers (a tap, a drag to
+scroll, a long press for the menu) and screen readers (see
+[Screen readers and input methods](#screen-readers-and-input-methods)).
+The [README](../README.md) tells the rest:
 files, mail, the image editor, the system's own APIs, Android and iOS. The
 reference of every module is made by `nimble docs` into `docs/api/`.
 
@@ -38,6 +40,7 @@ reference of every module is made by `nimble docs` into `docs/api/`.
 - **[Canvas and reports](#canvas-and-reports)**: [canvas: your own drawing](#canvas-your-own-drawing) · [canvas2d (the HTML5 Canvas 2D API)](#canvas2d-the-html5-canvas-2d-api) · [reportView (an HTML template: PDF, printing)](#reportview-an-html-template-pdf-printing) · [pdfView](#pdfview) · [QR codes](#qr-codes)
 - **[Sound and video](#sound-and-video)**: [animation (animated GIFs)](#animation-animated-gifs) · [videoView](#videoview) · [audioView](#audioview)
 - **[Looks](#looks)**: [Themes](#themes) · [Dark mode](#dark-mode) · [Size and text size](#size-and-text-size) · [Fonts](#fonts) · [The window's frame](#the-windows-frame)
+- **[Screen readers and input methods](#screen-readers-and-input-methods)**: [Screen readers: what an app draws itself](#screen-readers-what-an-app-draws-itself)
 
 ## Getting started
 
@@ -3776,7 +3779,7 @@ The bar's buttons as a setting.
 
 ### mdiArea, mdiWindow, mdiWindowMenu
 
-Windows in the window, as in Program Manager: the 3.1 frame, moved by their title bars, sized by their edges, minimized to icons, maximized, Ctrl+F6 to the next. Keep each `MdiWindow` in a global. `mdiWindowMenu` fills a Window menu: Cascade, Tile and the windows. The pin in a title bar keeps that window on top; `MdiWindow(noPin: true)` has none (Program Manager's groups, as 3.1 had them).
+Windows in the window, as in Program Manager: the 3.1 frame, moved by their title bars, sized by their edges, minimized to icons, maximized, Ctrl+F6 to the next. Keep each `MdiWindow` in a global. `mdiWindowMenu` fills a Window menu: Cascade, Tile and the windows.
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
@@ -5515,7 +5518,7 @@ in the browser.
 
 ### markdownView, markdown
 
-Markdown: headings, emphasis, code, lists, task lists (a click ticks them: `toggleTask`), tables, quotes and links -- right to left where they are in Arabic.
+Markdown: headings, emphasis, code, lists, task lists (a click ticks them: `toggleTask`), tables, quotes and links -- right to left where they are in Arabic. Screen readers read its words (`mdPlainText`).
 
 | Normal | Touch screen | Dark scheme |
 |---|---|---|
@@ -5555,6 +5558,13 @@ proc markdown*(md: string; baseDir = ""; w = 0): MdEvent {.discardable.}
 Markdown flowing in the layout at its natural height (in a page that
 scrolls, a card, a dialog). See `markdownView` for a framed, scrolling
 view.
+
+```nim
+proc mdPlainText*(md: string): string
+```
+
+Markdown as it is read out: the words, without its marks (`#`, `**`,
+backticks, a link's address).
 
 ### richEdit, richToolbar
 
@@ -6234,8 +6244,9 @@ true black, for phones whose pixels are off where it is black.
 
 ### Size and text size
 
-The UI follows the screen's density by itself, in whole pixels so lines stay
-sharp. `setUiScale(125)` makes everything larger (Ctrl + / - / 0 do it too,
+The UI follows the screen's scale by itself -- 125 %, 150 %, 175 % as asked,
+the scale of the monitor the window is on, and of the one it is moved to --
+with lines on whole pixels so they stay sharp. `setUiScale(125)` makes everything larger (Ctrl + / - / 0 do it too,
 and the phone title bar's menu); `setTextScale(130)` only the text, the
 controls growing with it; `setBaseTextSize(14)` changes the size at 100%
 (12 pixels per em on desktops and tablets, 15 on phones).
@@ -6306,6 +6317,127 @@ their own.
 | Windows 3.1 frame (frame = wfClassic) | In a dark scheme |
 |---|---|
 | ![The window's frame: Windows 3.1 frame (frame = wfClassic)](controls/frame-windows-31-frame-frame-wfclassic.png) | ![The window's frame: In a dark scheme](controls/frame-in-a-dark-scheme.png) |
+
+## Screen readers and input methods
+
+Every control tells screen readers what it is, its name, its value and its
+state as it is drawn: Orca on Linux and BSD (AT-SPI, which the kit speaks
+over D-Bus itself), NVDA, JAWS and Narrator on Windows (UI Automation),
+VoiceOver on macOS and iOS, TalkBack on Android. The screen reader also
+moves the focus, presses buttons, menu items, list and grid items, tree
+nodes and calendar days, checks boxes, puts text in boxes and moves sliders
+and spin boxes: each comes into the next frame as the click or the typing
+would. The grid is read as a table, the tree with each item's depth, a chart
+by its title, kind, series and the point the keys are on. Nothing of this
+is made while no screen reader listens (`RETRO_ACCESS=1` makes it anyway,
+to try it).
+
+A label names the control after it, so a form needs nothing more. What an
+app draws itself (`canvas`, `fill`, `text`) is read once it says what it is:
+`accessNode` gives it a role and a name, `accessName` names an icon-only
+button, `accessNameOr` gives a box the name it has when no label names it
+(a placeholder), `accessBegin` / `accessEnd` group nodes (a list of your
+own, its items with `accessItem`), `accessRange` gives a value its range. A
+control of your own takes a screen reader's press through `interact`, as a
+click.
+
+**Input methods** (pinyin, kana, hangul, a phone keyboard's word) compose in
+the text box itself: what is being composed is drawn underlined at the
+caret and typed when it is settled -- XIM on X11, IMM on Windows, marked
+text on macOS, GTK 4's preedit, the kit's own input connection on Android.
+`ui.composing` holds it for a text box of your own.
+
+### Screen readers: what an app draws itself
+
+The label names the box; the picture is read as "Sales by month"; the button with only an icon is read as "Print".
+
+| Normal |
+|---|
+| ![Screen readers: what an app draws itself, normal](controls/access-normal.png) |
+
+```nim
+row([60, -1]):
+  label "&Name:"
+  edit lookName
+row:
+  let r = canvas(dp(160), dp(60))
+  fill(r, ui.theme.field)
+  for i, v in [30, 45, 25, 55]:
+    fill(rect(r.x + dp(10) + i * dp(36), r.y + r.h - dp(v), dp(24), dp(v)),
+         ui.theme.select)
+  accessNode(arImage, "Sales by month", id = 0, r = r)
+  accessName("Print")
+  if button("", pxPrint):
+    discard
+```
+
+**API**
+
+```nim
+proc accessNode*(role: AccessRole; name = ""; value = ""; states: set[AccessState] = {};
+                 id: Id = ui.lastId; r: Rect = ui.lastRect; help = ""): int {.discardable.}
+```
+
+Adds a node to this frame's tree under the container open now (the
+window, a group, a menu...), and returns its index; -1 when no screen
+reader listens. `id`, `r`: the widget's (the last one `interact` saw).
+A control without a `name` takes the label drawn just before it.
+
+```nim
+proc accessName*(name: string)
+```
+
+The name the next control is read by -- for a button with only an icon,
+a box with no label before it. (Labels name the control after them on
+their own.)
+
+```nim
+proc accessNameOr*(name: string)
+```
+
+The name the next control is read by when no label before it names it
+(a search box by its placeholder).
+
+```nim
+proc accessBegin*(role: AccessRole; name = ""; r: Rect = ui.lastRect; id: Id = 0;
+                  states: set[AccessState] = {}; takesLabel = false): int {.discardable.}
+```
+
+Opens a container node (a group, a menu, a dialog, a list...): the
+nodes added until `accessEnd` go inside it. `takesLabel`: named by the
+label before it, as a control is (a list after "Files:"). Its index.
+
+```nim
+proc accessEnd*()
+```
+
+Closes the container `accessBegin` opened.
+
+```nim
+proc accessEnd*(r: Rect)
+```
+
+Closes the container `accessBegin` opened, now that its place `r` is
+known (a group's height is when its last control is drawn).
+
+```nim
+proc accessItem*(i: int; pos, count: int; level = 0)
+```
+
+Node `i` is item `pos` (1-based) of `count` (`level`: a tree item's depth).
+
+```nim
+proc accessRange*(i: int; lo, hi, now: float; step = 1.0)
+```
+
+Node `i`'s range and value (a slider, a spin box, a progress bar).
+
+```nim
+proc accessible*(): bool {.inline.}
+```
+
+A screen reader reads this frame (widgets of your own add themselves
+with `accessNode` then).
 
 ---
 

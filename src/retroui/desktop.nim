@@ -209,6 +209,7 @@ proc toFront(m: var MdiState; key: uint) =
 proc winButton(id: Id; r: Rect; kind: int): bool =
   ## The minimize (0), maximize (1) and restore (2) buttons of a title bar.
   let hit = interact(id, r, focusable = false)
+  if accessOn: accessNode(arButton, ["Minimize", "Maximize", "Restore"][clamp(kind, 0, 2)], id = id, r = r)
   # the Win31 caption button: a black line at its left, a gray face
   vline(r.x, r.y, r.h, th.frame)
   let f = rect(r.x + 1, r.y, r.w - 1, r.h)
@@ -322,6 +323,10 @@ proc beginMdiWindow*(w: var MdiWindow): bool =
       if k2 != key: ui.blockers.add wr
     let hit = interact(id + 1, ir)
     ui.blockers.setLen(0)
+    if accessOn: accessNode(arButton, tr(w.title), id = id + 1, r = ir, help = "minimized")
+    if accessPressed == id + 1:
+      w.minimized = false
+      m.toFront(key)
     if hit.clicked: m.toFront(key)
     if (hit.down and ui.pressed and ui.clicks >= 2) or (hit.focused and keyHit(KeyEnter)):
       w.minimized = false
@@ -341,6 +346,9 @@ proc beginMdiWindow*(w: var MdiWindow): bool =
   # where it is now, and what lies over it
   var sr = if w.maximized: inset(a, 1)
            else: rect(a.x + w.r.x, a.y + w.r.y, w.r.w, w.r.h)
+  # (a window in the window: a pane named by its title, its title bar's
+  # buttons and its content inside; `endMdiWindow` closes it)
+  if accessOn: accessBegin(arPane, tr(w.title), sr, id)
   ui.blockers.setLen(0)
   let at = m.z.find(key)
   for k2 in at + 1 .. m.z.high:
@@ -444,6 +452,7 @@ proc beginMdiWindow*(w: var MdiWindow): bool =
     if not w.fixed:
       let cb = rect(title2.x, title2.y, barH, barH)
       let ch = interact(id + 5, cb, focusable = false)
+      if accessOn: accessNode(arButton, "Close", id = id + 5, r = cb)
       fill(cb, th.face)
       vline(cb.x + cb.w, cb.y, cb.h, th.frame)
       let bw = max(3, barH div 2)
@@ -561,6 +570,9 @@ proc beginMdiWindow*(w: var MdiWindow): bool =
     # kept over the others)
     let can = not w.maximized
     let ph = interact(id + 7, pinR, focusable = false, enabled = can)
+    if accessOn:
+      accessNode(arToggleButton, "Always on Top", id = id + 7, r = pinR,
+                 states = accessOff(can) + (if w.pinned: {asPressed, asChecked} else: {}))
     let down = can and (ph.down or w.pinned)
     captionButton(pinR, down)
     # (on: latched in, as a 3.1 tool bar's button that stays down -- its face dithered)
@@ -592,6 +604,10 @@ proc beginMdiWindow*(w: var MdiWindow): bool =
   # the control-menu box: a menu; a double click closes
   let sh = interact(id + 5, sys, focusable = false)
   let menuKey = "mdi-sys:" & $key
+  if accessOn:
+    accessNode(arButton, "Window menu", id = id + 5, r = sys,
+               states = {asExpandable} + (if popupMenuOpen(menuKey): {asExpanded} else: {}))
+  if accessPressed == id + 5: openPopupMenu(menuKey, sys.x, sys.y + sys.h + 1)
   if sh.down and ui.pressed:
     if ui.clicks >= 2:
       w.open = false
@@ -645,6 +661,8 @@ proc endMdiWindow*() =
   ## Ends a `beginMdiWindow`: its size grip and scroll bar.
   if mdiStack.len == 0: return
   let f = mdiStack.pop()
+  defer:
+    if accessOn: accessEnd()
   let used = popFrame() + 2 * f.pad
   endClipped()
   if f.grip:
@@ -806,6 +824,7 @@ proc paletteTabs*(labels: openArray[string]; sel: var int; menu = true): tuple[c
     for i in 0 ..< labels.len:
       widths[i] = if i == sel: mine else: min(natural[i], each)
   var x = r.x
+  if accessOn: accessBegin(arTabList, "", r)
   for i, l0 in labels:
     let tw = widths[i]
     let l = if tw < natural[i]: ellipsize(l0, max(dp(8), tw - dp(10)), st) else: l0
@@ -814,15 +833,23 @@ proc paletteTabs*(labels: openArray[string]; sel: var int; menu = true): tuple[c
     if tw < natural[i] and hit.hover: ui.tip = l0
     let ink = paletteTabFace(tr, i == sel, hit.showsHover)
     text(tr.x + dp(6), tr.y + (tr.h - lineHeight(st)) div 2, l, ink, st)
-    if hit.down and ui.pressed and sel != i:
+    if (hit.down and ui.pressed or accessPressed == idOf("paltab:" & l0 & $i)) and sel != i:
       sel = i
       result.changed = true
+    if accessOn:
+      let k = accessNode(arTab, l0, id = idOf("paltab:" & l0 & $i), r = tr,
+                         states = (if i == sel: {asSelected} else: {}))
+      accessItem(k, i + 1, labels.len)
     x += tw - 1
+  if accessOn: accessEnd()
   if menu:
     let mr = rect(r.x + r.w - h, r.y + dp(1), h - dp(1), h - dp(3))
     let mh = interact(idOf("palmenu:" & (if labels.len > 0: labels[0] else: "")), mr, focusable = false)
     arrow(mr.x + mr.w div 2, mr.y + mr.h div 2, dRight, th.text, dp(4))
-    if mh.down and ui.pressed: result.menu = true
+    if accessOn:
+      accessNode(arButton, "Menu", id = idOf("palmenu:" & (if labels.len > 0: labels[0] else: "")), r = mr)
+    if mh.down and ui.pressed or accessPressed == idOf("palmenu:" & (if labels.len > 0: labels[0] else: "")):
+      result.menu = true
   ui.lastRect = r
 
 proc mdiCascade*(key = "") = mdiCommand(key, mcCascade)
@@ -1050,6 +1077,9 @@ proc hotkeyEdit*(keys: var string; w = 0; enabled = true): bool {.discardable.} 
   text(r.x + dp(4), r.y + (r.h - FontH) div 2, shown,
        if keys.len == 0 or not enabled: th.gray else: th.fieldText)
   if hit.focused: focusDots(inset(r, 2))
+  if accessOn:
+    accessNode(arTextField, value = (if keys.len > 0: keys else: "None"), id = id, r = r,
+               states = accessOff(enabled) + {asReadOnly}, help = "Press a key")
   ui.lastId = id
   ui.lastRect = r
 
@@ -1355,6 +1385,9 @@ proc aboutBox*(open: var bool; app: string; version = ""; lines: openArray[strin
   dialog(open, "About " & app, width):
     let br = place(cellRoom(), dp(92) + (if fingers(): dp(8) else: 0))
     aboutBanner(br, app, version, tagline, glyph, pic)
+    if accessOn:
+      accessNode(arHeading, app & (if version.len > 0: " " & version else: ""), id = 0, r = br,
+                 help = tagline)
     var pages = @["About"]
     if whatsNew.len > 0: pages.add "What's New"
     if credits.len > 0: pages.add "Credits"
@@ -1385,6 +1418,7 @@ proc aboutBox*(open: var bool; app: string; version = ""; lines: openArray[strin
             if hit.hover and canHover(): ui.cursor = curHand
             text(r.x + 1, r.y + 1, shown, th.link)
             hline(r.x + 1, r.y + FontAscent + 2, tw, th.link)
+            if accessOn: accessNode(arLink, shown, id = id, r = r)
             if hit.clicked: discard openUrl(target)
             space(dp(12))
         separator()
@@ -1395,6 +1429,7 @@ proc aboutBox*(open: var bool; app: string; version = ""; lines: openArray[strin
         for i, (k, v) in facts:
           text(fr.x, fr.y + i * lh, tr(k), th.gray)
           text(fr.x + dp(76), fr.y + i * lh, v, th.text)
+          if accessOn: accessNode(arLabel, tr(k) & " " & v, id = 0, r = rect(fr.x, fr.y + i * lh, fr.w, lh))
         if url.len > 0:
           let tw = textWidth(url)
           let r = place(tw + 2, FontH + 2)
@@ -1403,6 +1438,7 @@ proc aboutBox*(open: var bool; app: string; version = ""; lines: openArray[strin
           if hit.hover and canHover(): ui.cursor = curHand
           text(r.x + 1, r.y + 1, url, th.link)
           hline(r.x + 1, r.y + FontAscent + 2, tw, th.link)
+          if accessOn: accessNode(arLink, url, id = id, r = r)
           if hit.clicked: discard openUrl(url)
       endScroll()
     tabLook = saved

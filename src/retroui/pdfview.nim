@@ -315,5 +315,7 @@ proc pdfView*(v: PdfView; height = -1; w = 0): PdfViewEvent {.discardable.} =
     ui.redraw = true
   state(id) = st
   if hit.focused: focusDots(inset(r, 2))
+  if accessOn:
+    accessNode(arImage, v.path.extractFilename, id = id, r = r, help = "PDF")
   ui.lastId = id
   ui.lastRect = r

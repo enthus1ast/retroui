@@ -1114,5 +1114,7 @@ proc view3d*(scene: var Scene3; cam: var Camera3; height = -1; w = 0; key = "";
     for k, v in caches:
       if ui.now - v.usedAt > 30_000: gone.add k
     for k in gone: caches.del k
+  if accessOn:
+    accessNode(arImage, "3D view", id = id, r = r)
   ui.lastId = id
   ui.lastRect = r

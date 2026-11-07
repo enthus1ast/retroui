@@ -76,6 +76,7 @@ proc pictureRow(title, detail: string; png: string; kind: string): bool =
       label(title, bold = true)
       label(detail, color = ui.theme.gray)
     let r = canvas(dp(120), dp(64))
+    accessNode(arImage, title, id = 0, r = r)
     fill(r, color(255, 255, 255))
     box(r, ui.theme.shadow)
     let b = picOf(png)

@@ -275,28 +275,41 @@ const
 const pixelArtPacked = staticRead("pixelart.z")
   # every icon: width, height and a letter a pixel, at 16 x 16 then at 32 x 32
 
-proc unpackArt(): seq[(Icon, Icon)] =
-  let b = zlibDecompress(pixelArtPacked.toOpenArrayByte(0, pixelArtPacked.high))
+var artLetters: Bytes          # every icon's letters (one a pixel), unpacked once
+var artAt: seq[int32]         # where each icon's pair of pictures starts in them
+
+proc artIcon(at: var int): Icon =
+  ## The picture at `at` (width, height, a letter a pixel), `at` moved past it.
+  if at + 2 > artLetters.len: return Icon()
+  let w = int(artLetters[at])
+  let h = int(artLetters[at + 1])
+  at += 2
+  if w == 0 or h == 0 or at + w * h > artLetters.len: return Icon()
+  result.w = w
+  result.h = h
+  result.px = newSeq[uint32](w * h)
+  for i in 0 ..< w * h: result.px[i] = vgaColor(char(artLetters[at + i]))
+  at += w * h
+
+proc loadArt(i: int): tuple[small, big: Icon] {.nimcall.} =
+  ## Icon `i` (16 x 16 and 32 x 32), made when it is first shown.
+  if i < 0 or i >= artAt.len: return
+  var at = int(artAt[i])
+  result.small = artIcon(at)
+  result.big = artIcon(at)
+
+block:
+  # (only where each icon starts is worked out now: the pictures are made
+  # when they are shown, so an app holds only the ones it shows)
+  artLetters = zlibDecompress(pixelArtPacked.toOpenArrayByte(0, pixelArtPacked.high))
   var at = 0
-  proc one(): Icon =
-    if at + 2 > b.len: return Icon()
-    let w = int(b[at])
-    let h = int(b[at + 1])
-    at += 2
-    if w == 0 or h == 0 or at + w * h > b.len: return Icon()
-    var rows = newSeq[string](h)
-    for y in 0 ..< h:
-      rows[y] = newString(w)
-      for x in 0 ..< w: rows[y][x] = char(b[at + y * w + x])
-    at += w * h
-    icon(rows)
-  while at < b.len:
-    let small = one()
-    result.add (small, one())
+  while at + 2 <= artLetters.len:
+    artAt.add int32(at)
+    for _ in 0 .. 1:
+      if at + 2 > artLetters.len: break
+      at += 2 + int(artLetters[at]) * int(artLetters[at + 1])
+  setPixelIconSource(artAt.len, loadArt)
 
-let pixelIconArt = unpackArt()
-
-for i, (small, big) in pixelIconArt: setPixelIcon(i, small, big)
 for (i, g, c) in lineTwins: setPixelTwin(i, g, c)
   # (their line twins: see `setLineIcons`)
 
@@ -311,8 +324,12 @@ proc retroOr*(px, nf: string): string {.inline.} =
 proc pixelIcon*(glyph: string; big = false): Icon =
   ## The art of a pixel icon (`pxFolder`), 16 x 16 or 32 x 32.
   let i = if glyph.len == 4: int(glyph.runeAt(0)) - PixIconFirst else: -1
-  if i < 0 or i >= pixelIconArt.len: return Icon()
-  if big and pixelIconArt[i][1].w > 0: pixelIconArt[i][1] else: pixelIconArt[i][0]
+  if i < 0 or i >= artAt.len: return Icon()
+  var at = int(artAt[i])
+  result = artIcon(at)
+  if big:
+    let b = artIcon(at)
+    if b.w > 0: result = b
 
 const pixelIconNames* = ["Folder", "FolderOpen", "Documents", "Downloads", "Pictures", "Music", "Videos", "FolderStar", "FolderPlus", "FolderUp", "Home", "Desktop", "Computer", "Drive", "SdCard", "Phone", "Trash", "TrashFull", "File", "Text", "Markdown", "Code", "Web", "Data", "Sheet", "Document", "Slides", "Pdf", "Image", "Audio", "Video", "Archive", "App", "Script", "Font", "Info", "Question", "Error", "Warning", "New", "Open", "Save", "Cut", "Copy", "Paste", "Print", "Help", "Back", "Forward", "Up", "Refresh", "Delete", "Rename", "Properties", "Search", "Details", "Icons", "Star", "Share", "Select", "Undo", "Redo", "Settings", "Tiles", "Tree", "Preview", "TwoPanes", "Columns", "Eye", "OpenWith", "Bell", "Check", "Lock", "Play", "User", "Inbox", "Fit", "Hourglass", "Hourglass2", "Chart", "PieChart", "Report", "Map", "Cube", "Paint", "Speaker", "Camera", "Calendar", "Clock", "Kanban", "Gantt", "OrgChart", "Calculator", "Mail", "Database", "Globe", "Window", "Terminal", "Gauge", "Key", "Add", "Remove", "Filter", "Sort", "Pin", "ZoomIn", "ZoomOut", "Pause", "Stop", "Record", "MarqueeRect", "MarqueeEllipse", "Lasso", "MoveTool", "MagicWand", "HandTool", "ZoomTool", "Crop", "Eraser", "Pencil", "LineTool", "Airbrush", "Brush", "Stamp", "Smudge", "Blur", "Sharpen", "Dodge", "Burn", "Sponge", "Pen", "PathArrow", "PenAdd", "PenRemove", "ConvertPoint", "TypeTool", "Gradient", "Bucket", "Eyedropper", "StandardMode", "QuickMask", "ScreenWindow", "ScreenFullMenu", "ScreenFull", "SpotHeal", "Heal", "Patch", "RedEye", "AdjustLayer", "LayerMask", "AlignLeft", "AlignCenter", "AlignRight", "JustifyLeft", "JustifyCenter", "JustifyRight", "JustifyAll", "FauxBold", "FauxItalic", "AllCaps", "SmallCaps", "Superscript", "Subscript", "Underline", "Strikethrough", "WarpText", "TypePath", "LayerStyle", "Character", "Paragraph", "RectShape", "RoundRectShape", "EllipseShape", "PolygonShape", "CustomShape", "ShapeLayer", "ClipLayer", "Plugin", "Symmetry", "ProofColors", "SmartObject", "QuickSelect", "ObjectSelect", "PathSelect", "HistoryBrush", "MixerBrush", "RemoveTool", "ContentMove", "Navigator", "History", "Snapshot", "Actions", "Guides", "Grid", "AlignEdgeLeft", "AlignEdgeHCenter", "AlignEdgeRight", "AlignEdgeTop", "AlignEdgeVCenter", "AlignEdgeBottom", "Warp", "PuppetWarp", "Sky", "FillLayer", "SelNew", "SelAdd", "SelSubtract", "SelIntersect", "GradLinear", "GradRadial", "GradAngle", "GradReflected", "GradDiamond", "MarqueeRow", "MarqueeColumn", "PolyLasso", "TypeMask", "PatternStamp", "MoreTools", "PerspCrop", "BgEraser", "FreeformPen", "CurvaturePen", "StarShape", "Spiral", "ColorReplace", "Slice", "Note", "Count", "RotateView", "ArtHistory", "Timeline", "ParaStyle", "CharStyle", "OpenType", "ScriptEdit", "Language", "Layers", "Channels", "Swatches", "ColorPanel", "Histogram", "Glyphs", "Commands", "ToolPresets", "LayerComps", "Libraries", "Scratch", "ColorThemes", "Patterns", "BrushSettings", "QuickActions", "SelectionBrush", "AdjustBrush", "ContentTrace"]
   ## The names of the pixel icons, in the order of their characters.

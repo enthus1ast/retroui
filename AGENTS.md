@@ -22,6 +22,23 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
   Android and macOS onto the release.
 - `tests/` -- headless tests on a fake screen driver (`tests/harness.nim`).
 - `docs/controls.md` -- every control with pictures, made by `tools/shots.nim`.
+- Screen readers: `src/retroui/uirelays/access.nim` (the tree, its roles,
+  states, requests: generic), `core.nim` builds it while one listens
+  (`accessNode`, `accessBegin`/`accessEnd`, `accessPress`, `accessSet`);
+  the drivers hand it on: `uirelays/atspi.nim` over `uirelays/dbus.nim`
+  (X11), `drivers/winuia.nim` (Windows, included by the WinAPI driver),
+  `cocoa_backend.m`, `uikit_backend.m`, `tools/android/RetroAccess.java`.
+  A new control adds itself (`accessNode` after its `interact`; parts --
+  items, tabs -- with `accessSubId`) and takes a press from `accessPress`.
+- Input methods: `TextEditingEvent` (`composing`), `ui.composing`, drawn by
+  `editAt`; X11 XIM callbacks, Windows IMM, macOS marked text, GTK 4
+  preedit, Android `tools/android/RetroInput.java`.
+- The Java of the APKs (`tools/android/*.java`) is compiled into
+  `src/retroui/androiddex.nim` by `sh tools/android/build_dex.sh` (javac,
+  an android.jar of API 23, dx or dalvik-exchange): run it after changing
+  one, and use only calls API 23 has (the APKs start on Android 7).
+- `tools/compare/` -- Hello in egui, iced and Slint, and `compare.sh`
+  measuring them and the kit the same way (memory, size, CPU).
 - `docs/syntax.md` -- the study of the syntax: every form as a whole program
   with a picture of what it draws. The programs are `tools/syntaxshots/ex/`
   (the page's code plus `#>` script lines and `mark` lines it leaves out);
@@ -89,6 +106,11 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
   tools/uirelays.sh merge` brings upstream's new commits (nim-lang/uirelays
   master) into the branch, then `pull`. It stays inside the package (no
   separate nimble dependency) until upstream has the branch's work.
+- **A frame that changes nothing takes no memory**: no string, seq or
+  closure made in the drawing of a control (buffers kept from frame to
+  frame, `idOfLabel` instead of `idOf(a & b)`, templates instead of nested
+  procs, `swap` a widget's state out and back). `tests/bench.nim` with
+  `-d:nimAllocStats` counts them (0 in the gallery's frames).
 - **No dependencies to install:** link only what every system has
   (libc; Windows' system DLLs); load anything else at run time and work
   without it.

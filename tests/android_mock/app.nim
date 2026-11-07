@@ -12,6 +12,8 @@ var
   clicks = 0
   name = "abc"
   wasPaused = false
+  composed = false
+  keyed = false
 
 app "mock", 300, 200:
   if button("Press me"):
@@ -22,6 +24,12 @@ app "mock", 300, 200:
   if name == "سلام":
     echo "arabic ok"
     name = "done"
+  if ui.composing == "كت" and not composed:
+    echo "composing ok"
+    composed = true
+  if name == "don" and not keyed:
+    echo "key ok"
+    keyed = true
   label "Arabic: مرحبا"
   if ui.paused and not wasPaused: echo "paused"
   wasPaused = ui.paused

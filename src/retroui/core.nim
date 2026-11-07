@@ -13,10 +13,14 @@ import std/[tables, unicode, os, math, strutils, monotimes, times]
 import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import uirelays
 import uirelays/services
+import uirelays/access
+export access
+when (defined(linux) or defined(bsd)) and not defined(android):
+  import uirelays/atspi           # (screen readers told the toolkit's and the app's name)
 import gfx, busy
 export busy
 
-const RetroVersion* = "0.25.0"
+const RetroVersion* = "0.26.0"
   ## The toolkit's version (shown in About boxes' Credits).
 const
   RetroDeveloper* = "Sultan Al Isaiee"
@@ -329,6 +333,9 @@ type Ctx* = object
   typed*: string                 ## the text typed this frame (UTF-8)
   mnemonic*: char                ## Alt + this letter was pressed ('\0': none)
   textOk: bool
+  composing*: string             ## what the system's input method composes now (a
+                                 ## text box with the focus shows it at its caret)
+  composeCaret*: int             ## ... and the caret in it (bytes)
   now*: int                      ## the time of this frame, in milliseconds
   force: bool
   # interaction
@@ -950,12 +957,282 @@ proc tabStop*(id: Id; r: Rect): bool {.discardable.} =
   result = ui.focus == id
   if result: ui.focusRect = r
 
+# ---- accessibility: the frame as a tree for screen readers ---------------------
+#
+# While a screen reader listens (the driver says so: `accessListening`), every
+# widget adds itself to a tree as it is drawn -- its role, its name, its value,
+# where it is -- and after the frame the tree goes to the screen reader when it
+# changed. What the screen reader asks (press, focus, put this text) comes
+# back through `accessRequests` and is done by the next frame, as if the user
+# had clicked or typed. With no screen reader nothing of this runs.
+
+var
+  accessOn*: bool
+    ## The frame builds the tree: a screen reader listens, or $RETRO_ACCESS=1.
+  accessTree*: seq[AccessNode]
+    ## This frame's tree so far (node 0 the window). See `accessNode`.
+  accessFocusAt: int = -1          # the focused node's index
+  accessSentHash: uint64           # the tree the screen reader has
+  accessSentFocus: int = -1
+  accessOpen: seq[int32]           # the containers open (groups, menus, dialogs)
+  accessLabelText: string          # a label's text: the name of the control after it
+  accessLabelUsed = true
+  accessNameNext: string           # a name the app gave the next control
+  accessNameElse: string           # its name when no label names it (a placeholder)
+  accessPress*: Id                 ## a press asked for: `interact` clicks it
+  accessPressed*: Id               ## the widget a screen reader pressed this frame
+  accessSet*: tuple[id: Id; text: string; num: float; on: bool]
+    ## a value asked for: the widget `id` takes it (`accessValueFor`)
+  accessForced = getEnv("RETRO_ACCESS") == "1"
+  accessStarted = false
+
+proc plainName*(s: string): string =
+  ## A label as it is read: no '&' of a mnemonic, no tab, one line.
+  var i = 0
+  while i < s.len:
+    let c = s[i]
+    if c == '&':
+      if i + 1 < s.len and s[i + 1] == '&':
+        result.add '&'
+        inc i
+    elif c in {'\t', '\n', '\r'}:
+      if result.len > 0 and result[^1] != ' ': result.add ' '
+    else: result.add c
+    inc i
+  result = result.strip()
+
+proc accessible*(): bool {.inline.} = accessOn
+  ## A screen reader reads this frame (widgets of your own add themselves
+  ## with `accessNode` then).
+
+proc accessName*(name: string) =
+  ## The name the next control is read by -- for a button with only an icon,
+  ## a box with no label before it. (Labels name the control after them on
+  ## their own.)
+  if accessOn: accessNameNext = name
+
+proc accessNameOr*(name: string) =
+  ## The name the next control is read by when no label before it names it
+  ## (a search box by its placeholder).
+  if accessOn: accessNameElse = name
+
+proc accessLabelFor*(text: string) =
+  ## A label was drawn: the next control without a name of its own is named
+  ## by it (a text box after "Name:").
+  if accessOn:
+    accessLabelText = plainName(text)
+    accessLabelUsed = false
+
+proc deviceRect(r: Rect): Rect =
+  ## (a widget's place in the window's pixels, mirrored back in a
+  ## right-to-left interface)
+  let x = if ui.rtl: ui.w - r.x - r.w else: r.x
+  rect(x * zoom, r.y * zoom, r.w * zoom, r.h * zoom)
+
+proc accessNode*(role: AccessRole; name = ""; value = ""; states: set[AccessState] = {};
+                 id: Id = ui.lastId; r: Rect = ui.lastRect; help = ""): int {.discardable.} =
+  ## Adds a node to this frame's tree under the container open now (the
+  ## window, a group, a menu...), and returns its index; -1 when no screen
+  ## reader listens. `id`, `r`: the widget's (the last one `interact` saw).
+  ## A control without a `name` takes the label drawn just before it.
+  if not accessOn: return -1
+  var n = AccessNode(id: uint32(id), role: role, value: value, states: states, help: help)
+  n.parent = if accessOpen.len > 0: accessOpen[^1] else: 0'i32
+  n.name = if accessNameNext.len > 0: accessNameNext
+           elif name.len > 0: plainName(name)
+           elif role notin {arLabel, arGroup, arPane, arWindow, arMenuBar, arToolBar,
+                            arStatusBar, arSeparator} and not accessLabelUsed: accessLabelText
+           elif role notin {arLabel, arGroup, arPane, arWindow}: accessNameElse
+           else: ""
+  accessNameNext.setLen(0)
+  if role notin {arLabel, arGroup, arPane, arWindow}: accessNameElse.setLen(0)
+  if role != arLabel: accessLabelUsed = true
+  if n.id == 0:
+    # (a node of no widget -- a label, a group: named by what it is and
+    # where, which stays while the layout does)
+    var h = 0x811C9DC5'u32
+    template mixH(v: uint32) = h = (h xor v) * 0x01000193'u32
+    mixH(uint32(ord(role)))
+    for c in n.name: mixH(uint32(ord(c)))
+    mixH(uint32(r.x and 0xFFFF)); mixH(uint32(r.y and 0xFFFF))
+    n.id = h or 0x80000000'u32
+  let d = deviceRect(r)
+  n.x = d.x
+  n.y = d.y
+  n.w = d.w
+  n.h = d.h
+  if id != 0 and id == ui.focus and role notin {arGroup, arPane, arWindow}:
+    n.states.incl asFocused
+    accessFocusAt = accessTree.len
+  if asFocused in n.states or role in {arButton, arToggleButton, arCheckBox, arRadioButton,
+      arTextField, arTextArea, arPasswordField, arComboBox, arList, arSlider, arSpinButton,
+      arTab, arMenuItem, arLink}:
+    n.states.incl asFocusable
+  accessTree.add n
+  accessTree.high
+
+template accessOff*(enabled: bool): set[AccessState] =
+  ## A node's states: `{asDisabled}` when not `enabled`.
+  (if enabled: {} else: {asDisabled})
+
+proc accessRange*(i: int; lo, hi, now: float; step = 1.0) =
+  ## Node `i`'s range and value (a slider, a spin box, a progress bar).
+  if i < 0 or i >= accessTree.len: return
+  accessTree[i].lo = lo
+  accessTree[i].hi = hi
+  accessTree[i].now = now
+  accessTree[i].step = step
+
+proc accessText*(i: int; caret, selA, selB: int) =
+  ## Node `i`'s caret and selection (in characters).
+  if i < 0 or i >= accessTree.len: return
+  accessTree[i].caret = caret
+  accessTree[i].selA = selA
+  accessTree[i].selB = selB
+
+proc accessItem*(i: int; pos, count: int; level = 0) =
+  ## Node `i` is item `pos` (1-based) of `count` (`level`: a tree item's depth).
+  if i < 0 or i >= accessTree.len: return
+  accessTree[i].pos = pos
+  accessTree[i].count = count
+  accessTree[i].level = level
+
+proc accessBegin*(role: AccessRole; name = ""; r: Rect = ui.lastRect; id: Id = 0;
+                  states: set[AccessState] = {}; takesLabel = false): int {.discardable.} =
+  ## Opens a container node (a group, a menu, a dialog, a list...): the
+  ## nodes added until `accessEnd` go inside it. `takesLabel`: named by the
+  ## label before it, as a control is (a list after "Files:"). Its index.
+  if not accessOn: return -1
+  let saved = accessLabelUsed
+  # (a group, a tool bar that takes the label: named by it as a control is)
+  let nm = if name.len == 0 and takesLabel and not accessLabelUsed and accessNameNext.len == 0:
+             accessLabelText
+           else: name
+  result = accessNode(role, nm, "", states, id, r)
+  if takesLabel: accessLabelUsed = true
+  else: accessLabelUsed = saved
+  accessOpen.add int32(result)
+
+proc accessFocus*(i: int) =
+  ## Node `i` is the one with the keyboard focus (an item of a focused list).
+  if not accessOn or i < 0 or i >= accessTree.len: return
+  if accessFocusAt >= 0 and accessFocusAt < accessTree.len:
+    accessTree[accessFocusAt].states.excl asFocused
+  accessTree[i].states.incl {asFocused, asFocusable}
+  accessFocusAt = i
+
+proc accessSubId*(id: Id; i: int): Id =
+  ## The id of part `i` of widget `id` (an item of a list, a tab, a row):
+  ## the same from frame to frame.
+  Id((uint32(id) xor (uint32(i + 1) * 0x9E3779B1'u32)) or 1'u32)
+
+proc accessEnd*() =
+  ## Closes the container `accessBegin` opened.
+  if accessOn and accessOpen.len > 0: accessOpen.setLen(accessOpen.len - 1)
+
+proc accessEnd*(r: Rect) =
+  ## Closes the container `accessBegin` opened, now that its place `r` is
+  ## known (a group's height is when its last control is drawn).
+  if not accessOn or accessOpen.len == 0: return
+  let i = accessOpen[^1]
+  if i >= 0 and i < accessTree.len:
+    let d = deviceRect(r)
+    accessTree[i].x = d.x
+    accessTree[i].y = d.y
+    accessTree[i].w = d.w
+    accessTree[i].h = d.h
+  accessOpen.setLen(accessOpen.len - 1)
+
+proc accessValueFor*(id: Id): bool =
+  ## A screen reader asked widget `id` to take a value (`accessSet`): true
+  ## once, for the widget to take it.
+  if accessSet.on and accessSet.id == id:
+    accessSet.on = false
+    return true
+
+proc accessFrameStart() =
+  ## (beginFrame: the screen reader's requests done, a new tree begun)
+  if not accessStarted and ui.running:
+    accessStarted = true
+    discard accessStart()
+  accessOn = accessListening or accessForced
+  if not accessOn: return
+  # (one press and one value a frame: the rest wait for the next)
+  var later: seq[AccessRequest]
+  for q in accessRequests:
+    let id = Id(q.id)
+    case q.action
+    of aaPress, aaExpand, aaCollapse:
+      if accessPress != 0:
+        later.add q
+        continue
+      accessPress = id
+      ui.redraw = true
+    of aaFocus:
+      ui.focus = id
+      ui.redraw = true
+    of aaSetValue:
+      if accessSet.on:
+        later.add q
+        continue
+      accessSet = (id, q.text, q.num, true)
+      ui.redraw = true
+    of aaIncrement, aaDecrement:
+      ui.focus = id
+      ui.key = if q.action == aaIncrement: KeyUp else: KeyDown
+      ui.keyUsed = false
+    of aaShowMenu:
+      ui.focus = id
+      ui.menuKey = true
+      ui.rpressed = true
+      ui.redraw = true
+    of aaScrollIntoView, aaSetCaret: discard
+  accessRequests = later
+  if later.len > 0: ui.redraw = true
+  accessPressed = 0
+  accessTree.setLen(0)
+  accessOpen.setLen(0)
+  accessFocusAt = -1
+  accessLabelUsed = true
+  accessNameNext.setLen(0)
+  accessNameElse.setLen(0)
+  var root = AccessNode(id: 1, parent: -1, role: arWindow, name: ui.title)
+  root.w = ui.w * zoom
+  root.h = ui.h * zoom
+  accessTree.add root
+
+proc accessFrameEnd() =
+  ## (endFrame: the tree to the screen reader when it changed)
+  if not accessOn: return
+  accessOpen.setLen(0)
+  var h = 0xcbf29ce484222325'u64
+  template mix(v: uint64) = h = (h xor v) * 0x100000001B3'u64
+  for n in accessTree:
+    mix(n.id.uint64); mix(n.parent.uint64); mix(ord(n.role).uint64)
+    mix(cast[uint16](n.states).uint64)
+    mix(n.x.uint64); mix(n.y.uint64); mix(n.w.uint64); mix(n.h.uint64)
+    mix(cast[uint64](n.now)); mix(n.caret.uint64); mix(n.selA.uint64); mix(n.selB.uint64)
+    for c in n.name: mix(ord(c).uint64)
+    for c in n.value: mix(ord(c).uint64)
+  if h != accessSentHash or accessFocusAt != accessSentFocus:
+    accessSentHash = h
+    accessSentFocus = accessFocusAt
+    accessUpdate(accessTree, accessFocusAt)
+
 proc interact*(id: Id; r: Rect; focusable = true; enabled = true): Hit =
   ## Mouse and focus handling shared by every clickable widget.
   ui.lastId = id
   ui.lastRect = r
   if not enabled:
     if ui.active == id: ui.active = 0
+    return
+  if accessPress != 0 and accessPress == id:
+    # (a screen reader pressed it)
+    accessPress = 0
+    accessPressed = id
+    if focusable: ui.focus = id
+    result.focused = focusable
+    result.clicked = true
     return
   if focusable and canInput():
     ui.tabOrder.add id
@@ -1503,6 +1780,7 @@ proc rowHeight*(): int =
 proc beginGroup*(title: string) =
   ## Starts a group box (see `group`).
   let cell = beginCell(0, fill = true)
+  if accessOn: accessBegin(arGroup, title, rect(cell.x, cell.y, cell.w, FontH))
   let minH = rowHeight()
   ui.frames.add LFrame(kind: lkGroup, x: cell.x + 10, y: cell.y, dy: top().dy,
                        w: max(10, cell.w - 20), cx: cell.x + 10,
@@ -1929,6 +2207,13 @@ proc pump(waitMs: int) =
         for c in e.text:
           if c == '\0': break
           ui.typed.add c
+      if ui.composing.len > 0:
+        ui.composing.setLen(0)          # (settled: it came as text)
+        ui.redraw = true
+    of TextEditingEvent:
+      ui.composing = e.composing
+      ui.composeCaret = clamp(e.x, 0, ui.composing.len)
+      ui.redraw = true
     of WindowResizeEvent, WindowMetricsEvent:
       var l = getWindowLayout()
       l.width = e.x
@@ -2352,6 +2637,9 @@ proc startApp*(title: string; w, h: int; theme = ui.theme; zoom = 0) =
   else: discard
   themeFromEnv()
   ui.title = title
+  when declared(atspiToolkit):
+    atspiToolkit = "Retro Nim UI"
+    atspiAppName = title
   ui.ownCaption = androidApp or defined(ios) or captionEnv or ui.ownFrame
   applyLayout(l)
   ui.running = true
@@ -2505,6 +2793,7 @@ proc beginFrame*(): bool =
     ui.force = true
   statT0 = getMonoTime()
   ui.now = getTicks()
+  accessFrameStart()
   mirrorW = if ui.rtl: ui.w else: 0
   # The menu key, or Shift+F10: a right click on the focused widget, so its
   # context menu opens there (lists put it on their current row)
@@ -2905,6 +3194,7 @@ proc endFrame*() =
     ui.redraw = true
   if ui.closeAsked and not ui.closeCancelled: ui.running = false
   ui.closeAsked = false
+  accessFrameEnd()
   # Present -- unless another frame is due right away anyway.
   if ui.redraw and ui.redrawCount < 3:
     inc ui.redrawCount

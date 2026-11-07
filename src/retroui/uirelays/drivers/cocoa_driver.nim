@@ -25,7 +25,7 @@ typedef struct {
 } NEEvent;
 """.}
 
-import ../coords, ../input, ../screen, ../services
+import ../coords, ../input, ../screen, ../services, ../access
 import penaxes
 
 proc prepareSiwinSurface*(width, height: cint; scale: cdouble): cint
@@ -70,6 +70,7 @@ const
   neWindowFocusLost = 11.cint
   neQuit = 12.cint
   neFileDrop = 13.cint
+  neTextEdit = 14.cint
 
   neModShift = 1.cint
   neModCtrl = 2.cint
@@ -283,6 +284,8 @@ proc modsOf(m: cint): set[Modifier] =
   if (m and neModAlt) != 0: result.incl AltPressed
   if (m and neModCtrl) != 0: result.incl GuiPressed
 
+proc cMarkedText(caret: ptr cint): cstring {.importc: "cocoa_markedText", cdecl.}
+
 proc translateNEEvent(ne: NEEvent; e: var input.Event) =
   e = input.Event(kind: NoEvent, hasMods: true)
   e.mods = modsOf(ne.mods)
@@ -347,6 +350,12 @@ proc translateNEEvent(ne: NEEvent; e: var input.Event) =
     e.kind = MouseWheelEvent
     e.x = ne.x
     e.y = ne.y
+  of neTextEdit:
+    var caret: cint
+    let t = cMarkedText(addr caret)
+    e.kind = TextEditingEvent
+    e.composing = if t != nil: $t else: ""
+    e.x = clamp(int(caret), 0, e.composing.len)
   of neFileDrop:
     # (files from the Finder: their paths, read once)
     e.kind = FileDropEvent
@@ -411,7 +420,46 @@ proc cocoaDragFilesOut(paths: seq[string]; move, backInside: bool): DragOutResul
 
 # --- Init ---
 
+# ---- screen readers (VoiceOver) ----
+
+type
+  NEAccessNode {.bycopy.} = object
+    ## (cocoa_backend.m's, field for field)
+    nodeId: uint32
+    parent, role: cint
+    states: uint32
+    x, y, w, h: cint
+    lo, hi, now, step: float64
+    caret, selA, selB, pos, count, level: cint
+    name, value, help, key: cstring
+
+proc cAccessUpdate(nodes: ptr NEAccessNode; n, focus: cint) {.importc: "cocoa_accessUpdate", cdecl.}
+
+proc cocoaAccessUpdate(nodes: openArray[AccessNode]; focus: int) =
+  var arr = newSeq[NEAccessNode](nodes.len)
+  for i, n in nodes:
+    arr[i] = NEAccessNode(nodeId: n.id, parent: n.parent.cint, role: ord(n.role).cint,
+                          states: uint32(cast[uint16](n.states)),
+                          x: n.x.cint, y: n.y.cint, w: n.w.cint, h: n.h.cint,
+                          lo: n.lo, hi: n.hi, now: n.now, step: n.step,
+                          caret: n.caret.cint, selA: n.selA.cint, selB: n.selB.cint,
+                          pos: n.pos.cint, count: n.count.cint, level: n.level.cint,
+                          name: cstring(n.name), value: cstring(n.value),
+                          help: cstring(n.help), key: cstring(n.key))
+  cAccessUpdate(if arr.len > 0: addr arr[0] else: nil, arr.len.cint, focus.cint)
+
+proc cocoa_accessRequest(action: cint; nodeId: uint32; text: cstring; num: float64) {.exportc, cdecl.} =
+  ## (called by cocoa_backend.m: what VoiceOver asked)
+  if action < 0 or action > ord(high(AccessAction)): return
+  accessRequests.add AccessRequest(action: AccessAction(action), id: nodeId,
+                                   text: if text != nil: $text else: "", num: num)
+
+proc cocoa_accessListen() {.exportc, cdecl.} =
+  ## (called by cocoa_backend.m: someone reads the window)
+  accessListening = true
+
 proc initCocoaDriver*() =
+  accessRelays = AccessRelays(start: proc (): bool = true, update: cocoaAccessUpdate)
   windowRelays = WindowRelays(
     createWindow: cocoaCreateWindow, getWindowLayout: cocoaGetWindowLayout,
     refresh: cocoaRefresh,

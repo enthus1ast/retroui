@@ -966,5 +966,7 @@ proc mapView*(m: var MapState; height = -1;
   popClip()
   box(r, th.edge)
   if hit.focused: focusDots(inset(r, 2))
+  if accessOn:
+    accessNode(arImage, "Map", id = id, r = r)
   ui.lastId = id
   ui.lastRect = r

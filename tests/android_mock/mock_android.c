@@ -29,6 +29,7 @@
 static int realErr = 2;
 static volatile int sawClick, sawText, sawPause, finished, kbShown, kbHidden;
 static volatile int sawArabic, clicks2, lastHandled = -1;
+static volatile int sawCompose, sawKey;
 static volatile int lastClicks;
 
 /* ---- log -------------------------------------------------------------- */
@@ -40,6 +41,8 @@ int __android_log_write(int prio, const char *tag, const char *text) {
   if (strstr(text, "typed hi")) sawText = 1;
   if (strstr(text, "paused")) sawPause = 1;
   if (strstr(text, "arabic ok")) sawArabic = 1;
+  if (strstr(text, "composing ok")) sawCompose = 1;
+  if (strstr(text, "key ok")) sawKey = 1;
   if (strstr(text, "clicked 2")) clicks2 = 1;
   return 1;
 }
@@ -235,12 +238,12 @@ void ANativeActivity_hideSoftInput(ANativeActivity *a, uint32_t f) { (void)a; (v
 static void *nothing(void) { return NULL; }
 static int dummyClass;
 static void *objectClass(void) { return &dummyClass; }
-static JNINativeMethod natives[4];
+static JNINativeMethod natives[16];
 static int nativeCount;
+/* (the glue registers its natives in groups: each group added) */
 static jint registerNatives(JNIEnv *env, jclass c, const JNINativeMethod *m, jint n) {
   (void)env; (void)c;
-  for (int i = 0; i < n && i < 4; i++) natives[i] = m[i];
-  nativeCount = n;
+  for (int i = 0; i < n && nativeCount < 16; i++) natives[nativeCount++] = m[i];
   return 0;
 }
 /* a Java string here is { length, UTF-16 units } */
@@ -381,6 +384,8 @@ int main(void) {
   check(sawText, "Backspace on the keyboard edits the field");
   check(nativeNamed("nativeText") && nativeNamed("nativeInsets"),
         "the Java activity's native methods are registered");
+  check(nativeNamed("nativeAccess") && nativeNamed("nativeCompose") && nativeNamed("nativeKey"),
+        "the screen reader's and the keyboard's natives are registered");
   {                                             /* Gboard sends Arabic as text */
     static const jchar salam[] = { 0x0633, 0x0644, 0x0627, 0x0645 };
     struct FakeString fs = { 4, salam };
@@ -389,6 +394,22 @@ int main(void) {
     text((JNIEnv *)&envPtr, NULL, (jstring)&fs);
     ms(200);
     check(sawArabic, "text from the Java side reaches the focused field");
+  }
+  {                                             /* the keyboard composes (RetroInput) */
+    static const jchar ka[] = { 0x0643, 0x062A };
+    struct FakeString fs = { 2, ka };
+    void (*compose)(JNIEnv *, jclass, jstring, jint) =
+      (void (*)(JNIEnv *, jclass, jstring, jint))nativeNamed("nativeCompose");
+    compose((JNIEnv *)&envPtr, NULL, (jstring)&fs, 2);
+    ms(200);
+    check(sawCompose, "what the keyboard composes reaches the focused field");
+    compose((JNIEnv *)&envPtr, NULL, NULL, 0);
+    void (*keyOf)(JNIEnv *, jclass, jint, jboolean) =
+      (void (*)(JNIEnv *, jclass, jint, jboolean))nativeNamed("nativeKey");
+    keyOf((JNIEnv *)&envPtr, NULL, AKEYCODE_DEL, 1);
+    keyOf((JNIEnv *)&envPtr, NULL, AKEYCODE_DEL, 0);
+    ms(200);
+    check(sawKey, "the keyboard's Delete, sent as a key, edits the field");
   }
   /* a cancelled touch (a system gesture) does not click */
   send(q, (struct AInputEvent){ AINPUT_EVENT_TYPE_MOTION, AINPUT_SOURCE_TOUCHSCREEN,

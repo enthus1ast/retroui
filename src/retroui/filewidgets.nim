@@ -1106,6 +1106,10 @@ proc fileColumns*(m: FolderModel; root = ""; height = -1; key = ""; preview = tr
         text(hr.x + hr.w - sortW - cw - dp(6), hr.y + (hr.h - FontH) div 2, cnt, th.gray)
         let sr = rect(hr.x + hr.w - sortW - dp(2), hr.y + dp(2), sortW, hr.h - dp(4))
         let sh = interact(idOf(k & ":sort:" & dir), sr, focusable = false)
+        if accessOn:
+          accessBegin(arList, nm, rect(hr.x, hr.y, hr.w, h), idOf(k & ":col:" & dir))
+          accessNode(arButton, "Sort", id = idOf(k & ":sort:" & dir), r = sr,
+                     help = ["name", "size", "type", "date"][(ord(mm.sortBy) + 1) mod 4])
         if sh.hover: fill(sr, hoverColor())
         text(sr.x + (sr.w - textWidth("↕")) div 2, sr.y + (sr.h - FontH) div 2, "↕", th.text)
         if sh.hover: ui.tip = "Sort by " & ["name", "size", "type", "date"][(ord(mm.sortBy) + 1) mod 4]
@@ -1141,6 +1145,13 @@ proc fileColumns*(m: FolderModel; root = ""; height = -1; key = ""; preview = tr
           let rid = idOf(k & ":row:" & it.path)
           let hit = interact(rid, r, focusable = false)
           let picked = if ci == curCol: i == m.sel and curPicked else: it.name == wantName
+          if accessOn:
+            let n = accessNode(arListItem, it.name, id = rid, r = r,
+                               states = (if picked: {asSelected} else: {}) +
+                                        (if it.isDir: {asExpandable} else: {}),
+                               help = (if it.isDir: "folder" else: ""))
+            accessItem(n, i + 1, mm.items.len)
+            if picked and ci == curCol and hasKeys: accessFocus(n)
           if picked:
             fill(r, if ci == curCol: th.select else: th.shadow)
           elif hit.hover: fill(r, hoverColor())
@@ -1183,6 +1194,7 @@ proc fileColumns*(m: FolderModel; root = ""; height = -1; key = ""; preview = tr
             result.selChanged = true
         if lastVis < mm.items.high: discard place(available(), (mm.items.high - lastVis) * pitch - Gap)
         endScroll()
+        if accessOn: accessEnd()
         label(countsText(mm.items), color = th.gray)
   discard popFrame()
   endClipped()
@@ -1729,11 +1741,15 @@ proc driveBar*(current: string; favorites: openArray[string] = [];
   scrollTick(id, off, maxOff)
   pushClip(strip)
   var x = r.x + dp(2) - off
+  if accessOn: accessBegin(arToolBar, "Places", r)
   for i, it in items:
     let br = rect(x, r.y + dp(2), widths[i], r.h - dp(5))
     x += widths[i] + dp(2)
     if br.x + br.w < strip.x or br.x > strip.x + strip.w: continue
     let hit = interact(id + uint32(i + 1), br, focusable = false)
+    if accessOn:
+      accessNode(arButton, it.label, id = id + uint32(i + 1), r = br,
+                 states = (if i == best: {asSelected} else: {}), help = it.id)
     if hit.showsHover: fill(br, hoverColor())
     if hit.down: sunken(br)
     if i == best: box(br, th.frame)                 # the current one, framed
@@ -1747,6 +1763,7 @@ proc driveBar*(current: string; favorites: openArray[string] = [];
       of dsOver: dropHighlight(br)
       of dsDropped: result.drop = takeDrop(it.id)
       else: discard
+  if accessOn: accessEnd()
   popClip()
   st.scrollX = off
   state(id) = st
@@ -1965,9 +1982,11 @@ proc pathBar*(path: string; key = ""; editNow = false; w = 0): PathBarEvent =
       fill(br, th.face)
       if h.down or open: sunken(br) else: raised(br, 1)
   # the folders that do not fit: "<<" drops them down (as Windows does)
+  if accessOn: accessBegin(arToolBar, "", r, takesLabel = true)
   if first > 0:
     let br = rect(x, r.y + 2, textWidth("<<") + 2 * pad, r.h - 4)
     let h = interact(id + 99, br, focusable = false)
+    if accessOn: accessNode(arButton, "Folders above", id = id + 99, r = br, states = {asExpandable})
     let open = popupMenuOpen(menuKey) and st.menuFor == -1
     face(h, br, open)
     text(br.x + pad, ty, "<<", th.fieldText, true)
@@ -1982,6 +2001,9 @@ proc pathBar*(path: string; key = ""; editNow = false; w = 0): PathBarEvent =
     let br = rect(x, r.y + 2, widths[i], r.h - 4)
     let h = interact(id + uint32(i + 1), br, focusable = false)
     let lastOne = i == parts.high
+    if accessOn:
+      accessNode(arButton, parts[i].name, id = id + uint32(i + 1), r = br,
+                 states = (if lastOne: {asSelected} else: {}), help = parts[i].path)
     face(h, br)
     if dragging("files"):
       var ok = true
@@ -2002,6 +2024,9 @@ proc pathBar*(path: string; key = ""; editNow = false; w = 0): PathBarEvent =
     let ar = rect(x, r.y + 2, sepW, r.h - 4)
     let ah = interact(id + uint32(1000 + i), ar, focusable = false)
     let open = popupMenuOpen(menuKey) and st.menuFor == i
+    if accessOn:
+      accessNode(arButton, "Folders in " & parts[i].name, id = id + uint32(1000 + i), r = ar,
+                 states = {asExpandable} + (if open: {asExpanded} else: {}))
     face(ah, ar, open)
     text(ar.x + (ar.w - textWidth(sep)) div 2, ty,
          if open: nfChevronDown else: sep, if ah.showsHover or open: th.text else: th.gray)
@@ -2013,6 +2038,10 @@ proc pathBar*(path: string; key = ""; editNow = false; w = 0): PathBarEvent =
   popClip()
   # a click on the empty part: type a path (after the parts took theirs)
   let hit = interact(id, r, focusable = false)
+  if accessOn:
+    accessNode(arButton, "Type a path", id = id, r = rect(x, r.y, max(0, r.x + r.w - x), r.h))
+    accessEnd()
+  if accessPressed == id: ui.mx = r.x + r.w - 1      # (pressed by a screen reader: the empty part)
   if hit.clicked and ui.mx > x:
     st.editing = true
     st.takeFocus = true
@@ -2394,6 +2423,9 @@ proc placeTile(name, path, glyph: string; tint: Color): bool =
     text(x, r.y + dp(14) + FontH + dp(8), ellipsize(sizeText(sp.free) & " free of " &
          sizeText(sp.total), w), th.gray)
   if dropTarget(r, "files") == dsOver: dropHighlight(r)
+  if accessOn:
+    accessNode(arButton, name, id = id, r = r,
+               help = (if sp.total > 0: sizeText(sp.free) & " free of " & sizeText(sp.total) else: path))
   ui.lastRect = r
   hit.clicked or (hit.focused and keyHit(KeyEnter))
 

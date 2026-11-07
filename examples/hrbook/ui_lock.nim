@@ -14,6 +14,8 @@ proc desktopFill() =
 
 proc pinDots(n: int) =
   let r = canvas(0, dp(34))
+  # (a screen reader hears how many digits are in, not which)
+  accessNode(arLabel, $n & " digits typed", id = 0, r = r)
   let shown = max(4, n)
   for i in 0 ..< shown:
     let cx = float(r.x + r.w div 2 + (i * 2 - shown + 1) * dp(14))

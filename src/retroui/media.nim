@@ -665,6 +665,8 @@ proc videoView*(path: string; height = -1; w = 0; autoplay = false; controls = t
   result.positionMs = v.pos
   result.durationMs = v.dur
   result.error = v.error
+  if accessOn:
+    accessNode(arImage, path.extractFilename, id = id, r = r, help = (if audio: "sound" else: "video"))
   ui.lastId = id
   ui.lastRect = r
 

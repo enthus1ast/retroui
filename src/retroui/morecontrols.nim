@@ -71,6 +71,10 @@ proc rangeSlider*(lo, hi: var int; minV, maxV: int; w = 0; ticks = 10;
       if d != 0:
         ui.keyUsed = true
         if right: nhi = max(lo, hi + d) else: nlo = min(hi, lo + d)
+  if accessOn and enabled:
+    # (a screen reader set one end)
+    if accessValueFor(accessSubId(id, 0)): nlo = min(int(round(accessSet.num)), hi)
+    if accessValueFor(accessSubId(id, 1)): nhi = max(int(round(accessSet.num)), lo)
   nlo = clamp(nlo, minV, maxV)
   nhi = clamp(nhi, nlo, maxV)
   if nlo != lo or nhi != hi:
@@ -93,6 +97,15 @@ proc rangeSlider*(lo, hi: var int; minV, maxV: int; w = 0; ticks = 10;
     for i in 0 .. ticks:
       vline(chan.x + i * travel div ticks, r.y + tht + dp(2), dp(3), if enabled: th.text else: th.gray)
   if hit.focused: focusDots(rect(r.x, r.y - 1, r.w, r.h + 2))
+  if accessOn:
+    # (its two ends, as two sliders in a group)
+    accessBegin(arGroup, "", r, id, accessOff(enabled), takesLabel = true)
+    for (v, k, n) in [(lo, 0, "From"), (hi, 1, "To")]:
+      let i = accessNode(arSlider, n, $v, accessOff(enabled), accessSubId(id, k),
+                         rect(xOf(v) - tw div 2, r.y, tw, tht))
+      accessRange(i, float(minV), float(maxV), float(v))
+      if k == 0 and hit.focused: accessFocus(i)
+    accessEnd()
 
 # ---- buttons that open a menu ------------------------------------------------------------------------
 
@@ -109,6 +122,9 @@ proc menuButton*(label: string; items: openArray[string]; w = 0; enabled = true)
   let o = if hit.down or open: 1 else: 0
   drawLabel(r.x + dp(8) + o, r.y + (r.h - FontH) div 2 + o, label, if enabled: th.text else: th.gray)
   arrow(r.x + r.w - dp(11) + o, r.y + r.h div 2 + o, dDown, if enabled: th.text else: th.gray)
+  if accessOn:
+    accessNode(arButton, label, id = idOf(key), r = r,
+               states = accessOff(enabled) + {asExpandable} + (if open: {asExpanded} else: {}))
   if hit.clicked or (enabled and mnemonicHit(label)) or (hit.focused and keyHit(KeyDown)):
     openPopupMenu(key, r.x, r.y + r.h)
   popupMenu(key):
@@ -138,6 +154,10 @@ proc splitButton*(label: string; items: openArray[string]; w = 0; enabled = true
   let o2 = if dh.down or open: 1 else: 0
   arrow(drop.x + drop.w div 2 + o2, drop.y + drop.h div 2 + o2, dDown, if enabled: th.text else: th.gray)
   if mh.focused: focusDots(inset(main, 3))
+  if accessOn:
+    accessNode(arButton, label, id = idOf(key & ":main"), r = main, states = accessOff(enabled))
+    accessNode(arButton, plainName(label) & ": more", id = idOf(key & ":drop"), r = drop,
+               states = accessOff(enabled) + {asExpandable} + (if open: {asExpanded} else: {}))
   result.clicked = mh.clicked or (enabled and mnemonicHit(label))
   if dh.clicked or (mh.focused and keyHit(KeyDown) and AltPressed in ui.mods):
     openPopupMenu(key, r.x, r.y + r.h)
@@ -183,6 +203,9 @@ proc tagInput*(tags: var seq[string]; text: var string; w = 0; enabled = true;
     text(cr.x + dp(6), cr.y + (cr.h - lineHeight(st)) div 2, tags[i], th.text, st)
     let xr = rect(cr.x + cr.w - dp(14), cr.y + (cr.h - dp(10)) div 2, dp(10), dp(10))
     let xh = interact(idOf("tagx:" & tags[i] & $i), xr, focusable = false, enabled = enabled)
+    if accessOn:
+      accessNode(arButton, tags[i], id = idOf("tagx:" & tags[i] & $i), r = cr,
+                 states = accessOff(enabled), help = "Remove")
     let c = if xh.hover: th.select else: th.gray
     line(xr.x + 1, xr.y + 1, xr.x + xr.w - 2, xr.y + xr.h - 2, c)
     line(xr.x + 1, xr.y + xr.h - 2, xr.x + xr.w - 2, xr.y + 1, c)
@@ -198,6 +221,7 @@ proc tagInput*(tags: var seq[string]; text: var string; w = 0; enabled = true;
     ui.keyUsed = true
     tags.setLen(tags.len - 1)
     result = true
+  if accessOn: accessNameOr(tr(placeholder))
   discard editAt(id, text, er, false, false, enabled, frameless = true)
   if text.len == 0 and not focused:
     text(er.x + dp(3), er.y + (er.h - FontH) div 2, placeholder, th.gray)
@@ -294,6 +318,7 @@ proc knob*(v: var int; lo, hi: int; size = 0; label = ""; enabled = true): bool 
   let hit = interact(id, r, enabled = enabled)
   var st = state(id)
   var nv = v
+  if accessOn and enabled and accessValueFor(id): nv = int(round(accessSet.num))
   let span = max(1, hi - lo)
   if enabled:
     if hit.down and ui.pressed:
@@ -339,6 +364,9 @@ proc knob*(v: var int; lo, hi: int; size = 0; label = ""; enabled = true): bool 
   let txt = if label.len > 0: label & " " & $v else: $v
   text(r.x + (r.w - textWidth(txt)) div 2, r.y + d + dp(1), txt, if enabled: th.text else: th.gray)
   if hit.focused: focusDots(r)
+  if accessOn:
+    let k = accessNode(arSlider, label, $v, accessOff(enabled), id, r)
+    accessRange(k, float(lo), float(hi), float(v))
 
 # ---- status lights ---------------------------------------------------------------------------------
 
@@ -376,6 +404,9 @@ proc accordionHeader*(title: string; index: int; open: var int): bool =
   arrow(r.x + dp(10), r.y + r.h div 2, if isOpen: dDown else: dRight, th.text)
   drawLabel(r.x + dp(20), r.y + (r.h - FontH) div 2, title, th.text, bold = isOpen)
   if hit.focused: focusDots(inset(r, 3))
+  if accessOn:
+    accessNode(arButton, title, id = idOf("accordion:" & title & $index), r = r,
+               states = {asExpandable} + (if isOpen: {asExpanded} else: {}))
   isOpen
 
 # ---- a timeline ----------------------------------------------------------------------------------------
@@ -458,11 +489,15 @@ proc snackbar*(): bool =
   fill(r, color(48, 48, 48))
   box(r, th.frame)
   text(r.x + pad, r.y + pad, ellipsize(snack.msg, r.w - aw - 2 * pad), color(255, 255, 255))
+  if accessOn: accessBegin(arAlert, snack.msg, r, idOf("snackbar-msg" & $snack.id))
+  defer:
+    if accessOn: accessEnd()
   if snack.action.len > 0:
     let ar = rect(r.x + r.w - aw, r.y, aw, r.h)
     let hit = interact(idOf("snackbar" & $snack.id), ar, focusable = false)
     if hit.hover: fill(inset(ar, 2), color(80, 80, 80))
     text(ar.x + pad, r.y + pad, snack.action, color(120, 190, 255), true)
+    if accessOn: accessNode(arButton, snack.action, id = idOf("snackbar" & $snack.id), r = ar)
     let key = canInput() and not ui.keyUsed and ui.key == KeyZ and CtrlPressed in ui.mods
     if hit.clicked or key:
       if key: ui.keyUsed = true

@@ -1,5 +1,74 @@
 # Changes
 
+## 0.26.0
+
+- **Screen readers, on every platform.** Orca on Linux and BSD (AT-SPI,
+  spoken to over D-Bus by the kit itself: no library to link or install),
+  NVDA, JAWS and Narrator on Windows (UI Automation), VoiceOver on macOS and
+  iOS, TalkBack on Android read every control: what it is, its name (a
+  label names the box after it: `label "&Name:"; edit name`), its value and
+  state, where it is in its list, and the keyboard focus as it moves. They
+  also do what their user asks: press a button, a menu, an item; check a
+  box; put text in a box; move a slider or a spin box; move the focus.
+  The grid is read as a table (its headers, the rows in view, their
+  cells), the property grid as names and values, the tree and the tree grid
+  with each item's depth and whether it is open, charts by their title,
+  kind and series and the point the keys are on; the check list, the
+  calendar's days, the icon view, the column view, document, palette and
+  docked panels' tabs, switches, segmented buttons, chips, ratings, range
+  sliders, knobs, menu and split buttons, the board's lanes and cards, the
+  Gantt chart, the agenda, the org chart, KPI tiles, the drive and path
+  bars, windows in the window, the About box; Markdown, HTML and the rich
+  editor as their text; maps, 3D, PDF, reports, video and photo views as
+  pictures. The tree is made only while a screen reader listens: without
+  one nothing of it runs. For what an app draws itself: `accessNode`
+  (`arImage`, `arLabel`, `arButton`...), `accessBegin` / `accessEnd`,
+  `accessRange`, `accessItem`, `accessName` (an icon-only button);
+  `accessible()`; `RETRO_ACCESS=1` makes the tree to try it.
+  `uirelays/access` (generic), `uirelays/dbus`, `uirelays/atspi`, the WinAPI
+  driver's `winuia`, the Cocoa and UIKit drivers, `RetroAccess.java`.
+- **Input methods.** What a Chinese, Japanese or Korean input method (or a
+  phone keyboard's word) is composing is drawn in the text box at the
+  caret, underlined, and typed once it is settled: X11 (XIM, in place;
+  else at the caret), Windows (IMM, in place), macOS (marked text), GTK 4
+  (preedit), Android (an input connection of the kit's own,
+  `RetroInput.java`). `TextEditingEvent` (`composing`; its caret in `x`)
+  and `ui.composing`. SDL 2, SDL 3 and iOS show it in the input method's
+  own window still.
+- **Frames go straight to the screen.** X11 draws into memory it shares
+  with the X server (MIT-SHM: libXext loaded when it is there; in Termux
+  libandroid-shmem) and puts only the tiles that changed; Windows draws into
+  a DIB section and paints only the rectangles that changed; macOS asks to
+  draw only what changed. No copy of the frame is made: resizing a window at
+  1080p costs less than half of what it did. For drivers: `SurfaceRelays`
+  (`lockSurface`, `presentSurface`) in `uirelays/screen`; `RETRO_SURFACE=0`
+  draws the old way.
+- **A frame that changes nothing takes no memory.** No string, seq or
+  closure is made while the controls are drawn (the gallery: 130
+  allocations a frame before, none now; a grid page 277 before, 217 now;
+  Retro Files 268 before, 152 now). Hello takes 7.1 MB (9.7 before), 14.6 MB
+  at 1080p (17.5 before): half of what iced or Slint drawing on the CPU
+  take, a sixth of their GPU paths (`tools/compare`). The 255 pixel icons are unpacked one by one when
+  one is drawn (`setPixelIconSource`).
+- **Fractional scaling follows the monitor.** On X11 the window takes the
+  scale of the monitor it is on (RandR, every output), and again when it
+  is moved to another, as on Windows and macOS. At 125 %, 150 %, 175 %...
+  controls and text are the size the scale asks for; lines stay on whole
+  pixels.
+- **CPU, GPU or automatic**: automatic (the default) still draws with the
+  GPU when it is a real one and on the CPU when OpenGL is a software one (a
+  VM, a remote desktop, Termux:X11), now into the shared memory above.
+- `tools/compare/`: the same Hello in egui, iced and Slint, and
+  `compare.sh` measuring them and the kit the same way (memory, size,
+  threads, CPU idle, resizing, hovering).
+- Tests: `test_access` (the tree, the requests, every control),
+  `test_atspi` (Orca's side on a real X server and AT-SPI bus),
+  `test_uia` (Windows, under Wine), `test_scale`, `test_shm`; the Android
+  mock checks composing and the keys.
+- Retro Gallery, Retro Files and HR Book give their own drawings to screen
+  readers (the canvas, the colors, the web view, the lock screen); the
+  examples are 0.26.0.
+
 ## 0.25.0
 
 - **`retrokit run --watch`: see each change as you save, on any desktop.**

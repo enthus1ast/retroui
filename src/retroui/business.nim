@@ -24,7 +24,7 @@
 ##   discard grid(cols, rows, sel, height = 8)
 ## ```
 
-import std/[strutils, unicode, os, algorithm, math, times]
+import std/[strutils, unicode, os, algorithm, math, times, hashes]
 import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import core, widgets, pixelicons
 import uirelays/services
@@ -214,6 +214,15 @@ proc calendarAt(id: Id; r: Rect; d: var Date; keys, focused, enabled: bool;
     nd = first.addDays(i - offset)
     changed = true
     picked = true
+  if accessPress != 0 and enabled:
+    # (a screen reader picked a day of the month shown)
+    for dd in 1 .. daysInMonth(vy, vm):
+      if accessPress == accessSubId(id, dayNumber(date(vy, vm, dd))):
+        nd = date(vy, vm, dd)
+        changed = true
+        picked = true
+        accessPress = 0
+        break
   if changed and nd != d:
     d = nd
     result = true
@@ -253,6 +262,22 @@ proc calendarAt(id: Id; r: Rect; d: var Date; keys, focused, enabled: bool;
     elif dnum == tn:
       box(inset(cr, 1), th.edge)
     text(cr.x + (cr.w - textWidth(s)) div 2, cr.y + (cr.h - FontH) div 2, s, c)
+  if accessOn:
+    # (the month as a table of its days, the picked one selected)
+    accessBegin(arTable, title, r, id, (if enabled: {} else: {asDisabled}), takesLabel = true)
+    accessNode(arButton, "Previous month", id = id + 1, r = prev)
+    accessNode(arButton, "Next month", id = id + 2, r = next)
+    for i in 0 ..< 42:
+      let day = first.addDays(i - offset)
+      if day.month != vm: continue
+      let dnum = dayNumber(day)
+      let k = accessNode(arCell, $day.day & " " & monthNames[vm - 1] & " " & $vy,
+                         id = accessSubId(id, dnum),
+                         r = rect(grid.x + (i mod 7) * cw, grid.y + (i div 7) * ch, cw, ch),
+                         states = (if dnum == sn: {asSelected} else: {}),
+                         help = (if dnum == tn: "today" else: ""))
+      if dnum == sn and focused: accessFocus(k)
+    accessEnd()
 
 proc calendar*(d: var Date; enabled = true): bool {.discardable.} =
   ## A month calendar bound to `d`: click or tap a day; the arrows move a
@@ -496,16 +521,18 @@ var
 
 proc alignedText(r: Rect; s: string; a: Align; c: Color; bold = false) =
   # text wider than its cell ends in "...", as in the lists of Windows
-  var s = s
-  var tw = textWidth(s, bold)
+  # (the text itself drawn when it fits: no copy of it every frame)
+  template at(tw: int): int =
+    (case a
+     of alLeft: r.x + 4
+     of alCenter: r.x + (r.w - tw) div 2
+     of alRight: r.x + r.w - 5 - tw)
+  let tw = textWidth(s, bold)
   if tw > r.w - 9 and r.w > 16:
-    s = ellipsize(s, r.w - 9, TextStyle(bold: bold))
-    tw = textWidth(s, bold)
-  let x = case a
-    of alLeft: r.x + 4
-    of alCenter: r.x + (r.w - tw) div 2
-    of alRight: r.x + r.w - 5 - tw
-  text(x, r.y + (r.h - FontH) div 2, s, c, bold)
+    let cut = ellipsize(s, r.w - 9, TextStyle(bold: bold))
+    text(at(textWidth(cut, bold)), r.y + (r.h - FontH) div 2, cut, c, bold)
+  else:
+    text(at(tw), r.y + (r.h - FontH) div 2, s, c, bold)
 
 var pendingEdit: tuple[on: bool; row, col, selectTo: int]
 
@@ -571,6 +598,10 @@ proc listSelect(marked: ptr seq[bool]; sel: var int; ex: var WState; row: int;
     ex.caret = row
   sel = row
   true
+
+proc gridCellId(id: Id; row, col: int): Id {.inline.} =
+  ## (the id of a cell of the grid `id`, for screen readers)
+  accessSubId(id, 0x40000000 + ((row * 256 + col) and 0x3FFFFFFF))
 
 proc gridImpl(colsIn: var seq[Column]; rows: int; cell: proc (row, col: int): string;
               sel: var int; marked: ptr seq[bool]; height, w, sortColumn: int;
@@ -969,6 +1000,24 @@ proc gridImpl(colsIn: var seq[Column]; rows: int; cell: proc (row, col: int): st
             markRange(marked[], i, i, false)
             ex.caret = i
             result.selChanged = true
+  if accessPress != 0 and enabled:
+    # (a screen reader picked a row, or a cell of it)
+    for ri in top ..< min(rows, top + vis + 2):
+      var at = -1
+      if accessPress == accessSubId(id, ri): at = curCol
+      else:
+        for ci in 0 ..< cols.len:
+          if accessPress == gridCellId(id, ri, ci): at = ci
+      if at >= 0:
+        accessPress = 0
+        nsel = ri
+        curCol = at
+        ui.focus = id
+        if marked != nil:
+          markRange(marked[], ri, ri, false)
+          ex.caret = ri
+          result.selChanged = true
+        break
   if nsel != sel and nsel >= 0 and nsel < rows:
     sel = nsel
     result.selChanged = true
@@ -1166,6 +1215,50 @@ proc gridImpl(colsIn: var seq[Column]; rows: int; cell: proc (row, col: int): st
       vline(fx + cols[ci].width - 1, fy + 1, rowH, th.shadow)
       fx += cols[ci].width
   popClip()
+  if accessOn:
+    # (a table: its headers, the rows in view and their cells; the current
+    # cell has the focus)
+    accessBegin(arTable, "", fr, id, (if enabled: {} else: {asDisabled}), takesLabel = true)
+    var hx = x0
+    for i in 0 ..< cols.len:
+      accessNode(arColumnHeader, tr(cols[i].title), id = accessSubId(id, 0x3F000000 + i),
+                 r = rect(hx, area.y, cols[i].width, hdrH))
+      hx += cols[i].width
+    for ri in top ..< min(rows, top + vis + 2):
+      let y = rowY(ri)
+      let selected = if marked != nil: marked[][ri] else: ri == sel
+      let k = accessBegin(arRow, "", rect(area.x, y, rowW, rowH), accessSubId(id, ri),
+                          (if selected: {asSelected} else: {}))
+      accessItem(k, ri + 1, rows)
+      var cx = x0
+      for ci in 0 ..< cols.len:
+        let v = cell(ri, ci)
+        var name = v
+        var st2: set[AccessState] = {}
+        case cols[ci].kind
+        of ckCheck:
+          name = tr(cols[ci].title)
+          if isChecked(v): st2.incl asChecked
+        of ckColor, ckIcon, ckButton, ckLink, ckCustom: discard
+        of ckProgress:
+          var f = 0.0
+          let t = v.strip
+          try: f = if t.endsWith("%"): parseFloat(t[0 ..< ^1]) / 100 else: parseFloat(t)
+          except ValueError: f = 0.0
+          name = $int(clamp(f, 0.0, 1.0) * 100 + 0.5) & "%"
+        else: discard
+        let c = accessNode(case cols[ci].kind
+                           of ckCheck: arCheckBox
+                           of ckButton: arButton
+                           of ckLink: arLink
+                           else: arCell,
+                           name, id = gridCellId(id, ri, ci),
+                           r = rect(cx, y, cols[ci].width, rowH), states = st2,
+                           help = tr(cols[ci].title))
+        if ri == sel and ci == curCol and hit.focused and not editing: accessFocus(c)
+        cx += cols[ci].width
+      accessEnd()
+    accessEnd()
   # the drop-down list of a choice cell
   popupMenu(choiceKey):
     let es = state(id + 25)
@@ -1345,6 +1438,8 @@ proc beginTree*(sel: var string; rows = 10; w = 0; enabled = true; padding = 0) 
                off: off, viewH: viewH, pad: pad,
                sel: addr sel, focused: hit.focused, enabled: enabled,
                newSel: sel, tap: enabled and tapped(id, hit))
+  if accessOn:
+    accessBegin(arTree, "", area, id, (if enabled: {} else: {asDisabled}), takesLabel = true)
 
 proc beginNode*(label: string; expanded: var bool; leaf = false;
                 icon = true; pic = Icon(); id = ""; hasKids = true): bool =
@@ -1379,6 +1474,22 @@ proc beginNode*(label: string; expanded: var bool; leaf = false;
     let a = tc.area
     let y = a.y + 1 + tc.pad + i * tc.rowH - tc.off
     tc.lastNode = rect(a.x, y, a.w, tc.rowH)
+    if accessOn:
+      # (an item of the tree, its depth its level; a press selects it, and
+      # opens or closes it when it is selected already)
+      let nid = accessSubId(tc.id, int(hash(p) and 0x3FFFFFFF))
+      if accessPress != 0 and accessPress == nid and tc.enabled:
+        accessPress = 0
+        if selected and not leaf and hasKids: expanded = not expanded
+        tc.newSel = p
+        tc.clicked = p
+        ui.focus = tc.id
+      let k = accessNode(arTreeItem, label, id = nid, r = tc.lastNode,
+                         states = (if selected: {asSelected} else: {}) +
+                                  (if not leaf and hasKids: {asExpandable} else: {}) +
+                                  (if expanded and not leaf: {asExpanded} else: {}))
+      accessItem(k, i + 1, 0, depth + 1)
+      if selected and tc.focused: accessFocus(k)
     let rh = tc.rowH
     let ind = dp(16)
     let px = tc.pad
@@ -1498,6 +1609,7 @@ proc endTree*() =
         scrollStop(tc.id)
         st.scrollY = clamp(clamp(st.scrollY, (at + 1) * tc.rowH - tc.viewH, at * tc.rowH), 0, hi)
   state(tc.id) = st
+  if accessOn: accessEnd()
   ui.lastId = tc.id
   ui.lastRect = tc.area
 
@@ -1764,6 +1876,18 @@ proc iconView*(count: int; label: proc (i: int): string;
         markRange(marked, i, i, false)
         ex.caret = i
         result.selChanged = true
+  if accessPress != 0 and enabled:
+    # (a screen reader picked an item)
+    for i in 0 ..< count:
+      if accessPress == accessSubId(id, i):
+        accessPress = 0
+        markRange(marked, i, i, false)
+        ex.caret = i
+        nsel = i
+        follow = true
+        result.selChanged = true
+        ui.focus = id
+        break
   if nsel != sel and nsel in 0 ..< count:
     sel = nsel
     result.selChanged = true
@@ -1848,6 +1972,16 @@ proc iconView*(count: int; label: proc (i: int): string;
              abs(ui.my - by) + 1), th.select)
   if result.dropOver == -2: dropHighlight(area)
   popClip()
+  if accessOn:
+    # (a list of the items in view)
+    accessBegin(arList, "", area, id, (if enabled: {} else: {asDisabled}), takesLabel = true)
+    for i in first ..< last:
+      let k = accessNode(arListItem, label(i), id = accessSubId(id, i), r = tileRect(i),
+                         states = (if marked[i]: {asSelected} else: {}),
+                         help = (if detail != nil: detail(i).replace('\n', ' ') else: ""))
+      accessItem(k, i + 1, count)
+      if i == sel and hit.focused: accessFocus(k)
+    accessEnd()
   ui.lastId = id
   ui.lastRect = r
 
@@ -1878,6 +2012,7 @@ proc breadcrumb*(parts: openArray[string]; w = 0;
   first = min(first, max(0, parts.high))
   var x = r.x + 2
   pushClip(inset(r, 1))
+  if accessOn: accessBegin(arToolBar, "", r, takesLabel = true)
   if first > 0:
     let br = rect(x, r.y + 2, textWidth("<<") + 2 * pad, r.h - 4)
     let hit = interact(id + 99, br, focusable = false, enabled = enabled)
@@ -1885,6 +2020,7 @@ proc breadcrumb*(parts: openArray[string]; w = 0;
       fill(br, th.face)
       if hit.down: sunken(br) else: raised(br, 1)
     text(br.x + pad, r.y + (r.h - FontH) div 2, "<<", th.fieldText, true)
+    if accessOn: accessNode(arButton, "Back", id = id + 99, r = br)
     if hit.clicked: result = first - 1
     x += br.w
     text(x, r.y + (r.h - FontH) div 2, sep, th.gray)
@@ -1898,12 +2034,16 @@ proc breadcrumb*(parts: openArray[string]; w = 0;
       if hit.down: sunken(br) else: raised(br, 1)
     text(br.x + pad, r.y + (r.h - FontH) div 2, parts[i],
          if enabled: th.fieldText else: th.gray, lastOne)
+    if accessOn:
+      accessNode(arButton, parts[i], id = id + uint32(i), r = br,
+                 states = (if enabled: {} else: {asDisabled}))
     if hit.clicked: result = i
     x += br.w
     if not lastOne:
       text(x, r.y + (r.h - FontH) div 2, sep, th.gray)
       x += sepW
   popClip()
+  if accessOn: accessEnd()
   ui.lastId = id
   ui.lastRect = r
 
@@ -1983,6 +2123,9 @@ proc imageView*(b: Bitmap; zoom: var float; height = -1; w = 0) =
   pushClip(inner)
   drawBitmap(rect(x, y, dw, dh), b)
   popClip()
+  if accessOn:
+    accessNode(arImage, "", id = id, r = r,
+               help = $b.w & " x " & $b.h & (if zoom > 0: ", " & $int(zoom * 100 + 0.5) & "%" else: ""))
   ui.lastId = id
   ui.lastRect = r
 
@@ -2185,6 +2328,16 @@ proc checkList*(items: openArray[string]; checked: var seq[bool]; rows = 6;
   let area = if bar: rect(r.x, r.y, r.w - SbW + 1, r.h) else: r
   let hit = interact(id, area, enabled = enabled)
   var cur = clamp(st.caret, 0, max(0, n - 1))
+  if accessPress != 0 and enabled:
+    # (a screen reader pressed an item: it flips)
+    for i in 0 ..< n:
+      if accessPress == accessSubId(id, i):
+        accessPress = 0
+        cur = i
+        checked[i] = not checked[i]
+        result = true
+        ui.focus = id
+        break
   if enabled and canInput():
     scrollWheel(id, off, maxOff, r, 3 * rowH)
     scrollPan(id, off, maxOff, r)
@@ -2226,6 +2379,17 @@ proc checkList*(items: openArray[string]; checked: var seq[bool]; rows = 6;
     if hit.focused and i == cur:
       dots(rect(b.x + bs + dp(4), y + 1, textWidth(items[i]) + 4, rowH - 2), th.fieldText)
   popClip()
+  if accessOn:
+    # (a list of check boxes)
+    accessBegin(arList, "", area, id, (if enabled: {} else: {asDisabled}), takesLabel = true)
+    for i in top ..< min(n, top + vis + 2):
+      let k = accessNode(arCheckBox, items[i], id = accessSubId(id, i),
+                         r = rect(area.x + 1, r.y + 1 + i * rowH - off, area.w - 2, rowH),
+                         states = (if checked[i]: {asChecked} else: {}) +
+                                  (if enabled: {} else: {asDisabled}))
+      accessItem(k, i + 1, n)
+      if hit.focused and i == cur: accessFocus(k)
+    accessEnd()
 
 # ---- number fields -----------------------------------------------------------------
 
@@ -2486,6 +2650,8 @@ proc link*(caption: string; enabled = true): bool {.discardable.} =
   text(r.x + 1, r.y + 1, caption, c)
   hline(r.x + 1, r.y + FontAscent + 2, tw, c)
   if hit.focused: focusDots(r)
+  if accessOn:
+    accessNode(arLink, caption, id = id, r = r, states = (if enabled: {} else: {asDisabled}))
   hit.clicked
 
 # ---- dialogs ---------------------------------------------------------------------

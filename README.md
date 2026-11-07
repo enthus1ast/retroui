@@ -20,10 +20,12 @@ pictures: getting started, layout, each control's example and API, the looks.
 
 ## Why Retro
 
-- **Small.** A "hello" app is a single ~770 KB file (Linux x86-64, built
-  with `retrokit small`); the full file manager is 1.6 MB and its APK
-  about 1 MB; the gallery with every control, the map, 3D, the canvas and
-  PDF is 2.7 MB. Fonts, icons, the PDF writer, the world map, the 3D view and
+- **Small and light.** A "hello" app is a single 1.8 MB file (Linux
+  x86-64, built with `retrokit small`; about 1 MB of it the fonts) that
+  runs in 7 MB of memory on one thread -- the same Hello in egui, iced or
+  Slint is a 15-22 MB file in 15-120 MB (see [Speed and size](#speed-and-size));
+  the full file manager and the gallery with every control, the map, 3D,
+  the canvas and PDF are 4.1 MB. Fonts, icons, the PDF writer, the world map, the 3D view and
   the decoders are all built in, and only what an app calls is linked.
 - **No dependencies.** You need Nim and a C compiler — nothing else to
   install, now or on the user's machine: no GTK, Qt, SDL, Electron, browser
@@ -36,10 +38,15 @@ pictures: getting started, layout, each control's example and API, the looks.
   keyboard all work everywhere, and the layout adapts to phones, tablets,
   laptops and 4K screens.
 - **Fast.** Immediate mode with a software renderer that redraws only the
-  32-pixel bands that changed: a full 800×600 window takes about 0.4 ms, an
+  32-pixel bands that changed: a full 800×600 window takes about 0.25 ms, an
   unchanged frame costs nothing and is not sent to the screen, and the app
   uses no CPU while it waits. A 50,000-file folder or a 100,000-row grid
   scrolls in well under a millisecond per frame.
+- **For everyone.** Screen readers read every control and act through it
+  on every platform -- Orca, NVDA, JAWS, Narrator, VoiceOver, TalkBack --
+  with nothing for an app to do but put a label before a box; input
+  methods (Chinese, Japanese, Korean) compose in the text box; the window
+  takes the scale of the monitor it is on, 125 % or 175 % alike.
 - **Reaches any OS API.** `retroui/native` calls any Android Java API without
   writing Java, any macOS/iOS API through the Objective-C runtime, Win32 and
   COM, and any C library through `dlopen`, with ready-made cross-platform
@@ -81,7 +88,8 @@ every module is in `docs/api/` (open `docs/api/retro.html`).
 
 [The syntax, studied](docs/syntax.md) · [Install](#install) · [Your first app](#your-first-app) ·
 [How it works](#how-it-works) · [Controls](#controls) · [Layout](#layout) ·
-[Text and icons](#text-and-icons) · [Business apps](#business-apps) ·
+[Text and icons](#text-and-icons) ·
+[Screen readers and input methods](#screen-readers-and-input-methods) · [Business apps](#business-apps) ·
 [Charts](#charts) · [Reports, PDF and printing](#reports-pdf-and-printing) ·
 [Planning views](#planning-views) · [Desktop apps](#desktop-apps) ·
 [Files](#files) · [Maps](#maps) · [3D](#3d-view) · [Canvas](#canvas) · [Whiteboard](#whiteboard) ·
@@ -508,7 +516,10 @@ emoji) are drawn by the platform.
 **Drawing.** Apps draw into one software framebuffer cut in tiles: only
 the tiles whose commands changed are drawn (on all cores) and sent, and a
 picture changed in part (`changed(bitmap, rect)`) only there; nothing at
-all when nothing changed. Where the platform has OpenGL ES 2 / OpenGL 2.1
+all when nothing changed. The framebuffer is the window's own memory where
+the system lends it -- shared with the X server (MIT-SHM) on X11, a DIB
+section on Windows -- so a frame is never copied on its way to the screen
+(`RETRO_SURFACE=0` copies it, as before 0.26). Where the platform has OpenGL ES 2 / OpenGL 2.1
 (EGL on Linux and Android, WGL on Windows -- loaded at run time, nothing
 to link) the frames are drawn by the GPU instead: the same commands as
 rectangles from textures the CPU makes once (text, icons, shapes),
@@ -638,6 +649,57 @@ of screen pixels per art pixel; disabled ones look embossed. Set
 `retroIcons = false` to have `retroOr` (and the toolkit's own parts) use
 the Nerd icons. The art is original, drawn in the manner of 3.1, made by
 `tools/genicons.py`.
+
+## Screen readers and input methods
+
+Every control tells screen readers what it is, its name, its value and
+its state as it is drawn: Orca on Linux and BSD (AT-SPI, over D-Bus,
+which the kit speaks itself), NVDA, JAWS and Narrator on Windows (UI
+Automation), VoiceOver on macOS and iOS, TalkBack on Android. A label
+names the control after it, so a form needs nothing more:
+
+```nim
+row([70, -1]):
+  label "&Name:"        # read as the text box's name
+  edit name
+if button("&Save"): save()
+```
+
+The screen reader moves the focus, presses buttons and menu items, checks
+boxes, picks list and grid items, tree nodes and calendar days, puts text
+in a box and moves sliders and spin boxes: each comes into the next frame
+as the click or the typing would. The grid is read as a table (its
+headers, the rows in view, their cells), the tree with each item's depth
+and whether it is open, a chart by its title, kind and series and the
+point the keys are on. The tree is made only while a screen reader
+listens; `RETRO_ACCESS=1` makes it without one, to try it.
+
+What an app draws itself is not read until it says what it is:
+
+```nim
+let r = canvas(dp(300), dp(200))
+drawSales(r)
+accessNode(arImage, "Sales by month", id = 0, r = r)   # a picture, read by its name
+accessName("Delete")                                   # an icon-only button's name
+if toolButton(nfTrash): deleteIt()
+```
+
+`accessBegin` / `accessEnd` group nodes (a list of your own, its items
+`accessNode(arListItem, ...)` with `accessItem`), `accessRange` gives a
+value a range, `accessible()` says whether a screen reader listens. A
+custom control takes a screen reader's press through `interact`, as a
+click.
+
+**Input methods.** What the system's input method is composing (pinyin,
+kana, hangul, a phone keyboard's word) is drawn underlined in the text box
+at the caret, and typed when it is settled: XIM on X11, IMM on Windows,
+marked text on macOS, GTK 4's preedit, the kit's own input connection on
+Android. `ui.composing` holds it for a text box of your own.
+
+**Scaling.** The window takes the scale of the screen it is on -- on X11
+the monitor's DPI (RandR), on Windows and macOS the system's -- and again
+when it moves to another monitor; at 125 %, 150 % or 175 % controls and
+text are the size asked for, and lines stay on whole pixels.
 
 ## Business apps
 
@@ -1788,7 +1850,11 @@ Widgets record small drawing commands, each with a hash. At the end of a
 frame the screen is cut into tiles 64 pixels wide and 32 high: an
 unchanged frame costs no drawing and no driver call at all, and otherwise
 only the tiles whose commands changed are drawn again and sent to the
-screen (with the GPU, only they are drawn, in a few rectangles). A small
+screen (with the GPU, only they are drawn, in a few rectangles). The
+tiles are drawn straight into the window's own memory where the system
+lends it (shared with the X server on X11, a DIB section on Windows), and
+drawing the controls makes no string, list or closure: a frame of the kit
+takes no memory at all. A small
 change is drawn on the app's own thread; a big one on all the cores. When
 nothing happens the app sleeps: no frame, no CPU, until input or a timer.
 Glyphs are rendered once per size and kept; maps, 3D scenes, canvases and
@@ -1800,17 +1866,17 @@ Measured on Linux (`nimble bench`, library cost without the OS: a change
 and the frames until it is on the screen; a small, shared 2-core cloud
 machine, so the numbers wander by a third):
 
-| | per change |
-|---|---|
-| full redraw, 800×600, ~60 widgets | 0.25 ms |
-| nothing changed | 0.05 ms, nothing sent |
-| one value changed | 0.09 ms, only its tiles drawn and sent |
-| the pointer onto a tool button (lit) | 0.1 ms |
-| a letter typed in a text box | 0.14 ms (two frames) |
-| 100,000-row grid, tree and chart, full redraw | 0.28 ms |
-| scrolling that grid with the wheel | 0.33 ms (two frames) |
-| a folder of 50,000 files: details / icons, full redraw | 0.36 / 0.56 ms |
-| ... scrolling it with the wheel | 0.52 / 0.69 ms |
+| | per change | memory taken |
+|---|---|---|
+| full redraw, 800×600, ~60 widgets | 0.24 ms | none |
+| nothing changed | 0.04 ms, nothing sent | none |
+| one value changed | 0.08 ms, only its tiles drawn and sent | none |
+| the pointer onto a tool button (lit) | 0.09 ms | none |
+| a letter typed in a text box | 0.13 ms (two frames) | 6 allocations (the text) |
+| 100,000-row grid, tree and chart, full redraw | 0.26 ms | the cells' strings the app gives |
+| scrolling that grid with the wheel | 0.28 ms (two frames) | the same |
+| a folder of 50,000 files: details / icons, full redraw | 0.36 / 0.49 ms | its names and sizes as text |
+| ... scrolling it with the wheel | 0.45 / 0.63 ms | the same |
 
 | | once |
 |---|---|
@@ -1825,23 +1891,48 @@ machine, so the numbers wander by a third):
 JPEG colours are scaled up smoothly as libjpeg does (within 3 levels of it
 on every pixel); on Android and iOS the system decodes pictures.
 
-**Sizes** (Linux x86-64, `retrokit small`: optimized for size and
-stripped; the APK holds the arm64 library):
+**Sizes** (Linux x86-64, `retrokit small`: optimized for size, LTO,
+stripped):
 
 | App | Size |
 |---|---|
-| `examples/hello.nim` | 0.77 MB |
-| `examples/notepad.nim` (with the file dialogs) | 1.1 MB |
-| `examples/ledger.nim` (grids, forms, CSV) | 1.1 MB |
-| `examples/charts.nim` (Chart Viewer) | 1.2 MB |
-| `examples/invoice.nim` (templates, reports, PDF, printing) | 1.4 MB |
-| `examples/filemanager.nim` (Retro Files) | 1.6 MB; APK about 1 MB |
-| `examples/gallery.nim` (everything: map, 3D, canvas, PDF, HTML, media) | 2.7 MB |
+| `examples/hello.nim` | 1.8 MB |
+| `examples/ledger.nim` (grids, forms, CSV) | 2.1 MB |
+| `examples/charts.nim` (Chart Viewer) | 2.3 MB |
+| `examples/notepad.nim` (with the file dialogs) | 2.4 MB |
+| `examples/invoice.nim` (templates, reports, PDF, printing) | 2.5 MB |
+| `examples/gallery.nim` (everything: map, 3D, canvas, PDF, HTML, media) | 4.1 MB |
+| `examples/filemanager.nim` (Retro Files) | 4.1 MB |
 
 Only what an app calls is linked: an app without the map, the 3D view or
 PDF does not carry them. The fonts (FreeSans, FreeSerif and FreeMono in
-four styles each) add about 940 KB, the Nerd icons 52 KB and the 255 pixel
-icons 24 KB, all stored compressed and unpacked when first used.
+four styles each) are about 1 MB of every app, the Nerd icons 52 KB and the
+255 pixel icons 24 KB, all stored compressed and unpacked when first used.
+
+**Beside other toolkits.** `tools/compare/compare.sh` builds the same
+Hello -- a label, a text box, two buttons -- with egui 0.37, iced 0.14 and
+Slint 1.18 (release builds, stripped) and measures each the same way on an
+X screen of its own (Xvfb 1920×1080, no window manager, no graphics card:
+OpenGL is Mesa's llvmpipe, as in a VM, a remote desktop or Termux:X11).
+Resizing at 1080p draws every pixel again; CPU is per step, counted in
+10 ms ticks, so the small numbers are within a tenth of a millisecond:
+
+| | file | memory idle | at 1080p | threads | CPU idle | a resize at 1080p | a hover |
+|---|---|---|---|---|---|---|---|
+| **Retro Nim UI** | **1.9 MB** | **7.1 MB** | **14.6 MB** | **1** | 0 % | 1.8 ms | **0.2 ms** |
+| Retro Nim UI, no shared memory | | 7.2 MB | 14.9 MB | 1 | 0 % | 3.8 ms | 0.15 ms |
+| Retro Nim UI, OpenGL | | 107 MB | 115 MB | 6 | 0 % | 12 ms | 0.5 ms |
+| egui (OpenGL) | 20.2 MB | 122 MB | 153 MB | 8 | 0 % | 46 ms | 88 ms |
+| iced (wgpu) | 15.5 MB | 120 MB | 142 MB | 12 | 0 % | 33 ms | 16 ms |
+| iced (tiny-skia, CPU) | | 15.1 MB | 26.4 MB | 6 | 0 % | 2.2 ms | 0.45 ms |
+| Slint (OpenGL) | 21.6 MB | 121 MB | 151 MB | 8 | 0 % | 16 ms | 13 ms |
+| Slint (software) | | 19.9 MB | 27.5 MB | 3 | 0 % | 1.7 ms | 0.6 ms |
+
+On a software OpenGL every GPU path pays for Mesa's own memory and
+threads; "automatic", the kit's default, draws on the CPU there and with
+the GPU when the GPU is a real one. With a real graphics card the GPU paths
+of all four are faster than here, and the kit's CPU path is what it is
+here.
 
 ## Safety
 
@@ -1917,7 +2008,12 @@ needed. `nimble test` runs them all; `nimble fuzz` runs the fuzzers.
 | `test_board`, `test_boardapp` | the whiteboard: ink, shapes, arrows held by shapes, typing, undo, files, PDF, the memory kept; Retro Board as a program -- its docked panels, Tab, the panels kept between runs, Zen and View mode and the button that leaves them |
 | `test_xmpp` | chat on XMPP with a small server of the test's own: signing on, the account's archive found, a page of it (yours and theirs, in order, with their archive ids), a forged answer from someone else left out; a port where nothing answers |
 | `test_omemo` | OMEMO: X25519, Ed25519 and HKDF against the RFCs' vectors, XEdDSA (the identity's X25519 key and its signatures, keys of both signs), AES-GCM, protobuf; two devices talking (a session from a bundle, answers, messages out of order, one twice, a changed one, one not for this device, the store read back from its file), trust (a verified device: only it), a bundle not signed right; files (aesgcm://) |
-| `android_mock/run.sh` | the real Android driver against a fake Android (looper, input queue, window, JNI): frames, taps, keyboard, Arabic text, insets, cancelled touches, keys, rotation, Back |
+| `test_access` | the screen readers' tree: every control's role, name (from the label before it), value, state, place in its list; the grid's headers, rows and cells, the tree's levels, the check list, the calendar's days, charts; presses, text, values and focus asked for, done by the next frame; nothing made without a screen reader |
+| `test_atspi` | Orca's side on a real X server and AT-SPI bus: the window's objects walked, text put in a box, a button pressed, the focus moved and its event heard |
+| `test_uia` | (Windows, also under Wine) the UI Automation provider: the tree a client reads, names, the patterns (invoke, value, toggle, range, selection) |
+| `test_scale` | fractional scales (125 % to 300 %): controls and text the size asked for, lines on whole pixels, a change of scale followed |
+| `test_shm` | the frame drawn into memory shared with the X server and what the window then shows, with and without it (`RETRO_SURFACE=0`) |
+| `android_mock/run.sh` | the real Android driver against a fake Android (looper, input queue, window, JNI): frames, taps, keyboard, Arabic text, insets, cancelled touches, keys, rotation, Back, an input method composing |
 
 ## Examples
 
@@ -2045,9 +2141,18 @@ One top-level window per app; dialogs, popups and MDI windows
 is only one window anyway.
 
 **Does it support screen readers?**
-Not yet. Everything works from the keyboard, with a visible focus, and
-users can enlarge the UI or the text and pick the high-contrast Paper
-scheme.
+Yes, on every platform: Orca (Linux and BSD), NVDA, JAWS and Narrator
+(Windows), VoiceOver (macOS and iOS) and TalkBack (Android) read every
+control and can press, check, type and move the focus through it, with
+nothing for an app to do but put a label before a box (see
+[Screen readers and input methods](#screen-readers-and-input-methods)).
+Everything also works from the keyboard, with a visible focus, and users
+can enlarge the UI or the text and pick the high-contrast Paper scheme.
+
+**Can I type Chinese, Japanese or Korean?**
+Yes: the system's input method composes in the text box itself (X11,
+Windows, macOS, GTK 4, Android), and the platform's fonts draw what the
+kit's own do not.
 
 **Can I use it commercially?**
 Yes: the kit is MIT, and the included data allow it; the text fonts are
@@ -2066,7 +2171,19 @@ says how.
   pass the desktop-side tests, and Termux's files are tested against a
   fake documents provider, but none of them has run on a device yet. iOS compiles and links but has
   not been run on a device or the Simulator.
-- No screen reader support yet (everything works from the keyboard).
+- What an input method is composing is drawn in the text box on X11,
+  Windows, macOS, GTK 4 and Android; with SDL 2, SDL 3 and on iOS it shows
+  in the input method's own window. Screen readers were tried end to end
+  with AT-SPI's own client (what Orca uses) and with UI Automation under
+  Wine; VoiceOver and TalkBack build and pass the tests of their parts, but
+  have not been run on a device in this release.
+- Retro Photo's own picture controls (curves, levels, gradients, the
+  brushes and swatches, the color field) and a canvas an app draws itself
+  are read only as what they are (a picture) until the app says more with
+  `accessNode`; the panels' tabs, buttons, boxes and the layer list around
+  them are read.
+- At fractional scales lines stay one whole pixel (or two at 200 %...):
+  sizes and text follow the scale exactly, lines do not.
 - Text shaping covers Latin, Greek, Cyrillic, Hebrew and Arabic (with
   Persian and Urdu letters); in the UI marks are placed without the font's
   positioning tables (documents use them). Other scripts use the

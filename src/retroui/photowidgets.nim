@@ -1063,6 +1063,8 @@ proc photoView*(d: Doc; v: var PhotoView; height = -1; key = ""; drawAntsNow = t
             result.down = false
             result.guideMoved = true
           break
+  if accessOn:
+    accessNode(arImage, "Picture", id = id, r = area, help = $d.w & " x " & $d.h)
   ui.lastId = id
   ui.lastRect = area
 
@@ -2136,6 +2138,27 @@ proc layerRows*(rows: seq[LayerRow]; w: int; rowH: int; key: string;
       text(body.x + body.w - textWidth(row.note) - dp(22), body.y + (rowH - FontH) div 2, pxLock,
            (if row.locked: fg else: (if row.active or row.picked: th.selectText else: th.gray)))
     hline(rr.x, rr.y + rowH - 1, rr.w, th.face)
+    if accessOn:
+      # (a list item: its eye a check box in it; a press picks the layer)
+      let lid = accessSubId(id, i)
+      let eid = accessSubId(id, 0x10000 + i)
+      if accessPress != 0 and accessPress == lid:
+        accessPress = 0
+        result.clicked = i
+      if accessPress != 0 and accessPress == eid:
+        accessPress = 0
+        result.eyeToggled = i
+      if i == 0: accessBegin(arList, "", r, accessSubId(id, 0x20000), takesLabel = true)
+      let k = accessBegin(arListItem, row.name, rr, lid,
+                          (if row.active or row.picked: {asSelected} else: {}) +
+                          (if row.group: {asExpandable} else: {}) +
+                          (if row.group and not row.collapsed: {asExpanded} else: {}))
+      accessItem(k, i + 1, rows.len, row.indent + 1)
+      if row.active and hit.focused: accessFocus(k)
+      accessNode(arCheckBox, "Visible", id = eid, r = eye,
+                 states = (if row.visible: {asChecked} else: {}))
+      accessEnd()
+      if i == rows.high: accessEnd()
     # Alt over the line between two rows: the clipping cursor; a click clips
     # the row over the line to the one under it (or lets it go)
     let seam = rect(body.x, rr.y + rowH - dp(4), body.w, dp(8))

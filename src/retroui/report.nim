@@ -1915,6 +1915,9 @@ proc reportView*(r: Report; height = -1; key = ""): ReportViewEvent {.discardabl
     if bm != nil: drawBitmap(pr, bm)
   popClip()
   if hit.focused: dots(inset(view, 2), color(255, 255, 255))
+  if accessOn:
+    accessNode(arImage, (if r.title.len > 0: r.title else: "Report"), id = id, r = desk,
+               help = $r.pageCount & " pages")
   ui.lastId = id
   ui.lastRect = desk
 

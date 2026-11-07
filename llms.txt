@@ -9,6 +9,8 @@
 - [Controls](https://github.com/foxoman/retroui/blob/main/docs/controls.md): every control with its signature, an example and pictures
 - [Building](https://github.com/foxoman/retroui/blob/main/BUILDING.md): desktop apps (Windows from any system, macOS, Linux AppImages), Android APKs without the SDK or NDK, iOS on a Mac, signing
 - [Changes](https://github.com/foxoman/retroui/blob/main/CHANGELOG.md): what changed in each release (newest first)
+- Screen readers (AT-SPI/Orca, UI Automation/NVDA and Narrator, VoiceOver, TalkBack) read every control by itself; `accessNode` and `accessName` for what an app draws itself. Input methods compose in the text box. Frames reach the screen through shared memory (X11) or a DIB section (Windows); an unchanged frame takes no memory.
+- [Compared](https://github.com/foxoman/retroui/tree/main/tools/compare): the same Hello in egui, iced and Slint, measured the same way
 
 ## For AI agents
 

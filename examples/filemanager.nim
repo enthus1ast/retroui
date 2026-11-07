@@ -1100,6 +1100,8 @@ proc webPanel(t: Tab) =
   ## what is selected described (its kind, size, date; a picture's preview).
   let m = t.m
   let r = canvas(0, remainingH())
+  accessBegin(arPane, "Folder", r)     # (a screen reader reads its texts inside)
+  defer: accessEnd()
   fill(r, ui.theme.window)
   let x = r.x + dp(10)
   let w = max(dp(40), r.w - dp(20))
@@ -1109,6 +1111,7 @@ proc webPanel(t: Tab) =
   let name = if m.dir.extractFilename.len > 0: m.dir.extractFilename else: m.dir
   let big = style(bold = true, size = 1.45)
   text(x, y, ellipsize(name, w, big), ui.theme.text, big)
+  accessNode(arHeading, name, id = 0, r = rect(x, y, w, lineHeight(big)))
   y += lineHeight(big) + dp(4)
   # (the rule: the title bar's blue fading into the page)
   for i in 0 ..< w:
@@ -1117,11 +1120,13 @@ proc webPanel(t: Tab) =
   let sel = m.selectedItems
   let small = style(size = 0.92)
   template say(s: string; strong = false) =
+    accessNode(arLabel, s, id = 0, r = rect(x, y, w, FontH))
     for line in wrapLines(s, w, strong):
       if y + FontH > r.y + r.h - dp(4): break
       drawLabel(x, y, line, ui.theme.text, strong)
       y += FontH
   template note(s: string) =
+    accessNode(arLabel, s, id = 0, r = rect(x, y, w, FontH))
     for line in wrapLines(s, w):
       if y + FontH > r.y + r.h - dp(4): break
       text(x, y, line, ui.theme.gray, small)

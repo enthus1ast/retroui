@@ -1386,6 +1386,36 @@ proc drawLayout(lay: ptr Layout; x, y: int; clip: Rect; dir: string;
     ui.cursor = curHand
     if clicked: ev.link = lay.links[hoverLink]
 
+proc mdPlainText*(md: string): string =
+  ## Markdown as it is read out: the words, without its marks (`#`, `**`,
+  ## backticks, a link's address).
+  for line in md.splitLines:
+    var t = line.strip(trailing = false)
+    var k = 0
+    while k < t.len and t[k] == '#': inc k
+    if k > 0 and k < t.len and t[k] == ' ': t = t[k + 1 .. ^1]
+    elif t.startsWith("> "): t = t[2 .. ^1]
+    var o = ""
+    var i = 0
+    while i < t.len:
+      let c = t[i]
+      if c in {'*', '_', '`'} and (i + 1 >= t.len or t[i + 1] in {'*', '_', '`', ' '} or
+                                   i == 0 or t[i - 1] in {'*', '_', '`', ' '}):
+        inc i
+        continue
+      if c == ']' and i + 1 < t.len and t[i + 1] == '(':
+        let e = t.find(')', i + 2)
+        if e > 0:
+          i = e + 1
+          continue
+      if c == '[' or (c == '!' and i + 1 < t.len and t[i + 1] == '['):
+        inc i
+        continue
+      o.add c
+      inc i
+    if result.len > 0: result.add '\n'
+    result.add o
+
 proc markdown*(md: string; baseDir = ""; w = 0): MdEvent {.discardable.} =
   ## Markdown flowing in the layout at its natural height (in a page that
   ## scrolls, a card, a dialog). See `markdownView` for a framed, scrolling
@@ -1397,6 +1427,8 @@ proc markdown*(md: string; baseDir = ""; w = 0): MdEvent {.discardable.} =
   let id = idOf("md" & $hash(md))
   let hit = interact(id, r, focusable = false)
   drawLayout(lay, r.x, r.y, intersect(r, clipRect()), baseDir, hit.clicked, result)
+  if accessOn:
+    accessNode(arTextArea, value = mdPlainText(md), id = id, r = r, states = {asReadOnly, asMultiLine})
   ui.lastId = id
   ui.lastRect = r
 
@@ -1455,6 +1487,8 @@ proc markdownView*(md: string; height = -1; w = 0; baseDir = "";
     st.scrollY = y
     ui.redraw = true
   state(id) = st
+  if accessOn:
+    accessNode(arTextArea, value = mdPlainText(md), id = id, r = r, states = {asReadOnly, asMultiLine})
   ui.lastId = id
   ui.lastRect = r
 

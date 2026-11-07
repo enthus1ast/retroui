@@ -230,6 +230,20 @@ costs what its visible rows cost.
   corner (the status bar's end; `sizeGrip()` says where). `resizable = false`
   (`setResizable`) keeps the window's size: no sizing border, maximize
   button or grip, and the system's frame fixed too.
+- Screen readers (Orca, NVDA, Narrator, VoiceOver, TalkBack) read every
+  control by itself: its role, its label (a `label` before a box names the
+  box: write `row([60, -1]): label "&Name:"; edit name`), its value and
+  state; they press, type into and move the focus as the user would. What
+  you draw yourself (`canvas`, `fill`, `text`) is not read: give it a node,
+  `accessNode(arImage, "Sales by month", id = 0, r = r)` (or `arLabel`,
+  `arButton`...), and an icon-only control a name, `accessName("Delete")`
+  before it. `accessible()` is true while a screen reader listens (nothing
+  is built otherwise); `RETRO_ACCESS=1` builds the tree to try it.
+- Input methods (Chinese, Japanese, Korean, a phone keyboard's word) need
+  nothing: what they compose is drawn in the text box at the caret
+  (`ui.composing`) and comes as typed text when settled.
+- Scaling: sizes and text follow the screen's scale exactly (125 %, 150 %,
+  175 %...), lines stay on whole pixels; nothing to do in an app.
 
 ## 9. Build and package
 
@@ -300,3 +314,9 @@ OS in BUILDING.md.
   you sort.
 - Using the old name `retro` (`import retro`, `nimble install retro`): the package
   and its modules are `retroui` (`import retroui`, `import retroui/http`).
+- A text box without a label before it (or an icon-only tool button without a
+  tip): a screen reader reads it as nothing. Put the label first, or
+  `accessName("...")`.
+- Making a string or a seq in the frame code of something that does not change
+  (`"Total: " & $n` every frame is fine; building big lists every frame is not):
+  an unchanged frame of the kit itself takes no memory.

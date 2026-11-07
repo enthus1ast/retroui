@@ -1890,6 +1890,13 @@ proc legendItems(kind: ChartKind; labels: openArray[string]; ser: openArray[Seri
       result.add ((if s.name.len > 0: s.name else: "Series " & $(k + 1)),
                   seriesColor(o, s, k), k, not shown(hidden, k))
 
+const chartKindNames*: array[ChartKind, string] = [
+  "Bars", "Bars sideways", "Stacked bars", "Stacked 100%", "Lines", "Areas",
+  "Stacked areas", "Bars and a line", "Pie", "Donut", "Scatter", "Bubbles",
+  "Waterfall", "Funnel", "Gauge", "Candlesticks", "Histogram", "Heat map", "Radar",
+  "Tree map", "Bullet"]
+  ## Names of the kinds for people (a chart type combo box).
+
 proc chartImpl(kind: ChartKind; labels: openArray[string]; ser: openArray[Series];
                o: ChartOpts; height, w: int): ChartEvent =
   result.series = -1
@@ -2078,6 +2085,18 @@ proc chartImpl(kind: ChartKind; labels: openArray[string]; ser: openArray[Series
     st.aux = nh
     ui.redraw = true
   state(id) = st
+  if accessOn:
+    # (read as a picture: its title, its kind and series; the point the
+    # keys or the mouse are on as its value)
+    var about = chartKindNames[kind]
+    for k, sr in ser:
+      if shown(hidden, k) and sr.name.len > 0: about.add ", " & sr.name
+    var v = ""
+    if target[1] >= 0:
+      let (head, lines) = tipLines(kind, labels, ser, o, hidden, target[0], target[1])
+      v = head
+      for l in lines: v.add ", " & l[0]
+    accessNode(arImage, o.title, v, id = id, r = r, help = about)
   ui.lastId = id
   ui.lastRect = r
 
@@ -2105,13 +2124,6 @@ proc gauge*(title: string; value: float; lo = 0.0; hi = NaN; target = NaN;
   chartImpl(chGauge, [], [series(title, [value])],
             ChartOpts(title: title, lo: lo, hi: hi, target: target, format: format),
             height, w)
-
-const chartKindNames*: array[ChartKind, string] = [
-  "Bars", "Bars sideways", "Stacked bars", "Stacked 100%", "Lines", "Areas",
-  "Stacked areas", "Bars and a line", "Pie", "Donut", "Scatter", "Bubbles",
-  "Waterfall", "Funnel", "Gauge", "Candlesticks", "Histogram", "Heat map", "Radar",
-  "Tree map", "Bullet"]
-  ## Names of the kinds for people (a chart type combo box).
 
 proc tableSeries*(t: DataTable; kind: ChartKind; cols: openArray[int]): seq[Series] =
   ## The columns `cols` of a table as the series `kind` takes: one series

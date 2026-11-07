@@ -1289,6 +1289,9 @@ proc htmlView*(html: string; baseDir = ""; height = -1; key = ""; images: HtmlIm
     ui.redraw = true
   state(id) = st
   views[id] = v
+  if accessOn:
+    accessNode(arTextArea, value = docOf(html, hash(html)).plainText(), id = id, r = r,
+               states = {asReadOnly, asMultiLine})
   ui.lastId = id
   ui.lastRect = r
 
@@ -1320,6 +1323,9 @@ proc htmlBlock*(html: string; baseDir = ""; w = 0; images: HtmlImageSource = nil
     ui.cursor = curHand
     if hit.clicked: result.link = page.links[hoverLink]
   result.wantedImages = page.wanted
+  if accessOn:
+    accessNode(arTextArea, value = docOf(html, hash(html)).plainText(), id = id, r = r,
+               states = {asReadOnly, asMultiLine})
   ui.lastId = id
   ui.lastRect = r
 

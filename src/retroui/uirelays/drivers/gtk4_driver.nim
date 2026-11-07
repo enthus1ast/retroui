@@ -467,6 +467,31 @@ proc onImCommit(ctx: pointer; str: cstring; data: pointer) {.cdecl.} =
   if str != nil:
     enqueueTextFromUtf8($str)
 
+proc gtk_im_context_get_preedit_string(im: pointer; str: ptr cstring; attrs: ptr pointer;
+                                       cursor: ptr cint) {.importc, nodecl, cdecl.}
+proc pango_attr_list_unref(l: pointer) {.importc, nodecl, cdecl.}
+
+proc onImPreedit(ctx: pointer; data: pointer) {.cdecl.} =
+  ## What the input method composes changed: the app draws it in the text box.
+  var str: cstring
+  var attrs: pointer
+  var cursor: cint
+  gtk_im_context_get_preedit_string(ctx, addr str, addr attrs, addr cursor)
+  var e = Event(kind: TextEditingEvent)
+  if str != nil:
+    e.composing = $str
+    g_free(cast[pointer](str))
+  if attrs != nil: pango_attr_list_unref(attrs)
+  # (its caret: characters into it, made bytes)
+  var b = 0
+  var k = 0
+  while b < e.composing.len and k < cursor:
+    let c = uint8(e.composing[b])
+    b += (if c < 0x80: 1 elif c < 0xE0: 2 elif c < 0xF0: 3 else: 4)
+    inc k
+  e.x = min(b, e.composing.len)
+  pushEvent(e)
+
 proc gdk_event_get_device_tool(ev: pointer): pointer {.importc, nodecl, cdecl.}
 proc gdk_device_tool_get_tool_type(tool: pointer): cint {.importc, nodecl, cdecl.}
 proc gdk_event_get_axis(ev: pointer; axis: cint; value: ptr gdouble): gboolean
@@ -757,6 +782,8 @@ proc gtkCreateWindow(layout: var ScreenLayout; icon: pointer; iconLen: int) =
   gtk_event_controller_key_set_im_context(keyc, imContext)
   discard g_signal_connect_data(imContext, "commit",
     cast[GCallback](onImCommit), nil, nil, 0)
+  discard g_signal_connect_data(imContext, "preedit-changed",
+    cast[GCallback](onImPreedit), nil, nil, 0)
   let motion = gtk_event_controller_motion_new()
   gtk_widget_add_controller(drawingArea, motion)
   discard g_signal_connect_data(motion, "motion",

@@ -75,6 +75,23 @@ play with the system's sound, or mpv or ffplay. Its encryption
 (`retroui/omemo`) uses libcrypto 1.1.1 or later, the same OpenSSL; where
 it is missing, talks go unencrypted and the lock button is grayed.
 
+**Screen readers and input methods need nothing at build time**: the
+app speaks AT-SPI over D-Bus itself on Linux and BSD (Orca reads it when
+the desktop runs the accessibility bus, as GNOME, KDE and Retro Desktop
+do), UI Automation on Windows, the system's own API on macOS, iOS and
+Android. To try them without a screen reader, in a clone:
+
+- `RETRO_ACCESS=1 retrokit run app.nim` makes the tree even when no screen
+  reader listens; `accerciser` (Linux) or Windows' Inspect show it.
+- `nimble test` runs `test_access` headless and `test_atspi` on an X
+  server with AT-SPI's bus (`apt install at-spi2-core dbus-x11`; skipped
+  without them); `test_uia` runs under Wine
+  (`nim c -d:mingw --cpu:amd64 -o:t.exe tests/test_uia.nim && RETRO_ACCESS=1 wine t.exe`).
+- An input method on X11: `apt install uim-xim uim-anthy` (Japanese), then
+  `LANG=ja_JP.UTF-8 XMODIFIERS=@im=uim uim-xim &` before the app.
+- `RETRO_SURFACE=0` draws without shared memory (MIT-SHM on X11, the DIB
+  section on Windows), to compare.
+
 ---
 
 ## Android

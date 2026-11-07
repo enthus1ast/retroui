@@ -1837,8 +1837,8 @@ example("htmlview", "htmlView, htmlBlock",
            "<ul><li>North<li>South</ul>", height = 210)
 
 example("markdownview", "markdownView, markdown",
-        "Markdown: headings, emphasis, code, lists, task lists (a click ticks them: `toggleTask`), tables, quotes and links -- right to left where they are in Arabic.",
-        420, 230, ["markdownView", "markdown"], focus4):
+        "Markdown: headings, emphasis, code, lists, task lists (a click ticks them: `toggleTask`), tables, quotes and links -- right to left where they are in Arabic. Screen readers read its words (`mdPlainText`).",
+        420, 230, ["markdownView", "markdown", "mdPlainText"], focus4):
   markdownView("# Notes\n\nSome **bold**, *italic* and `code`.\n\n" &
                "- [x] Invoices sent\n- [ ] Stock count\n\n" &
                "| Item | Qty |\n|---|--:|\n| Paper | 10 |\n| Ink | 2 |\n", height = 210)
@@ -2025,8 +2025,9 @@ true black, for phones whose pixels are off where it is black.
 
 ### Size and text size
 
-The UI follows the screen's density by itself, in whole pixels so lines stay
-sharp. `setUiScale(125)` makes everything larger (Ctrl + / - / 0 do it too,
+The UI follows the screen's scale by itself -- 125 %, 150 %, 175 % as asked,
+the scale of the monitor the window is on, and of the one it is moved to --
+with lines on whole pixels so they stay sharp. `setUiScale(125)` makes everything larger (Ctrl + / - / 0 do it too,
 and the phone title bar's menu); `setTextScale(130)` only the text, the
 controls growing with it; `setBaseTextSize(14)` changes the size at 100%
 (12 pixels per em on desktops and tablets, 15 on phones).
@@ -2115,6 +2116,55 @@ opts(inline = true, looks = @[
        proc () = setClassicFrame(false)),
   look("In a dark scheme", proc () = (setTitle("Ledger"); setClassicFrame(true); ui.theme = Dark),
        proc () = (setClassicFrame(false); ui.theme = Classic))])
+
+# Screen readers and input methods
+# ======================================================================================================
+
+part("Screen readers and input methods", """
+Every control tells screen readers what it is, its name, its value and its
+state as it is drawn: Orca on Linux and BSD (AT-SPI, which the kit speaks
+over D-Bus itself), NVDA, JAWS and Narrator on Windows (UI Automation),
+VoiceOver on macOS and iOS, TalkBack on Android. The screen reader also
+moves the focus, presses buttons, menu items, list and grid items, tree
+nodes and calendar days, checks boxes, puts text in boxes and moves sliders
+and spin boxes: each comes into the next frame as the click or the typing
+would. The grid is read as a table, the tree with each item's depth, a chart
+by its title, kind, series and the point the keys are on. Nothing of this
+is made while no screen reader listens (`RETRO_ACCESS=1` makes it anyway,
+to try it).
+
+A label names the control after it, so a form needs nothing more. What an
+app draws itself (`canvas`, `fill`, `text`) is read once it says what it is:
+`accessNode` gives it a role and a name, `accessName` names an icon-only
+button, `accessNameOr` gives a box the name it has when no label names it
+(a placeholder), `accessBegin` / `accessEnd` group nodes (a list of your
+own, its items with `accessItem`), `accessRange` gives a value its range. A
+control of your own takes a screen reader's press through `interact`, as a
+click.
+
+**Input methods** (pinyin, kana, hangul, a phone keyboard's word) compose in
+the text box itself: what is being composed is drawn underlined at the
+caret and typed when it is settled -- XIM on X11, IMM on Windows, marked
+text on macOS, GTK 4's preedit, the kit's own input connection on Android.
+`ui.composing` holds it for a text box of your own.
+""")
+
+example("access", "Screen readers: what an app draws itself",
+        "The label names the box; the picture is read as \"Sales by month\"; the " &
+        "button with only an icon is read as \"Print\".", 420, 150,
+        ["accessNode", "accessName", "accessNameOr", "accessBegin", "accessEnd", "accessItem",
+         "accessRange", "accessible"], @[ssNormal]):
+  row([60, -1]):
+    label "&Name:"
+    edit lookName
+  row:
+    let r = canvas(dp(160), dp(60))
+    fill(r, ui.theme.field)
+    for i, v in [30, 45, 25, 55]:
+      fill(rect(r.x + dp(10) + i * dp(36), r.y + r.h - dp(v), dp(24), dp(v)), ui.theme.select)
+    accessNode(arImage, "Sales by month", id = 0, r = r)
+    accessName("Print")
+    if button("", pxPrint): discard
 
 # ---- reading the API from the sources -------------------------------------------------------------
 
@@ -2502,8 +2552,10 @@ proc main() =
     "in more states too), and they are drawn from the very example beside them,\n" &
     "so they always match the toolkit.\n\n" &
     "Every control works with the mouse, the keyboard (Tab, the arrows, Space,\n" &
-    "Enter, Esc, `&` letters with Alt, the menu key) and fingers (a tap, a drag to\n" &
-    "scroll, a long press for the menu). The [README](../README.md) tells the rest:\n" &
+    "Enter, Esc, `&` letters with Alt, the menu key), fingers (a tap, a drag to\n" &
+    "scroll, a long press for the menu) and screen readers (see\n" &
+    "[Screen readers and input methods](#screen-readers-and-input-methods)).\n" &
+    "The [README](../README.md) tells the rest:\n" &
     "files, mail, the image editor, the system's own APIs, Android and iOS. The\n" &
     "reference of every module is made by `nimble docs` into `docs/api/`.\n\n" &
     "-- Sultan Al Isaiee ([@foxoman](https://github.com/foxoman))\n\n" &

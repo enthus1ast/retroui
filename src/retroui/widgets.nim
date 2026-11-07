@@ -338,7 +338,8 @@ proc tapped*(id: Id; hit: Hit): bool =
   ## Where a list-like widget picks its item: on the press with a mouse, on
   ## the release of a tap (that did not turn into a drag) with a finger --
   ## not a tap that only stopped a flicked list (`scrollCaught`).
-  if finger(): hit.clicked and not scrollCaught() else: ui.active == id and ui.pressed
+  if accessPressed == id and hit.clicked: true    # (a screen reader pressed it)
+  elif finger(): hit.clicked and not scrollCaught() else: ui.active == id and ui.pressed
 
 proc tooltip*(text: string) =
   ## Show `text` when the mouse rests on the widget drawn last (never after
@@ -372,6 +373,14 @@ proc scrubLabel*(s: string; v: var int; lo, hi: int; step = 1): bool {.discardab
       result = true
   state(id) = st
   text(r.x, r.y + (r.h - FontH) div 2, s, th.text)
+  if accessOn:
+    # (read as the label it is, naming the field after it)
+    accessLabelFor(s)
+    accessNode(arLabel, s, id = 0, r = r)
+
+template offWhen(enabled: bool): set[AccessState] =
+  ## (a screen reader's state of a control that is grayed)
+  (if enabled: {} else: {asDisabled})
 
 proc label*(s: string; bold = false; color = Color(); enabled = true; literal = false) =
   ## Static text; '\n' starts a new line, '&' underlines the next letter
@@ -390,6 +399,9 @@ proc label*(s: string; bold = false; color = Color(); enabled = true; literal = 
       let r = place(max(1, min(w1, max(room1, w1))), FontH)
       ui.lastId = 0
       ui.lastRect = r
+      if accessOn:
+        accessLabelFor(s)
+        accessNode(arLabel, s, id = 0, r = r, states = offWhen(enabled))
       if enabled and not literal and '&' in s and mnemonicHit(s): focusNext()
       let c = if not enabled: th.gray elif color.a == 0: th.text else: color
       if literal: text(r.x, r.y, s, c, bold)
@@ -416,6 +428,9 @@ proc label*(s: string; bold = false; color = Color(); enabled = true; literal = 
   let r = place(max(1, min(w, max(room, w))), lines.len * FontH)
   ui.lastId = 0
   ui.lastRect = r
+  if accessOn:
+    accessLabelFor(shown)
+    accessNode(arLabel, shown, id = 0, r = r, states = offWhen(enabled))
   # Alt + its underlined letter: the control after it takes the focus
   if enabled and not literal and '&' in s and mnemonicHit(s): focusNext()
   let c = if not enabled: th.gray elif color.a == 0: th.text else: color
@@ -509,6 +524,7 @@ proc paragraph*(s: string; w = 0; color = Color()) =
   let r = place(maxW, lines.len * FontH)
   ui.lastId = 0
   ui.lastRect = r
+  if accessOn: accessNode(arLabel, tr(s), id = 0, r = r)
   let c = if color.a == 0: th.text else: color
   for i, line in lines: text(r.x, r.y + i * FontH, line, c)
 
@@ -561,6 +577,9 @@ proc button*(label: string; isDefault = false; enabled = true;
   if not enabled: drawLabel(tx + 1, ty + 1, label, th.light)   # embossed, as 3.1 grays text
   drawLabel(tx, ty, label, if enabled: th.text else: th.gray)
   if hit.focused: focusDots(rect(tx - 2, ty - 1, tw + 4, FontH + 2))
+  if accessOn:
+    accessNode(arButton, label, id = id, r = r,
+               states = (if isDefault: {asDefault} else: {}) + offWhen(enabled))
   hit.clicked
 
 proc buttonAt*(key: string; r: Rect; label: string; st = TextStyle(); enabled = true;
@@ -568,6 +587,9 @@ proc buttonAt*(key: string; r: Rect; label: string; st = TextStyle(); enabled = 
   ## A push button at `r` (for bars and overlays laid out by hand); true
   ## when clicked. `down` draws it held in (a toggle that is on).
   let hit = interact(idOf("btnat:" & key), r, focusable = false, enabled = enabled)
+  if accessOn:
+    accessNode(if down: arToggleButton else: arButton, label,
+               states = (if down: {asPressed} else: {}) + offWhen(enabled))
   let pressed = down or hit.down
   buttonFace(r, pressed, 1, hot = enabled and hit.hover)
   let d = if pressed: 1 else: 0
@@ -595,6 +617,9 @@ proc checkbox*(label: string; v: var bool; enabled = true): bool {.discardable.}
   let y0 = r.y + (r.h - FontH) div 2
   drawLabel(r.x + bs + dp(6), y0, label, if enabled: th.text else: th.gray)
   if hit.focused: focusDots(rect(r.x + bs + dp(4), y0 - 1, tw + 4, FontH + 2))
+  if accessOn:
+    accessNode(arCheckBox, label, id = id, r = r,
+               states = (if v: {asChecked} else: {}) + offWhen(enabled))
 
 type RadioGroup = object
   key: uint                            # the variable the options share
@@ -608,13 +633,21 @@ var radioGroups: tuple[frame: int; groups: seq[RadioGroup]]
 proc radioGroup(key: uint): int =
   if radioGroups.frame != ui.frameNo:
     radioGroups.frame = ui.frameNo
-    var kept: seq[RadioGroup]
-    for g in radioGroups.groups.mitems:
-      if g.ids.len > 0:                  # (groups not drawn any more are forgotten)
-        kept.add RadioGroup(key: g.key, prevIds: move g.ids, prevValues: move g.values)
-    radioGroups.groups = kept
-  for i, g in radioGroups.groups:
-    if g.key == key: return i
+    # (last frame's options kept for the arrow keys; their seqs used again,
+    # so a frame takes no memory for them)
+    var n = 0
+    for i in 0 ..< radioGroups.groups.len:
+      if radioGroups.groups[i].ids.len > 0:    # (groups not drawn any more are forgotten)
+        if n != i: swap(radioGroups.groups[n], radioGroups.groups[i])
+        template g: untyped = radioGroups.groups[n]
+        swap(g.prevIds, g.ids)
+        swap(g.prevValues, g.values)
+        g.ids.setLen(0)
+        g.values.setLen(0)
+        inc n
+    radioGroups.groups.setLen(n)
+  for i in 0 ..< radioGroups.groups.len:     # (by index: no copy of a group)
+    if radioGroups.groups[i].key == key: return i
   radioGroups.groups.add RadioGroup(key: key)
   radioGroups.groups.high
 
@@ -634,8 +667,8 @@ proc radio*(label: string; v: var int; value: int;
     radioGroups.groups[gi].ids.add id
     radioGroups.groups[gi].values.add value
   # the group's options as drawn last frame: where the arrows go
-  let prevIds = radioGroups.groups[gi].prevIds
-  let prevValues = radioGroups.groups[gi].prevValues
+  template prevIds: untyped = radioGroups.groups[gi].prevIds
+  template prevValues: untyped = radioGroups.groups[gi].prevValues
   if enabled:
     spaceKey(id, hit)
     if mnemonicHit(label): hit.clicked = true
@@ -659,6 +692,11 @@ proc radio*(label: string; v: var int; value: int;
   let y0 = r.y + (r.h - FontH) div 2
   drawLabel(r.x + dp(19), y0, label, if enabled: th.text else: th.gray)
   if hit.focused: focusDots(rect(r.x + dp(17), y0 - 1, tw + 4, FontH + 2))
+  if accessOn:
+    let k = accessNode(arRadioButton, label, id = id, r = r,
+                       states = (if v == value: {asChecked} else: {}) + offWhen(enabled))
+    let at = radioGroups.groups[gi].ids.find(id)
+    accessItem(k, at + 1, max(at + 1, radioGroups.groups[gi].prevIds.len))
 
 # ---- scroll bars --------------------------------------------------------------
 
@@ -674,8 +712,10 @@ proc scrollbarAt*(id: Id; r: Rect; vert: bool; v: var int; lo, hi, page: int;
   let can = enabled and hi > lo and track > 0
   let thumbOn = can and track >= a
   let pos = if thumbOn: (clamp(v, lo, hi) - lo) * (track - a) div span else: 0
-  proc part(o, n: int): Rect =
-    if vert: rect(r.x, r.y + o, r.w, n) else: rect(r.x + o, r.y, n, r.h)
+  # (a template, not a nested proc: that would be a closure made anew
+  # every frame)
+  template part(o, n: int): Rect =
+    (if vert: rect(r.x, r.y + o, r.w, n) else: rect(r.x + o, r.y, n, r.h))
   let a1 = part(0, a)
   let a2 = part(len - a, a)
   let thumb = part(a + pos, a)
@@ -828,9 +868,26 @@ proc wordRight(s: string; i: int): int =
   while result < s.len and not wordChar(s[result]) and s[result] != '\n':
     inc result
 
-proc shown(s: string; a, b: int; pass: bool): string =
-  if not pass: return s[a ..< b]
-  for _ in runes(s[a ..< b]): result.add '*'
+proc shownInto(t: var string; s: string; a, b: int; pass: bool) =
+  ## Shown line `a ..< b` into `t` (its room kept from frame to frame: a
+  ## frame takes no memory for it).
+  if not pass:
+    t.setLen(b - a)
+    if b > a: copyMem(addr t[0], unsafeAddr s[a], b - a)
+    return
+  t.setLen(0)
+  var i = a
+  while i < b:
+    t.add '*'
+    i = runeAfter(s, i)
+
+var shownBuf, lineBuf: string   # (the text being shown, measured or drawn)
+
+template shown(s: string; a, b: int; pass: bool): string =
+  ## What `s[a ..< b]` shows (stars for a password), in a buffer used again
+  ## (taken as it is, at once: the next `shown` changes it).
+  shownInto(shownBuf, s, a, b, pass)
+  shownBuf
 
 proc indexAt(s: string; a, b, x: int; pass: bool): int =
   ## The character boundary in `s[a..<b]` nearest to `x` pixels.
@@ -969,6 +1026,43 @@ proc linesOf(id: Id; s: string; w: int): seq[VLine] =
   if wrapCache.len > 64: wrapCache.clear()
   wrapCache[id] = (s, w, look, result)
 
+var editLines: seq[VLine]   # (the lines of the text box being drawn)
+
+proc runeLenOf(s: string; b: int): int =
+  ## The characters (not bytes) in `s[0 ..< b]`.
+  var i = 0
+  while i < b:
+    i += max(1, runeLenAt(s, i))
+    inc result
+
+proc typedText(t: string; multi: bool; allowed: set[char]): string =
+  ## What of `t` goes into a text box: no CR, no new line in a one-line
+  ## box, only the `allowed` characters (when any are given).
+  for c in plainLetters(t):
+    if c == '\r': continue
+    if c == '\n' and not multi: continue
+    if allowed != {} and c notin allowed: continue
+    result.add c
+
+proc shownLines(dst: var seq[VLine]; id: Id; s: string; w: int; multi: bool) =
+  ## The lines a text box shows, into `dst` (its room kept from frame to
+  ## frame: a frame takes no memory for them).
+  if not multi:
+    dst.setLen(1)
+    dst[0] = (0, s.len, false)
+    return
+  let look = wrapLook()
+  var hit = false
+  wrapCache.withValue(id, c):
+    if c.w == w and c.look == look and c.text == s:
+      dst.setLen(c.lines.len)
+      for i in 0 ..< c.lines.len: dst[i] = c.lines[i]
+      hit = true
+  if not hit:
+    let l = linesOf(id, s, w)
+    dst.setLen(l.len)
+    for i in 0 ..< l.len: dst[i] = l[i]
+
 proc lineOf(vl: seq[VLine]; i: int): int =
   ## The shown line the caret at byte `i` is on.
   var lo = 0
@@ -1008,7 +1102,8 @@ proc lineGeo(s: string; a, b: int; pass: bool; tx, avail: int; runs = true): Lin
   ## How shown line `a ..< b` sits in a text box whose text starts at `tx`:
   ## a right-to-left one (Arabic) at the right edge when it fits. `runs`:
   ## its pieces in each direction too (for its caret and selection).
-  let t = shown(s, a, b, pass)
+  shownInto(lineBuf, s, a, b, pass)
+  template t: untyped = lineBuf
   result.rtl = lineRtl(t, pass)
   result.w = textWidth(t)
   result.left = if result.rtl and result.w < avail: tx + avail - result.w else: tx
@@ -1101,7 +1196,8 @@ proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
   ## Select all. In a right-to-left interface its text keeps its own
   ## direction (a line of Arabic at the right, of Latin at the left, an
   ## empty box's caret at the right), not mirrored with the frame.
-  var st = state(id)
+  var st: WState
+  swap(st, state(id))         # (taken out and put back: no copy of its text)
   let barW = if multi: SbW else: 0
   let area = rect(r.x, r.y, r.w - barW, r.h)
   let inner = inset(area, 1)
@@ -1114,7 +1210,8 @@ proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
   var moved = false
   # the lines as shown (wrapped, or one per line of the text)
   let wrapW = if multi and wrap and not pass: max(FontH, inner.w - 6) else: 0
-  var vl = if multi: linesOf(id, s, wrapW) else: @[(0, s.len, false)]
+  shownLines(editLines, id, s, wrapW, multi)
+  template vl: untyped = editLines
   if wrapW > 0: st.scrollX = 0
   # The scroll bar of a multi-line edit comes first: it is on top. (Its
   # lines scroll by the pixel: `st.scrollY`.)
@@ -1136,6 +1233,14 @@ proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
   beginKeepSides(area)           # (the text as it reads, the mouse with it)
   var hit = interact(id, area, enabled = enabled)
   if hit.hover and canHover(): ui.cursor = curIbeam
+  if accessOn and enabled and not readOnly and accessValueFor(id):
+    # (a screen reader put text in it)
+    let t = typedText(accessSet.text, multi, allowed)
+    if t != s:
+      s = t
+      changed = true
+    st.caret = s.len
+    st.anchor = s.len
   var tapAt = false
   if finger() and enabled:
     # a finger that lands on a text box may be scrolling the page: the box
@@ -1206,12 +1311,8 @@ proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
         st.anchor = st.caret
         changed = true
         moved = true
-    proc clean(t: string): string =
-      for c in plainLetters(t):
-        if c == '\r': continue
-        if c == '\n' and not multi: continue
-        if allowed != {} and c notin allowed: continue
-        result.add c
+    # (a template: a nested proc would be a closure, made on every call)
+    template clean(t: string): string = typedText(t, multi, allowed)
     if canInput() and not ui.keyUsed:
       case ui.key
       of KeyLeft, KeyRight:
@@ -1288,7 +1389,7 @@ proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
       let t = clean(ui.typed)
       if t.len > 0: replaceSel(t)
   if moved: caretT = ui.now
-  if changed: vl = (if multi: linesOf(id, s, wrapW) else: @[(0, s.len, false)])
+  if changed: shownLines(editLines, id, s, wrapW, multi)
   # keep the caret in view
   let ln = if multi: lineOf(vl, st.caret) else: 0
   let cl = vl[ln].a
@@ -1373,13 +1474,28 @@ proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
     # (the system's input method composes at the caret)
     noteTextCaret(rect(globalX(gc.left - st.scrollX + vxOf(s, cl, st.caret, pass, gc)),
                        (if multi: ty + ln * FontH - st.scrollY else: ty), 1, FontH))
+  if focusedNow and ui.composing.len > 0 and not pass:
+    # What the input method composes, in the box at the caret, underlined,
+    # its own caret in it -- over the text, until it is settled (then it
+    # comes as typed text).
+    let cx = gc.left - st.scrollX + vxOf(s, cl, st.caret, pass, gc)
+    let cy = if multi: ty + ln * FontH - st.scrollY else: ty
+    let cw = textWidth(ui.composing)
+    pushClip(inset(inner, 1))
+    fill(rect(cx, cy, cw + 3, FontH), th.field)
+    text(cx + 1, cy, ui.composing, th.fieldText)
+    hline(cx + 1, cy + FontH - 1, max(1, cw), th.fieldText)
+    let kx = cx + 1 + textWidth(ui.composing[0 ..< clamp(ui.composeCaret, 0, ui.composing.len)])
+    vline(kx, cy, FontH - 1, th.fieldText)
+    popClip()
   endKeepSides()
   # its menu: a right click, a long press, the menu key
-  let menuKey = "edit-menu:" & $uint32(id)
+  # (its name made only when a menu is open: a frame takes no memory)
+  template menuKey: string = "edit-menu:" & $uint32(id)
   if enabled and canInput() and ui.rpressed and mouseIn(area):
     ui.focus = id
     openPopupMenu(menuKey, ui.mx, ui.my)
-  if beginPopupMenuFor(menuKey):
+  if ui.popup != 0 and beginPopupMenuFor(menuKey):
     let a0 = min(st.caret, st.anchor)
     let b0 = max(st.caret, st.anchor)
     let some = a0 != b0
@@ -1406,7 +1522,18 @@ proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
       st.anchor = 0
       st.caret = s.len
     endMenu()
-  state(id) = st
+  if accessOn:
+    let k = accessNode(if pass: arPasswordField elif multi: arTextArea else: arTextField,
+                       value = (if pass: "" else: s), id = id, r = area,
+                       states = offWhen(enabled) + (if readOnly: {asReadOnly} else: {}) +
+                                (if multi: {asMultiLine} else: {}) +
+                                (if pass: {asProtected} else: {}))
+    if not pass:
+      let c = runeLenOf(s, clamp(st.caret, 0, s.len))
+      let a = runeLenOf(s, clamp(min(st.caret, st.anchor), 0, s.len))
+      let b = runeLenOf(s, clamp(max(st.caret, st.anchor), 0, s.len))
+      accessText(k, c, a, b)
+  swap(state(id), st)
   changed
 
 proc edit*(s: var string; w = 0; password = false;
@@ -1428,6 +1555,9 @@ proc editArea*(s: var string; lines = 6; w = 0;
 
 # ---- lists ------------------------------------------------------------------
 
+var itemBuf: string    # (a column of a list's item)
+var numBuf: string     # (a number shown: a progress bar's, a spin box's)
+
 proc drawItem(x, y, w: int; s: string; c: Color; tabs: openArray[int]) =
   ## An item; '\t' moves to the next tab stop. (The stops grow with the
   ## UI's size, as the text does, and a column's text stops short of the
@@ -1436,11 +1566,23 @@ proc drawItem(x, y, w: int; s: string; c: Color; tabs: openArray[int]) =
     text(x, y, s, c)
     return
   var cx = x
-  let parts = s.split('\t')
-  for k, part in parts:
+  var k = 0
+  var a = 0
+  while true:
+    let t = s.find('\t', a)
+    let e = if t < 0: s.len else: t
     let next = x + dp(if k < tabs.len: tabs[k] else: (k + 1) * 90)
-    text(cx, y, (if k < parts.high: ellipsize(part, next - cx - dp(4)) else: part), c)
+    # (the column into a buffer used again: a frame takes no memory for it)
+    itemBuf.setLen(e - a)
+    if e > a: copyMem(addr itemBuf[0], unsafeAddr s[a], e - a)
+    if t >= 0 and textWidth(itemBuf) > next - cx - dp(4):
+      text(cx, y, ellipsize(itemBuf, next - cx - dp(4)), c)
+    else:
+      text(cx, y, itemBuf, c)
+    if t < 0: break
     cx = next
+    a = t + 1
+    inc k
 
 proc listbox*(items: openArray[string]; sel: var int; rows = 6; w = 0;
               tabs: openArray[int] = []; enabled = true): bool {.discardable.} =
@@ -1509,6 +1651,15 @@ proc listbox*(items: openArray[string]; sel: var int; rows = 6; w = 0;
             nsel = i
             follow = true
             break
+  if accessPress != 0 and enabled:
+    # (a screen reader picked an item)
+    for i in 0 ..< n:
+      if accessSubId(id, i) == accessPress:
+        nsel = i
+        follow = true
+        accessPress = 0
+        ui.focus = id
+        break
   if nsel != sel and nsel >= 0 and nsel < n:
     sel = nsel
     result = true
@@ -1536,6 +1687,17 @@ proc listbox*(items: openArray[string]; sel: var int; rows = 6; w = 0;
   if hit.focused and (sel < 0 or sel >= n):
     dots(rect(area.x + 1, r.y + 1, area.w - 2, ItemH), th.fieldText)
   popClip()
+  if accessOn:
+    # (the list and the items it shows; the selected one has the focus)
+    accessBegin(arList, id = id, r = area, states = offWhen(enabled), takesLabel = true)
+    for i in top ..< min(n, top + vis + 2):
+      let y = r.y + 1 + i * ItemH - off
+      let k = accessNode(arListItem, items[i], id = accessSubId(id, i),
+                         r = rect(area.x + 1, y, area.w - 2, ItemH),
+                         states = (if i == sel: {asSelected} else: {}))
+      accessItem(k, i + 1, n)
+      if i == sel and hit.focused: accessFocus(k)
+    accessEnd()
 
 type ItemPreview* = proc (i: int; r: Rect; selected: bool) {.closure.}
   ## Draws item `i` of a drop-down list in `r` (its background is drawn
@@ -1624,6 +1786,23 @@ proc combo*(items: openArray[string]; sel: var int; w = 0;
   let id = idOf(sel, "combo")
   let open = ui.popup == id
   let hit = interact(id, r, enabled = enabled)
+  if accessOn and enabled:
+    if accessPressed == id and not open:
+      # (a screen reader opened it)
+      ui.popup = id
+      ui.menuOpen = false
+      ui.popupHi = sel
+      ui.redraw = true
+    if accessValueFor(id):
+      for i, it in items:
+        if tr(it) == accessSet.text or it == accessSet.text:
+          if sel != i:
+            sel = i
+            result = true
+          break
+    accessNode(arComboBox, value = (if sel >= 0 and sel < items.len: tr(items[sel]) else: ""),
+               id = id, r = r, states = offWhen(enabled) + {asExpandable} +
+                                       (if open: {asExpanded} else: {}))
   if enabled:
     # a press opens it (a tap, with a finger: a finger may be scrolling)
     if not open and ((not finger() and hit.hover and ui.active == id and ui.pressed) or
@@ -1713,10 +1892,15 @@ proc slider*(v: var int; lo, hi: int; w = 0; ticks = 10;
       of KeyHome: nv = lo; ui.keyUsed = true
       of KeyEnd: nv = hi; ui.keyUsed = true
       else: discard
+  if accessOn and enabled and accessValueFor(id):
+    nv = int(round(accessSet.num))
   nv = clamp(nv, lo, hi)
   if nv != v:
     v = nv
     result = true
+  if accessOn:
+    let k = accessNode(arSlider, value = $v, id = id, r = r, states = offWhen(enabled))
+    accessRange(k, lo.float, hi.float, v.float, 1.0)
   sunken(chan)
   hline(chan.x + 1, chan.y + 1, chan.w - 2, th.frame)
   let cx = chan.x + (clamp(v, lo, hi) - lo) * travel div span
@@ -1735,13 +1919,20 @@ proc progress*(value: float; w = 0; showText = true) =
   ui.lastId = 0
   ui.lastRect = r
   let f = if value.isNaN: 0.0 else: clamp(value, 0.0, 1.0)
+  if accessOn:
+    let k = accessNode(arProgressBar, value = $int(f * 100.0 + 0.5) & "%", id = 0, r = r)
+    accessRange(k, 0, 100, f * 100.0, 1.0)
   let inner = inset(r, 1)
   let done = rect(inner.x, inner.y, int(inner.w.float * f + 0.5), inner.h)
   fill(inner, th.field)
   fill(done, th.select)
   box(r, th.edge)
   if showText:
-    let s = $int(f * 100.0 + 0.5) & "%"
+    # (in a buffer used again: a frame takes no memory for it)
+    numBuf.setLen(0)
+    numBuf.addInt int(f * 100.0 + 0.5)
+    numBuf.add '%'
+    template s: untyped = numBuf
     let tx = r.x + (r.w - textWidth(s)) div 2
     let ty = r.y + (r.h - FontH) div 2
     pushClip(rect(done.x + done.w, inner.y, inner.w - done.w, inner.h))
@@ -1758,19 +1949,22 @@ proc spin*(v: var int; lo, hi: int; w = 80; step = 1;
   ## Page Up / Page Down (ten steps) and the wheel.
   let r = place(w, EditH)
   let id = idOf(v, "spin")
-  var st = state(id)
+  var st: WState
+  swap(st, state(id))         # (taken out and put back: no copy of its text)
   let editId = id + 31
-  if ui.focus != editId: st.buf = $v
+  if ui.focus != editId:
+    # (the number as text only when it changed: a frame takes no memory)
+    numBuf.setLen(0)
+    numBuf.addInt v
+    if st.buf != numBuf: st.buf = numBuf
   var nv = v
   let aw = if fingers(): dp(26) else: dp(16)            # the arrows: finger-sized on touch
   let ups = rect(r.x + r.w - aw, r.y, aw, r.h div 2 + 1)
   let downs = rect(r.x + r.w - aw, r.y + r.h div 2, aw, r.h - r.h div 2)
-  var buf = st.buf
-  if editAt(editId, buf, rect(r.x, r.y, r.w - aw + 1, r.h), false, false,
+  if editAt(editId, st.buf, rect(r.x, r.y, r.w - aw + 1, r.h), false, false,
              enabled, {'0'..'9', '-'}):
-    try: nv = parseInt(buf)
+    try: nv = parseInt(st.buf)
     except ValueError: discard
-  st.buf = buf
   if enabled and canInput():
     if ui.focus == editId:
       if keyHit(KeyUp): nv += step
@@ -1796,7 +1990,16 @@ proc spin*(v: var int; lo, hi: int; w = 80; step = 1;
     v = nv
     st.buf = $v
     result = true
-  state(id) = st
+  swap(state(id), st)
+  if accessOn:
+    # (one node for the box and its arrows, named as its text box was: by
+    # the label before it; a value a screen reader puts comes through the box)
+    var nm = ""
+    if accessTree.len > 0 and accessTree[^1].id == uint32(editId):
+      nm = accessTree[^1].name
+      accessTree.setLen(accessTree.len - 1)
+    let k = accessNode(arSpinButton, nm, value = $v, id = editId, r = r, states = offWhen(enabled))
+    accessRange(k, lo.float, hi.float, v.float, step.float)
   for i, b in [ups, downs]:
     let pr = ui.active == id + 40 + i.uint32 and ui.mouseDown and mouseIn(b)
     buttonFace(b, pr, rounded = false, bevel = 1)
@@ -1902,6 +2105,7 @@ proc popupSlider*(v: var int; lo, hi: int; w = 0; unit = "%";
 proc endGroup*() =
   ## Ends a `beginGroup`: draws the box and its title.
   let (cell, title) = groupEnd()
+  if accessOn: accessEnd(cell)
   let top = FontH div 2 - 1
   etchedBox(rect(cell.x, cell.y + top, cell.w, cell.h - top))
   if title.len > 0:
@@ -2053,6 +2257,12 @@ proc beginTabs*(sel: var int; labels: openArray[string]; sameHeight = false) =
     x += ws[i]
   for i, l in labels:
     if mnemonicHit(l): sel = i
+    if accessPress != 0 and accessPress == accessSubId(id, i):
+      # (a screen reader chose it)
+      accessPress = 0
+      sel = i
+      ui.focus = id
+      ui.redraw = true
   if hit.focused and canInput() and not ui.keyUsed:
     case ui.key
     of KeyLeft:
@@ -2135,6 +2345,20 @@ proc beginTabs*(sel: var int; labels: openArray[string]; sameHeight = false) =
     x += tw
   popClip()
   if selW > 0 and selX + selW > cell.x + 4 + room: selW = max(0, cell.x + 4 + room - selX)
+  if accessOn:
+    # (the tabs, then the page of the chosen one: its controls inside)
+    accessBegin(arTabList, "", strip, id)
+    var ax = cell.x + 2
+    for i in first ..< labels.len:
+      let k = accessNode(arTab, labels[i], id = accessSubId(id, i),
+                         r = rect(ax, cell.y, ws[i], tabH),
+                         states = (if i == sel: {asSelected} else: {}))
+      accessItem(k, i + 1, labels.len)
+      if i == sel and hit.focused: accessFocus(k)
+      ax += ws[i]
+    accessEnd()
+    accessBegin(arPane, (if sel >= 0 and sel < labels.len: labels[sel] else: ""),
+                rect(cell.x, cell.y + tabH, cell.w, FontH), accessSubId(id, 8888))
   tabStack.add (cell.x, cell.y, cell.w, selX, selW, tabH, id, sameHeight)
   pushFrame(rect(cell.x + Pad + 2, cell.y + tabH + Pad + 2,
                  cell.w - 2*Pad - 4, 0), reserve = Pad + 2, inPage = true)
@@ -2150,6 +2374,7 @@ proc endTabs*() =
       state(t.id) = st
     h = st.anchor
   let page = rect(t.x, t.y + t.tabH, t.w, h + 2*Pad + 4)
+  if accessOn: accessEnd(page)
   if tabLook == tlPalette:
     var ps = state(t.id + 3)
     if ps.aux != page.h:
@@ -2260,6 +2485,7 @@ proc tabStrip*(labels: openArray[string]; sel: var int; glyphs: openArray[string
   hline(r.x, r.y + r.h - 1, r.w, if pal: th.frame else: th.edge)
   var x = r.x + dp(2) - off
   pushClip(strip)
+  if accessOn: accessBegin(arTabList, "", r, accessSubId(id, 7777), takesLabel = true)
   for i, l in labels:
     let tw = widths[i]
     if x + tw < strip.x or x > strip.x + strip.w:
@@ -2283,8 +2509,19 @@ proc tabStrip*(labels: openArray[string]; sel: var int; glyphs: openArray[string
         result.moved = (i, i + 1)
         ui.active = id + uint32((i + 1) * 2 + 1)
       if result.moved.a >= 0 or result.tornOff >= 0: ui.redraw = true
+    if accessOn:
+      let k = accessNode(arTab, l, id = tabId, r = tr,
+                         states = accessOff(enabled) + (if up: {asSelected} else: {}))
+      accessItem(k, i + 1, n)
+      if up and ui.focus == id: accessFocus(k)
+      if closable:
+        let cid = accessSubId(tabId, 0)
+        if accessPress != 0 and accessPress == cid and enabled:
+          accessPress = 0
+          result.closed = i
+        accessNode(arButton, "Close " & plainName(l), id = cid, r = xr, states = accessOff(enabled))
     if hit.clicked:
-      if closable and xr.contains(point(ui.mx, ui.my)): result.closed = i
+      if closable and xr.contains(point(ui.mx, ui.my)) and accessPressed != tabId: result.closed = i
       elif sel != i:
         sel = i
         result.selected = true
@@ -2348,6 +2585,7 @@ proc tabStrip*(labels: openArray[string]; sel: var int; glyphs: openArray[string
       dropHighlight(tr)
     x += tw
   popClip()
+  if accessOn: accessEnd()
   # the arrows (scrolling) and the + button
   var bx = strip.x + strip.w + dp(2)
   if over:
@@ -2368,6 +2606,7 @@ proc tabStrip*(labels: openArray[string]; sel: var int; glyphs: openArray[string
     let ax = if over: bx else: min(x + dp(2), r.x + r.w - addW)
     let plusR = rect(ax, r.y + dp(3), addW - dp(4), r.h - dp(6))
     let hit = interact(id, plusR, focusable = false, enabled = enabled)
+    if accessOn: accessNode(arButton, "New tab", id = id, r = plusR, states = accessOff(enabled))
     buttonFace(plusR, hit.down, bevel = 1, hot = hovered(plusR))
     text(plusR.x + (plusR.w - textWidth(nfPlus)) div 2, plusR.y + (plusR.h - FontH) div 2, nfPlus,
          th.text)
@@ -2597,9 +2836,11 @@ proc beginMenubar*() =
   barIds.setLen(0)
   menuSwitch = 0
   shiftContent(MenuH + 1)
+  if accessOn: accessBegin(arMenuBar, "", r)
 
 proc endMenubar*() =
   ## Ends the menu bar: F10 opens its first menu; Left / Right go along it.
+  if accessOn: accessEnd()
   popLayer()
   ui.barY += MenuH + 1
   if ui.menuOpen and menuSwitch != 0 and barIds.len > 0:
@@ -2677,6 +2918,9 @@ proc beginPopupMenu(id: Id; x, y: int; level = 0; fixedTop = false): bool =
   m.mark = cmdMark()
   m.bg = reserveFill()
   pms.add m
+  if accessOn:
+    # (its items go inside; its place is known once they are drawn)
+    accessBegin(arMenu, "", rect(m.x, y, m.w, MenuRowH), accessSubId(id, 9999))
   true
 
 proc endMenu*() =
@@ -2684,6 +2928,7 @@ proc endMenu*() =
   ## `beginPopupMenuFor`): draws its frame; Up, Down, Home, End, Esc.
   let m = pms.pop()
   let r = rect(m.x, m.y, m.w * m.cols, max(m.cy, m.maxCy) - m.y + 3)
+  if accessOn: accessEnd(r)
   patchFill(m.bg, r, th.window)
   box(r, th.edge)
   # the hard black shadow of the Win31 menus, 3 pixels down and right
@@ -2754,7 +2999,7 @@ var boldMenus* = true
 proc beginMenu*(title: string): bool =
   ## A menu of the menu bar (see `menu`): true while it is open (draw its
   ## items, then `endMenu`).
-  let id = idOf("menu:" & title)
+  let id = idOfLabel("menu:", title)
   let tr = rect(barX, ui.barY, labelWidth(title, boldMenus) + dp(16), MenuH)
   barX += tr.w
   barIds.add id
@@ -2784,7 +3029,17 @@ proc beginMenu*(title: string): bool =
     ui.menuOpen = true
     ui.popupHi = 0
     ui.redraw = true
+  if accessPress != 0 and accessPress == id:
+    # (a screen reader opened it)
+    accessPress = 0
+    ui.popup = id
+    ui.menuOpen = true
+    ui.popupHi = 0
+    ui.redraw = true
   let open = ui.popup == id
+  if accessOn:
+    accessNode(arMenu, title, id = id, r = tr,
+               states = {asExpandable, asFocusable} + (if open: {asExpanded} else: {}))
   let lx = tr.x + dp(8)
   if open:
     fill(tr, th.select)
@@ -2913,12 +3168,23 @@ proc menuItem*(label: string; shortcut = ""; checked = false;
        mnemonicOf(label) == char(ord('a') + ord(ui.key) - ord(KeyA)):
       ui.keyUsed = true
       result = true
+  let itemId = accessSubId(pm.id, i)
+  if accessPress != 0 and accessPress == itemId and enabled:
+    # (a screen reader chose it)
+    accessPress = 0
+    result = true
   if result:
     ui.popup = 0
     ui.menuOpen = false
     subId = 0
     ui.redraw = true
   discard itemRow(label, shortcut, checked, enabled, false, i)
+  if accessOn:
+    let k = accessNode(arMenuItem, label, id = itemId, r = r,
+                       states = offWhen(enabled) + (if checked: {asChecked} else: {}))
+    if k >= 0: accessTree[k].key = shortcut
+    accessItem(k, i + 1, 0)
+    if hiOf(level) == i: accessFocus(k)
 
 proc beginSubmenu*(label: string; enabled = true): bool =
   ## An item that opens a menu of its own (see `submenu`): true while it is
@@ -2928,6 +3194,17 @@ proc beginSubmenu*(label: string; enabled = true): bool =
   let level = pm.level
   let id = mixId(pm.id, fnv("sub:" & label))
   let r = itemRow(label, "", false, enabled, true, i)
+  if accessOn:
+    let k = accessNode(arMenuItem, label, id = id, r = r,
+                       states = offWhen(enabled) + {asExpandable} +
+                                (if subId == id: {asExpanded} else: {}))
+    if ui.popupHi == i and level == 0: accessFocus(k)
+  if accessPress != 0 and accessPress == id and enabled and level == 0:
+    accessPress = 0
+    ui.popupHi = i
+    subId = id
+    subHi = 0
+    ui.redraw = true
   if level != 0 or not enabled: return false
   if canInput() and not overSub():
     if mouseIn(r) and (ui.mouseMoved or ui.pressed or waitRow == i):
@@ -3069,16 +3346,22 @@ proc beginToolbar*() =
   pushRow(rect(ui.safe.left + 6, r.y + 3, ui.w - ui.safe.left - 12, tbar.h - 6),
           tbar.h - 6)
   shiftContent(tbar.h)
+  if accessOn: accessBegin(arToolBar, "", r)
   tbar.on = true
   tbar.full = false
   tbar.y = r.y
   tbar.items.setLen(0)
 
-proc overflows(w: int; key, label: string; enabled, down: bool; clicked: var bool): bool =
+proc overflowsNow(w: int): bool {.inline.} =
+  tbar.on and (tbar.full or available() < w + (CtrlH + 1) + Gap)
+
+template overflows(w: int; key, label: string; enabled, down: bool; clicked: var bool): bool =
   ## In a tool bar too narrow for it: the button goes into the "more" menu
-  ## (and is clicked when it was picked there).
-  if not tbar.on: return false
-  if not tbar.full and available() >= w + (CtrlH + 1) + Gap: return false
+  ## (and is clicked when it was picked there). (`key` and `label` are made
+  ## only then: a tool button takes no memory every frame for them.)
+  (if overflowsNow(w): overflowItem(key, label, enabled, down, clicked) else: false)
+
+proc overflowItem(key, label: string; enabled, down: bool; clicked: var bool): bool =
   tbar.full = true
   tbar.items.add (key, label, enabled, down)
   if tbar.chosen == key:
@@ -3089,12 +3372,16 @@ proc overflows(w: int; key, label: string; enabled, down: bool; clicked: var boo
 proc endToolbar*() =
   ## Ends the tool bar: the buttons that did not fit go into its "more" menu.
   tbar.on = false
+  if accessOn: accessEnd()
   if tbar.items.len > 0:
     # the buttons that did not fit, in a menu
     let r = place(CtrlH + 1, CtrlH - 1)
     let id = idOf("toolbar-more")
     let hit = interact(id, r, focusable = false)
     let open = ui.popup == id
+    if accessOn:
+      accessNode(arButton, "More", id = id, r = r,
+                 states = {asExpandable} + (if open: {asExpanded} else: {}))
     buttonFace(r, open or hit.down, bevel = 1, hot = hovered(r))
     let g = "\uf142"                     # a vertical ellipsis (nfEllipsisV)
     text(r.x + (r.w - textWidth(g)) div 2, r.y + (r.h - FontH) div 2, g, th.text)
@@ -3128,14 +3415,18 @@ proc toolButton*(ic: Icon; tip = ""; down = false;
   ## A tool bar button with a 16x16 icon. `down` shows it pressed in.
   if overflows(CtrlH + 1, "tool:" & tip, tip, enabled, down, result): return
   let r = place(CtrlH + 1, if tbar.on: tbar.h - 6 else: CtrlH - 1)
-  let id = idOf("tool:" & tip)
+  let id = idOfLabel("tool:", tip)
   let hit = interact(id, r, focusable = false, enabled = enabled)
+  if accessOn:
+    accessNode(if down: arToggleButton else: arButton, tip,
+               states = offWhen(enabled) + (if down: {asPressed} else: {}))
   let pr = hit.down or down
   buttonFace(r, pr, bevel = 1, hot = enabled and hovered(r))
   if down and not hit.down: checker(inset(r, 2), th.light)   # a switched-on button: dithered
   let o = if pr: 1 else: 0
-  image(r.x + (r.w - ic.w) div 2 + o, r.y + (r.h - ic.h) div 2 + o,
-        if enabled: ic else: grayed(ic))
+  # (the icon itself, not a copy of it, when it is not grayed)
+  if enabled: image(r.x + (r.w - ic.w) div 2 + o, r.y + (r.h - ic.h) div 2 + o, ic)
+  else: image(r.x + (r.w - ic.w) div 2 + o, r.y + (r.h - ic.h) div 2 + o, grayed(ic))
   tooltip(tip)
   hit.clicked
 
@@ -3151,6 +3442,9 @@ proc toolButton*(caption: string; tip = ""; down = false; bold = false;
   let r = place(max(CtrlH + 1, tw + dp(10)), if tbar.on: tbar.h - 6 else: CtrlH - 1)
   let id = idOf("tool:" & caption & tip)
   let hit = interact(id, r, focusable = false, enabled = enabled)
+  if accessOn:
+    accessNode(if down: arToggleButton else: arButton, (if tip.len > 0: tip else: caption),
+               states = offWhen(enabled) + (if down: {asPressed} else: {}))
   let pr = hit.down or down
   buttonFace(r, pr, bevel = 1, hot = enabled and hovered(r))
   if down and not hit.down: checker(inset(r, 2), th.light)   # a switched-on button: dithered
@@ -3186,7 +3480,7 @@ proc drawPic(p: ButtonPic; x, y: int; enabled: bool) =
   if p.glyph.len > 0:
     text(x, y, p.glyph, if enabled: th.text else: th.gray, style(size = if p.size > 0: p.size else: 1.0))
   elif p.icon.w > 0:
-    image(x, y, if enabled: p.icon else: grayed(p.icon))
+    if enabled: image(x, y, p.icon) else: image(x, y, grayed(p.icon))
 
 proc labeledSize*(pic: ButtonPic; label: string; look: ButtonLook; minH = CtrlH): (int, int) =
   ## How big a button showing `pic` and `label` the `look` way is.
@@ -3231,6 +3525,8 @@ proc button*(label: string; pic: ButtonPic; look = blTextBeside; isDefault = fal
   let r = place(if w > 0: w else: max(nw, if lk == blTextOnly: buttonWidth(label) else: 0),
                 if h > 0: h else: nh)
   var hit = interact(id, r, enabled = enabled)
+  if accessOn:
+    accessNode(arButton, label, states = offWhen(enabled) + (if isDefault: {asDefault} else: {}))
   if enabled:
     spaceKey(id, hit)
     if hit.focused:
@@ -3257,6 +3553,9 @@ proc barButton*(pic: ButtonPic; label: string; tip = ""; down = false; enabled =
   if overflows(bw, key, label, enabled, down, result): return
   let r = place(bw, rowH)
   let hit = interact(idOf(key), r, focusable = false, enabled = enabled)
+  if accessOn:
+    accessNode(if down: arToggleButton else: arButton, (if label.len > 0: label else: tip),
+               states = offWhen(enabled) + (if down: {asPressed} else: {}), help = tip)
   let pr = hit.down or down
   buttonFace(r, pr, bevel = 1, hot = enabled and hovered(r))
   if down and not hit.down: checker(inset(r, 2), th.light)   # a switched-on button: dithered
@@ -3268,6 +3567,9 @@ proc buttonAt*(key: string; r: Rect; label: string; pic: ButtonPic; look = blTex
                enabled = true; down = false): bool {.discardable.} =
   ## `buttonAt` with a picture, the `look` way.
   let hit = interact(idOf("btnat:" & key), r, focusable = false, enabled = enabled)
+  if accessOn:
+    accessNode(if down: arToggleButton else: arButton, label,
+               states = (if down: {asPressed} else: {}) + offWhen(enabled))
   let pressed = down or hit.down
   buttonFace(r, pressed, 1, hot = enabled and hit.hover)
   drawLabeled(inset(r, 1), pic, label, if look == blDefault: blTextBeside else: look, enabled, pressed)
@@ -3322,6 +3624,14 @@ proc statusbar*(parts: varargs[string]) =
     pushClip(rect(x0, r.y + 2, max(0, x - x0 - 4), h - 3))
     text(x0, ty, tr(parts[0]), th.text)
     popClip()
+  if accessOn:
+    # (its parts read as one line)
+    var all = ""
+    for p in parts:
+      if p.len > 0:
+        if all.len > 0: all.add ", "
+        all.add tr(p)
+    accessNode(arStatusBar, all, id = 0, r = r)
 
 proc beginStatusBar*(): Rect =
   ## Starts a status bar of your own at the bottom of the window (see
@@ -3333,6 +3643,7 @@ proc beginStatusBar*(): Rect =
   hline(0, r.y, ui.w, th.shadow)
   hline(0, r.y + 1, ui.w, th.light)
   ui.bottom = r.y
+  if accessOn: accessBegin(arStatusBar, "", r)
   let grip = sizeGrip()
   let gw = if grip.y >= r.y: grip.w else: 0     # (the frame's size grip at its end)
   pushFrame(rect(r.x + dp(4) + ui.safe.left, r.y + 3,
@@ -3345,6 +3656,7 @@ proc endStatusBar*() =
   endClipped()
   discard popFrame()
   popLayer()
+  if accessOn: accessEnd()
 
 template statusRow*(body: untyped) =
   ## A status bar with controls in it (an editable zoom field, a menu
@@ -3420,6 +3732,7 @@ proc beginDialog*(open: var bool; title: string; width: int): bool =
        tfg, true)
   let client = rect(x + 5, bar.y + bar.h + 1, w - 10, h - TitleH - 11)
   fill(client, th.window)
+  if accessOn: accessBegin(arDialog, title, r, id, {asModal})
   if not tall: st.caret = 0
   state(id) = st
   dlgClient = client
@@ -3433,6 +3746,7 @@ proc beginDialog*(open: var bool; title: string; width: int): bool =
 proc endDialog*() =
   ## Ends a `beginDialog`: it scrolls (with its scroll bar) when it is
   ## taller than the window.
+  if accessOn: accessEnd()
   let ch = popFrame()
   let id = ui.curDialog
   var st = state(id)
@@ -3883,6 +4197,9 @@ proc captionBar*() =
   let menuId = id + 1
   # the control-menu box: a gray square with the "space bar"
   let hit = interact(id + 2, boxR, focusable = false)
+  if accessOn:
+    accessNode(arButton, "Window menu", id = id + 2, r = boxR,
+               states = {asExpandable} + (if ui.popup == menuId: {asExpanded} else: {}))
   box(boxR, th.frame)
   captionButton(inset(boxR, 1), hit.down)
   controlMenuMark(inset(boxR, 1), hit.down)
@@ -3899,6 +4216,7 @@ proc captionBar*() =
   if canMin:
     let mr = rect(right - s - 3, cap.y + 3, s, s)
     let mh = interact(id + 3, mr, focusable = false)
+    if accessOn: accessNode(arButton, "Minimize", id = id + 3, r = mr)
     box(mr, th.frame)
     captionButton(inset(mr, 1), mh.down)
     captionArrow(inset(mr, 1), false, mh.down)

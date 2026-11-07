@@ -14,33 +14,38 @@
 
 import gfx
 
+proc vgaColor*(ch: char): uint32 =
+  ## The color of pixel-art letter `ch` (see `icon`): 0 for '.' and any
+  ## other letter, transparent.
+  case ch
+  of 'k': 0xFF000000'u32
+  of 'w': 0xFFFFFFFF'u32
+  of 's': 0xFFC0C0C0'u32
+  of 'g': 0xFF808080'u32
+  of 'r': 0xFFFF0000'u32
+  of 'm': 0xFF800000'u32
+  of 'y': 0xFFFFFF00'u32
+  of 'o': 0xFF808000'u32
+  of 'l': 0xFF00FF00'u32
+  of 'G': 0xFF008000'u32
+  of 'c': 0xFF00FFFF'u32
+  of 't': 0xFF008080'u32
+  of 'b': 0xFF0000FF'u32
+  of 'n': 0xFF000080'u32
+  of 'p': 0xFFFF00FF'u32
+  of 'P': 0xFF800080'u32
+  else: 0'u32
+
 proc icon*(rows: openArray[string]): Icon =
   ## Pixel art in the 16 VGA colors: k black, w white, s silver, g gray,
   ## r red, m maroon, y yellow, o olive, l lime, G green, c cyan, t teal,
   ## b blue, n navy, p pink, P purple; '.' is transparent.
   result.h = rows.len
   result.w = if rows.len > 0: rows[0].len else: 0
+  result.px = newSeqOfCap[uint32](result.w * result.h)
   for row in rows:
     doAssert row.len == result.w, "icon rows must be equally long"
-    for ch in row:
-      result.px.add(case ch
-        of 'k': 0xFF000000'u32
-        of 'w': 0xFFFFFFFF'u32
-        of 's': 0xFFC0C0C0'u32
-        of 'g': 0xFF808080'u32
-        of 'r': 0xFFFF0000'u32
-        of 'm': 0xFF800000'u32
-        of 'y': 0xFFFFFF00'u32
-        of 'o': 0xFF808000'u32
-        of 'l': 0xFF00FF00'u32
-        of 'G': 0xFF008000'u32
-        of 'c': 0xFF00FFFF'u32
-        of 't': 0xFF008080'u32
-        of 'b': 0xFF0000FF'u32
-        of 'n': 0xFF000080'u32
-        of 'p': 0xFFFF00FF'u32
-        of 'P': 0xFF800080'u32
-        else: 0'u32)
+    for ch in row: result.px.add vgaColor(ch)
 
 const
   icNew* = icon([

@@ -582,6 +582,14 @@ proc fragment(d: RichDoc; a, b: RichPos): RichDoc =
     tidy(p)
     result.paras.add p
 
+proc charsAt(d: RichDoc; p: RichPos): int =
+  ## (where `p` is in the text a screen reader has, in characters)
+  for i in 0 ..< min(p.para, d.paras.len):
+    result += paraText(d.paras[i]).runeLen + 1
+  if p.para < d.paras.len:
+    let t = paraText(d.paras[p.para])
+    result += t[0 ..< clamp(p.off, 0, t.len)].runeLen
+
 proc plainOf(f: RichDoc): string =
   for i, p in f.paras:
     if i > 0: result.add '\n'
@@ -2206,6 +2214,13 @@ proc richEdit*(d: var RichDoc; height = -1; key = ""; placeholder = "";
       richSelectAll(d)
     endMenu()
   linkDialog(d)
+  if accessOn:
+    # (its text, the caret and the selection counted in characters)
+    let (sa, sb) = selRange(d)
+    accessNameOr(tr(placeholder))
+    let k = accessNode(arTextArea, value = plainOf(d), id = id, r = area,
+                       states = accessOff(enabled) + {asMultiLine})
+    accessText(k, charsAt(d, clampPos(d, d.caret)), charsAt(d, sa), charsAt(d, sb))
   ui.lastId = id
   ui.lastRect = area
   result = d.dirty
@@ -2280,6 +2295,9 @@ proc colorButton(d: var RichDoc; s: RichStyle) =
   fill(bar, c)
   box(bar, th.shadow)
   arrow(r.x + r.w - dp(6) + o, r.y + r.h div 2 + o, dDown, th.text)
+  if accessOn:
+    accessNode(arButton, "Text color", id = id, r = r,
+               states = {asExpandable} + (if open: {asExpanded} else: {}))
   ui.lastRect = r
   tooltip("Text color")
   if hit.clicked:
@@ -2301,6 +2319,9 @@ proc sizeButton(d: var RichDoc; s: RichStyle) =
   let g = nfFormatSize
   text(r.x + dp(4) + o, r.y + (r.h - lineHeight(st)) div 2 + o, g, th.text, st)
   arrow(r.x + r.w - dp(6) + o, r.y + r.h div 2 + o, dDown, th.text)
+  if accessOn:
+    accessNode(arButton, "Text size", id = id, r = r,
+               states = {asExpandable} + (if open: {asExpanded} else: {}))
   ui.lastRect = r
   tooltip("Text size")
   if hit.clicked: openPopupMenu(key, r.x, r.y + r.h)

@@ -1023,6 +1023,9 @@ proc iconButton(key: string; r: Rect; down: bool; tip: string; ic: Icon; geo = g
                 enabled = true): bool =
   ## A button of a floating bar with a picture: true when clicked.
   let hit = interact(idOf("bb:" & key), r, focusable = false, enabled = enabled)
+  if accessible():
+    accessNode(if down: arToggleButton else: arButton, tip, id = idOf("bb:" & key), r = r,
+               states = (if down: {asPressed, asChecked} else: {}) + (if enabled: {} else: {asDisabled}))
   let pressed = down or hit.down
   buttonFace(r, pressed, 1, rounded = false, bevel = 1, hot = enabled and hovered(r))
   if down and not hit.down: checker(inset(r, 2), th.light)
@@ -1034,6 +1037,9 @@ proc iconButton(key: string; r: Rect; down: bool; tip: string; ic: Icon; geo = g
 proc paintButton(key: string; r: Rect; down: bool; tip: string): tuple[clicked: bool; r: Rect] =
   ## A button whose picture the caller draws (in the rectangle returned).
   let hit = interact(idOf("bp:" & key), r, focusable = false)
+  if accessible():
+    accessNode(if down: arToggleButton else: arButton, tip, id = idOf("bp:" & key), r = r,
+               states = (if down: {asPressed, asChecked} else: {}))
   let pressed = down or hit.down
   buttonFace(r, pressed, 1, rounded = false, bevel = 1, hot = hovered(r))
   if down and not hit.down: checker(inset(r, 2), th.light)
@@ -1813,6 +1819,13 @@ proc drawOverlays() =
   if eraseTrail.len > 0: wakeIn(16)
 
 proc drawCanvas() =
+  if accessible():
+    # (what a screen reader says of the board: a picture, and the words on it)
+    var words: seq[string]
+    for s in bd.page.shapes:
+      if s.text.len > 0 and words.len < 50: words.add s.text.replace('\n', ' ')
+    accessNode(arImage, "Board", id = 0, r = view,
+               help = $bd.page.shapes.len & " shapes" & (if words.len > 0: ": " & words.join("; ") else: ""))
   pushClip(view)
   fill(view, tint(bd.paperOf))
   if showGrid: drawGrid()

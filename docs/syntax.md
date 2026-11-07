@@ -1,6 +1,6 @@
 # Retro Nim UI: a study of its syntax
 
-By Sultan Al Isaiee ([@foxoman](https://github.com/foxoman)), for Retro Nim UI 0.25.0.
+By Sultan Al Isaiee ([@foxoman](https://github.com/foxoman)), for Retro Nim UI 0.26.0.
 
 The syntax is immediate mode written as plain Nim: a window is a block that runs every frame, a control is a proc call, its result is the event, and your own variables are the state. That one choice removes callbacks, widget objects and data binding, the three things that make most UI code hard to follow.
 
@@ -583,7 +583,7 @@ Its honest limits:
 - **The block runs every frame.** Frames are cheap and come only on input, but work done inside the block (formatting a long list, parsing) is paid each time. Keep results in variables and redo them when the data changes.
 - **Leaving a block early skips its end.** A `break`, `continue` or `return` out of a `row` or `group` misses its `endRow` or `endGroup`. The stacks reset next frame, but that frame's layout is wrong; use an `if` inside the block instead.
 - **A control's own state is reached by id.** A caret or a scroll position lives in `state(id)` (with `ui.lastId`), a step less direct than a widget object's field.
-- **No accessibility tree yet.** Screen readers (AT-SPI, UI Automation, TalkBack) see no controls, because nothing but pixels is kept between frames.
+- **Drawings say nothing until you name them.** Every control tells screen readers (AT-SPI, UI Automation, VoiceOver, TalkBack) what it is as it is drawn -- the tree is made again each frame while one listens -- but what you draw yourself with `canvas` and `fill` is only pixels until `accessNode(arImage, "Sales by month", id = 0, r = r)` says what it is.
 - **Motion is drawn by hand.** Animation is frames you ask for (`wakeInShown`), not transitions you declare.
 
 ### Rule 1, shown: state inside the block forgets

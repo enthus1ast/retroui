@@ -93,6 +93,12 @@ var
   clipStack: seq[Rect]
   curClip: Rect
   fb: seq[uint32]
+  fbMem: ptr UncheckedArray[uint32]   ## the frame's pixels: `fb`'s, or the
+                                      ## window's own (`lockSurface`)
+  fbSurface = false                   ## fbMem is the driver's buffer
+  surfaceWanted = getEnv("RETRO_SURFACE") != "0"
+    ## the window's own pixels used when the driver lends them
+    ## ($RETRO_SURFACE=0: never -- to compare)
   fbW, fbH: int
   frameHash, shownHash: uint64
   clearColor: uint32
@@ -635,15 +641,34 @@ const PixIconFirst* = 0x10F000
   ## The first character of the pixel icons.
 
 var pixIcons: seq[tuple[small, big: Icon]]
+var pixReady: seq[bool]          ## the icon is in `pixIcons` (else `pixSource` makes it)
+var pixSource: proc (i: int): tuple[small, big: Icon] {.nimcall.}
 var pixTwins: seq[tuple[glyph: string; color: uint32]]
 var lineIconsOn = false
 var lineInk = Color(r: 0, g: 0, b: 0, a: 255)
 
-proc setPixelIcon*(i: int; small: Icon; big = Icon()) =
+proc setPixelIcon*(i: int; small: sink Icon; big: sink Icon = Icon()) =
   ## Makes character `PixIconFirst + i` the icon `small` (16 x 16), with
   ## `big` (32 x 32) where text is large.
   if pixIcons.len <= i: pixIcons.setLen(i + 1)
+  if pixReady.len <= i: pixReady.setLen(i + 1)
   pixIcons[i] = (small, big)
+  pixReady[i] = true
+
+proc setPixelIconSource*(count: int; load: proc (i: int): tuple[small, big: Icon] {.nimcall.}) =
+  ## Pixel icons 0 ..< `count` made by `load` the first time they are drawn
+  ## or measured: an app holds only the icons it shows (the toolkit's own
+  ## set is made so). `setPixelIcon` still sets any of them at once.
+  pixSource = load
+  if pixIcons.len < count: pixIcons.setLen(count)
+  if pixReady.len < pixIcons.len: pixReady.setLen(pixIcons.len)
+
+proc loadPixIcon(idx: int) {.inline.} =
+  ## (made on the UI thread -- measuring and preparing the frame come first
+  ## -- so the threads that draw only read them)
+  if idx < pixReady.len and not pixReady[idx] and pixSource != nil:
+    pixIcons[idx] = pixSource(idx)
+    pixReady[idx] = true
 
 proc setPixelTwin*(i: int; glyph: string; color = 0'u32) =
   ## The line icon drawn for pixel icon `i` when `setLineIcons` is on: a
@@ -679,6 +704,7 @@ proc pixArt(idx, boxDev: int): tuple[big: bool; f, size: int] =
   ## Which art (16 or 32) and how many device pixels per art pixel, for a
   ## line `boxDev` device pixels high.
   if idx < 0 or idx >= pixIcons.len: return (false, 1, 16)
+  loadPixIcon(idx)
   let bw = pixIcons[idx].big.w
   let sw = max(1, pixIcons[idx].small.w)
   # the detailed art when it is not much smaller than the room, else the
@@ -1260,8 +1286,8 @@ proc devClip(r: Rect): Rect {.inline.} =
 
 template fbPtr(): ptr UncheckedArray[uint32] =
   ## The framebuffer's pixels (a local pointer: loops over it vectorize,
-  ## where the global seq would be loaded again for every pixel).
-  cast[ptr UncheckedArray[uint32]](addr fb[0])
+  ## where the global would be loaded again for every pixel).
+  fbMem
 
 template blend(q, c: uint32; a: uint32): uint32 =
   ## `c` over `q` with alpha `a` (0..255), red and blue in one multiply,
@@ -1788,7 +1814,7 @@ proc rasterChecker(c: Cmd) =
 
 proc drawOneSysText(c: Cmd; d: Rect) =
   let u = unitPx
-  let bgp = fb[clamp((c.r.y * pxScale) * fbW + c.r.x * pxScale, 0, fb.high)]
+  let bgp = fbMem[clamp((c.r.y * pxScale) * fbW + c.r.x * pxScale, 0, fbW * fbH - 1)]
   let bg = color(uint8(bgp shr 16), uint8(bgp shr 8), uint8(bgp))
   let fg = color(uint8(c.color shr 16), uint8(c.color shr 8), uint8(c.color))
   saveState()
@@ -1814,9 +1840,9 @@ proc fallbackBlit(y0, y1: int) =
   for y in y0 ..< y1:
     var x = 0
     while x < fbW:
-      let p = fb[y * fbW + x]
+      let p = fbMem[y * fbW + x]
       var e = x + 1
-      while e < fbW and fb[y * fbW + e] == p: inc e
+      while e < fbW and fbMem[y * fbW + e] == p: inc e
       fillRect(rect(x, y, e - x, 1),
                color(uint8(p shr 16), uint8(p shr 8), uint8(p)))
       x = e
@@ -1917,13 +1943,17 @@ proc send(d: Rect) =
   if x1 <= x0 or y1 <= y0: return
   let w = x1 - x0
   let h = y1 - y0
+  if fbSurface:
+    # (the window's own pixels: only told where they changed)
+    surfaceRelays.presentSurface(rect(x0, y0, w, h))
+    return
   var p: ptr UncheckedArray[uint32]
   if x0 == 0 and w == fbW:
-    p = cast[ptr UncheckedArray[uint32]](addr fb[y0 * fbW])
+    p = cast[ptr UncheckedArray[uint32]](addr fbMem[y0 * fbW])
   else:
     if scratch.len < w * h: scratch.setLen(w * h)
     for y in 0 ..< h:
-      copyMem(addr scratch[y * w], addr fb[(y0 + y) * fbW + x0], w * 4)
+      copyMem(addr scratch[y * w], addr fbMem[(y0 + y) * fbW + x0], w * 4)
     p = cast[ptr UncheckedArray[uint32]](addr scratch[0])
   let dst = rect(x0 div u, y0 div u, w div u, h div u)
   let ok = if u == 1: blitRGBA(p, w, h, dst) else: drawRGBA(p, w, h, dst)
@@ -2022,7 +2052,7 @@ proc overlayNow*(r: Rect; body: proc ()) =
   ## logical pixels) and shown -- in the middle of a frame, which is kept
   ## as it was: a box shown while the program works between frames. The
   ## next frame draws those rows again.
-  if (fb.len == 0 and not gpuOn) or fbW <= 0 or fbH <= 0: return
+  if (fbMem == nil and not gpuOn) or fbW <= 0 or fbH <= 0: return
   var saved: array[MaxLayers, seq[Cmd]]
   for l in 0 ..< MaxLayers:
     saved[l] = move(layers[l])
@@ -2080,12 +2110,14 @@ proc present*(devW, devH: int; force: bool): bool =
   if devW != fbW or devH != fbH:
     fbW = max(1, devW)
     fbH = max(1, devH)
-    if not gpuOn: fb.setLen(fbW * fbH)
     force = true
   # with the GPU when there is one (tried once; the CPU's framebuffer is
   # then not needed)
   if not gpuTried and gpuWanted != gmCpu and gpuRelays.startGpu != nil:
-    if startGpu(): fb = @[]
+    if startGpu():
+      fb = @[]
+      fbMem = nil
+      fbSurface = false
   if gpuOn:
     if gpuRelays.gpuReady != nil and not gpuRelays.gpuReady():
       return false                  # (no surface now: in the background)
@@ -2095,11 +2127,26 @@ proc present*(devW, devH: int; force: bool): bool =
       return shown
     # (the context was lost: the CPU draws from now on)
     stopGpu()
-  if fb.len != fbW * fbH:
-    # (back from the GPU: the CPU's framebuffer again, all of it drawn)
-    fb.setLen(fbW * fbH)
-    tilesX = 0
-    force = true
+  # the window's own pixels when the driver lends them (nothing copied on
+  # the way to the screen), else a buffer of our own
+  let lent = if unitPx == 1 and surfaceRelays.lockSurface != nil and surfaceWanted:
+               surfaceRelays.lockSurface(fbW, fbH)
+             else: nil
+  if lent != nil:
+    if not fbSurface or lent != fbMem:
+      force = true                    # (a new buffer: all of it drawn)
+    fbMem = lent
+    fbSurface = true
+    if fb.len > 0: fb = @[]
+  else:
+    if fbSurface or fb.len != fbW * fbH:
+      # (back from the GPU or the window's buffer: one of our own, all of
+      # it drawn)
+      fbSurface = false
+      fb.setLen(fbW * fbH)
+      tilesX = 0
+      force = true
+    fbMem = cast[ptr UncheckedArray[uint32]](addr fb[0])
   tileRuns(force, frameRuns)
   template runs: untyped = frameRuns
   let nx = tilesX

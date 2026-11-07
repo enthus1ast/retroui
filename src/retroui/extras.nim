@@ -74,6 +74,7 @@ proc searchBox*(s: var string; placeholder = "Search"; w = 0;
   let gw = textWidth(glass)
   text(r.x + (iw - gw) div 2, r.y + (r.h - FontH) div 2, glass, th.gray)
   let er = rect(r.x + iw - 4, r.y, r.w - iw + 4 - cw, r.h)
+  if accessOn: accessNameOr(tr(placeholder))
   result = editAt(id, s, er, false, false, enabled, frameless = true)
   fieldFrame(r, enabled)
   if s.len == 0:
@@ -83,6 +84,7 @@ proc searchBox*(s: var string; placeholder = "Search"; w = 0;
   if cw > 0:
     let cr = rect(r.x + r.w - cw, r.y, cw, r.h)
     let hit = interact(id + 5, cr, focusable = false, enabled = enabled)
+    if accessOn: accessNode(arButton, "Clear", id = id + 5, r = cr, states = accessOff(enabled))
     let xw = textWidth(nfTimesCircle)
     text(cr.x + (cw - xw) div 2, cr.y + (cr.h - FontH) div 2, nfTimesCircle,
          if hit.showsHover: th.text else: th.gray)
@@ -215,6 +217,9 @@ proc toggle*(label: string; v: var bool; enabled = true): bool {.discardable.} =
     if hit.focused: focusDots(rect(r.x + sw + gap - 2, ty - 1, lw + 4, FontH + 2))
   elif hit.focused:
     focusDots(inset(track, -2))
+  if accessOn:
+    accessNode(arCheckBox, label, id = id, r = r,
+               states = accessOff(enabled) + (if v: {asChecked} else: {}))
   ui.lastId = id
   ui.lastRect = r
 
@@ -236,6 +241,15 @@ proc segmented*(options: openArray[string]; sel: var int; w = 0;
       given += widths[i]
   let id = idOf(sel, "segmented")
   var hit = interact(id, r, enabled = enabled)
+  if accessPress != 0 and enabled:
+    # (a screen reader picked one)
+    for i in 0 ..< options.len:
+      if accessPress == accessSubId(id, i):
+        accessPress = 0
+        ui.focus = id
+        if sel != i:
+          sel = i
+          result = true
   if hit.focused and enabled and canInput():
     if keyHit(KeyLeft) and sel > 0:
       dec sel
@@ -268,6 +282,18 @@ proc segmented*(options: openArray[string]; sel: var int; w = 0;
       result = true
     x += widths[i]
   if hit.focused: focusDots(inset(r, 3))
+  if accessOn:
+    # (a group of options, the one pressed in checked)
+    accessBegin(arGroup, "", r, id, accessOff(enabled), takesLabel = true)
+    var ax = r.x
+    for i, o in options:
+      let k = accessNode(arRadioButton, o, id = accessSubId(id, i),
+                         r = rect(ax, r.y, widths[i], r.h),
+                         states = accessOff(enabled) + (if i == sel: {asChecked} else: {}))
+      accessItem(k, i + 1, options.len)
+      if i == sel and hit.focused: accessFocus(k)
+      ax += widths[i]
+    accessEnd()
 
 # ---- expander, card ---------------------------------------------------------------------
 
@@ -289,6 +315,9 @@ proc beginExpander*(label: string; open: var bool): bool =
   drawLabel(r.x + 2 * a + dp(8), ty, label, th.text, true)
   if hit.focused:
     focusDots(rect(r.x + 2 * a + dp(6), ty - 1, labelWidth(label, true) + 4, FontH + 2))
+  if accessOn:
+    accessNode(arButton, label, id = id, r = r,
+               states = {asExpandable} + (if open: {asExpanded} else: {}))
   if open:
     beginCol()
     space(dp(2))
@@ -378,6 +407,7 @@ proc chips*(items: openArray[string]; selected: openArray[bool] = [];
         ui.keyUsed = true
     else: discard
   var area = rect(0, 0, 0, 0)
+  if accessOn: accessBegin(arList, "", rect(0, 0, 0, 0), gid, accessOff(enabled), takesLabel = true)
   beginRow([], h)
   for i, s in items:
     let on = i < selected.len and selected[i]
@@ -397,15 +427,27 @@ proc chips*(items: openArray[string]; selected: openArray[bool] = [];
     text(r.x + dp(10), r.y + (h - FontH) div 2, s, fg)
     if ui.focus == gid and i == st.caret and not ui.touch:
       focusDots(rect(r.x + dp(7), r.y + (h - FontH) div 2 - 1, tw + 6, FontH + 2))
+    if accessOn:
+      let k = accessNode(if i < selected.len: arToggleButton else: arButton, s, id = id, r = r,
+                         states = accessOff(enabled) + (if on: {asPressed, asChecked} else: {}))
+      accessItem(k, i + 1, items.len)
+      if ui.focus == gid and i == st.caret: accessFocus(k)
     if closable:
       let xr = rect(r.x + r.w - xw - dp(6), r.y, xw + dp(6), h)
       text(xr.x, r.y + (h - FontH) div 2, nfTimes,
            if mouseIn(xr) and canInput() and canHover(): th.text else: th.gray)
-      if hit.clicked and xr.contains(point(ui.mx, ui.my)):
+      if accessOn:
+        if accessPress != 0 and accessPress == accessSubId(id, 1) and enabled:
+          accessPress = 0
+          result.closed = i
+        accessNode(arButton, "Remove " & s, id = accessSubId(id, 1), r = xr,
+                   states = accessOff(enabled))
+      if hit.clicked and xr.contains(point(ui.mx, ui.my)) and accessPressed != id:
         result.closed = i
         continue
     if hit.clicked: result.clicked = i
   endRow()
+  if accessOn: accessEnd(area)
   state(gid) = st
   if enabled and items.len > 0: discard tabStop(gid, area)
 
@@ -428,6 +470,12 @@ proc rating*(v: var int; stars = 5; enabled = true): bool {.discardable.} =
   let r = place(sw * stars, lineHeight(st))
   let id = idOf(v, "rating")
   var hit = interact(id, r, enabled = enabled)
+  if accessOn and enabled and accessValueFor(id):
+    let nv = clamp(int(round(accessSet.num)), 0, stars)
+    if nv != v:
+      v = nv
+      result = true
+  if accessPressed == id: hit.clicked = false   # (pressed by a screen reader: no star under it)
   let at = if hit.hover and enabled: clamp((ui.mx - r.x) div sw + 1, 1, stars) else: 0
   let over = if canHover(): at else: 0           # (the stars under the mouse light up)
   if hit.clicked and at > 0:
@@ -444,6 +492,10 @@ proc rating*(v: var int; stars = 5; enabled = true): bool {.discardable.} =
     text(r.x + i * sw, r.y, if lit: nfStar else: nfStarO,
          if not enabled: th.gray elif lit: gold else: th.shadow, st)
   if hit.focused: focusDots(r)
+  if accessOn:
+    let k = accessNode(arSlider, value = $v & " / " & $stars, id = id, r = r,
+                       states = accessOff(enabled))
+    accessRange(k, 0, float(stars), float(v))
 
 # ---- spinner, toasts ---------------------------------------------------------------------
 
@@ -606,6 +658,14 @@ proc colorPicker*(c: var Color; enabled = true): bool {.discardable.} =
   let r = place(cols * cell + 2, 6 * cell + 2)
   let id = idOf(c, "colors")
   let hit = interact(id, r, enabled = enabled)
+  if accessPress != 0 and enabled:
+    for i, k in basicColors:
+      if accessPress == accessSubId(id, i):
+        accessPress = 0
+        ui.focus = id
+        if c != k:
+          c = k
+          result = true
   if hit.focused and enabled and canInput() and not ui.keyUsed and
      ui.key in {KeyLeft, KeyRight, KeyUp, KeyDown, KeyHome, KeyEnd}:
     var at = max(0, basicColors.find(c))
@@ -633,6 +693,15 @@ proc colorPicker*(c: var Color; enabled = true): bool {.discardable.} =
     if hit.clicked and cr.contains(point(ui.mx, ui.my)) and c != k:
       c = k
       result = true
+  if accessOn:
+    accessBegin(arList, "", r, id, accessOff(enabled), takesLabel = true)
+    for i, k in basicColors:
+      let n = accessNode(arListItem, hexOf(k), id = accessSubId(id, i),
+                         r = rect(r.x + 1 + (i mod cols) * cell, r.y + 1 + (i div cols) * cell, cell, cell),
+                         states = (if k == c: {asSelected} else: {}))
+      accessItem(n, i + 1, basicColors.len)
+      if k == c and hit.focused: accessFocus(n)
+    accessEnd()
   row:
     let pv = place(cell * 2, EditH)
     fill(pv, c)
@@ -642,6 +711,7 @@ proc colorPicker*(c: var Color; enabled = true): bool {.discardable.} =
     if ui.focus != id + 4: st.buf = hex
     var buf = st.buf
     let er = place(textWidth("#WWWWWW") + dp(12), EditH)
+    if accessOn: accessName("#RRGGBB")
     if editAt(id + 4, buf, er, false, false, enabled):
       var nc: Color
       if parseHexColor(buf, nc) and nc != c:
@@ -874,6 +944,10 @@ proc colorWell*(c: var Color; key: string; w = 0; title = "Color"; enabled = tru
   fill(inset(r, 2), if enabled: c else: mixColor(c, th.face, 0.6))
   box(inset(r, 2), th.frame)
   if hit.focused: dots(inset(r, -1), th.text)
+  if accessOn:
+    accessNameOr(tr(title))
+    accessNode(arButton, "", id = idOf("colorwell:" & key), r = r, states = accessOff(enabled),
+               help = hexOf(c))
   if hit.clicked and enabled: openColorDialog(key, c, title)
   if colorDialogResult(key, c): result = true
 
@@ -973,6 +1047,15 @@ proc lineView*(count: int; line: proc (i: int): string; sel: var int;
       sel = clamp(ns, 0, count - 1)
       if not shift: st.anchor = sel
       scrollShow(id, off, sel * lh, (sel + 1) * lh, body.h, maxOff)
+  if accessPress != 0:
+    # (a screen reader picked a line)
+    for i in off div lh ..< min(count, off div lh + vis + 2):
+      if accessPress == accessSubId(id, i):
+        accessPress = 0
+        sel = i
+        st.anchor = i
+        ui.focus = id
+        break
   if hit.focused and tapped(id, hit) and mouseIn(body):
     let i = (ui.my - body.y + off) div lh
     if i < count:
@@ -1032,6 +1115,18 @@ proc lineView*(count: int; line: proc (i: int): string; sel: var int;
     popClip()
   popClip()
   if hit.focused: dots(inset(r, 1), th.text)
+  if accessOn:
+    # (a list of the lines in view)
+    accessBegin(arList, "", r, id, takesLabel = true)
+    for k in 0 .. vis + 1:
+      let i = top + k
+      if i >= count: break
+      let n = accessNode(arListItem, line(i), id = accessSubId(id, i),
+                         r = rect(body.x, body.y + i * lh - off, body.w, lh),
+                         states = (if i >= a and i <= b: {asSelected} else: {}))
+      accessItem(n, i + 1, count)
+      if i == sel and hit.focused: accessFocus(n)
+    accessEnd()
   if widest > st.aux: st.aux = widest
   if off != st.scrollY or sx != st.scrollX:
     st.scrollY = off
@@ -1132,6 +1227,9 @@ proc settingRow(title, detail: string; controlW: int; stack: var bool):
   ui.lastRect = r
   var y = if stack: r.y + dp(6) else: r.y + (r.h - textH) div 2
   drawLabel(r.x + dp(8), y, title, th.text)
+  if accessOn:
+    accessLabelFor(title)
+    if detail.len > 0: accessNode(arLabel, tr(detail), id = 0, r = rect(r.x, y + FontH, textW, h - FontH))
   y += FontH
   for line in lines:
     text(r.x + dp(8), y, line, th.gray, st)
@@ -1156,6 +1254,9 @@ proc settingToggle*(title: string; v: var bool; detail = "";
   discard ctl
   result = switchAt(id, track, v, hit, enabled)
   if hit.focused: focusDots(inset(r, 2))
+  if accessOn:
+    accessNode(arCheckBox, title, id = id, r = r,
+               states = accessOff(enabled) + (if v: {asChecked} else: {}), help = tr(detail))
   ui.lastId = id
   ui.lastRect = r
 
@@ -1229,6 +1330,8 @@ proc settingLink*(title: string; detail = ""; glyph = nfChevronRight;
     if mnemonicHit(title): hit.clicked = true
   text(ctl.x + ctl.w - gw, r.y + (r.h - FontH) div 2, glyph, th.gray)
   if hit.focused: focusDots(inset(r, 2))
+  if accessOn:
+    accessNode(arButton, title, id = id, r = r, states = accessOff(enabled), help = tr(detail))
   hit.clicked
 
 var
@@ -1377,6 +1480,7 @@ proc avatar*(name: string; size = 0; color = Color()): bool {.discardable.} =
   text(r.x + (d - textWidth(s, st)) div 2, r.y + (d - lineHeight(st)) div 2, s,
        color(255, 255, 255), st)
   if hit.focused: focusDots(inset(r, -2))
+  if accessOn: accessNode(arButton, name, id = id, r = r)
   hit.clicked
 
 proc stepper*(steps: openArray[string]; current: int; enabled = true): int =
@@ -1393,6 +1497,7 @@ proc stepper*(steps: openArray[string]; current: int; enabled = true): int =
   let slot = r.w div steps.len
   let gid = idOf("stepper:" & steps[0] & $steps.len)
   let focused = enabled and current > 0 and tabStop(gid, r)
+  if accessOn: accessBegin(arList, "", r, gid, accessOff(enabled), takesLabel = true)
   if focused and canInput() and not ui.keyUsed:
     if ui.key in {KeyLeft, KeyBackspace}:
       ui.keyUsed = true
@@ -1427,6 +1532,13 @@ proc stepper*(steps: openArray[string]; current: int; enabled = true): int =
       text(cx - textWidth(label, now) div 2, r.y + d + dp(4), label,
            if done or now: th.text else: th.gray, now)
     if focused and now: focusDots(inset(cr, -3))
+    if accessOn:
+      let k = accessNode(if done: arButton else: arListItem, s, id = id, r = cr,
+                         states = (if now: {asSelected} else: {}) + accessOff(enabled and done),
+                         help = (if done: "done" elif now: "now" else: ""))
+      accessItem(k, i + 1, steps.len)
+      if focused and now: accessFocus(k)
+  if accessOn: accessEnd()
   ui.lastId = gid
   ui.lastRect = r
 
@@ -1474,6 +1586,8 @@ proc banner*(msg: string; kind = bkInfo; actions: openArray[string] = [];
   fill(r, mixColor(th.window, accent, 0.12))
   fill(rect(r.x, r.y, dp(4), r.h), accent)
   box(r, mixColor(th.window, accent, 0.5))
+  if accessOn:
+    accessBegin(arAlert, tr(msg), r, idOf("banner:" & msg))
   text(r.x + dp(12), r.y + dp(8), glyph, accent)
   var y = r.y + dp(8)
   for line in lines:
@@ -1489,6 +1603,7 @@ proc banner*(msg: string; kind = bkInfo; actions: openArray[string] = [];
     if hit.focused:
       focusDots(inset(xr, dp(4)))
       if keyHit(KeyEnter) or keyHit(KeyEsc): hit.clicked = true
+    if accessOn: accessNode(arButton, "Close", id = id, r = xr)
     if hit.clicked: result = 0
   if actions.len > 0 and not narrow:
     pushFrame(rect(r.x + r.w - xw - bw, r.y + (r.h - CtrlH) div 2, bw, 0))
@@ -1507,6 +1622,7 @@ proc banner*(msg: string; kind = bkInfo; actions: openArray[string] = [];
           if button(actions[i], w = min(buttonWidth(actions[i]), r.w - tx - dp(6))): result = i + 1
       discard popFrame()
       ay += CtrlH + dp(6)
+  if accessOn: accessEnd()
   ui.lastId = 0
   ui.lastRect = r
 
@@ -1561,6 +1677,7 @@ proc bottomNav*(items: openArray[(string, string)]; sel: var int): bool {.discar
   let gst = style(size = 1.35)
   let gid = idOf("bottomnav:" & $items.len & items[0][1])
   let focused = tabStop(gid, inner)
+  if accessOn: accessBegin(arTabList, "", inner, gid)
   if focused and canInput() and not ui.keyUsed:
     let before = sel
     case ui.key
@@ -1592,6 +1709,11 @@ proc bottomNav*(items: openArray[(string, string)]; sel: var int): bool {.discar
     text(cell.x + (cell.w - textWidth(l, st)) div 2,
          cell.y + dp(6) + lineHeight(gst), l, if on: th.text else: th.gray, st)
     if on and focused and not ui.touch: focusDots(inset(cell, dp(3)))
+    if accessOn:
+      let k = accessNode(arTab, label, id = id, r = cell, states = (if on: {asSelected} else: {}))
+      accessItem(k, i + 1, items.len)
+      if on and focused: accessFocus(k)
+  if accessOn: accessEnd()
 
 proc fab*(glyph: string; tip = ""; color = Color()): bool =
   ## The round "floating action button" at the bottom right, over the
@@ -1622,6 +1744,7 @@ proc fab*(glyph: string; tip = ""; color = Color()): bool =
   text(r.x + (d - textWidth(glyph, st)) div 2, r.y + (d - lineHeight(st)) div 2, glyph,
        th.selectText, st)
   if hit.focused and not ui.touch: focusDots(inset(r, -3))
+  if accessOn: accessNode(arButton, tip, id = id, r = r)
   hit.clicked
 
 # ---- small charts ------------------------------------------------------------------------------

@@ -57,6 +57,7 @@ proc smallSt(bold = false): TextStyle = style(bold = bold, size = 0.85)
 proc miniButton(id: Id; r: Rect; label: string; enabled = true): bool =
   ## A small flat push button drawn at `r`.
   let hit = interact(id, r, focusable = false, enabled = enabled)
+  if accessOn: accessNode(arButton, label, id = id, r = r, states = accessOff(enabled))
   buttonFace(r, hit.down, rounded = false, bevel = 1, hot = enabled and hovered(r))
   let o = if hit.down: 1 else: 0
   let tw = textWidth(label)
@@ -446,6 +447,28 @@ proc kanbanBoard*(lanes: var seq[KanbanLane]; sel: var KanbanPos; height = -1;
   if sx != st.scrollX: ui.redraw = true
   st.scrollX = sx
   state(id) = st
+  if accessOn:
+    # (the lanes as lists of their cards; a press picks a card)
+    accessBegin(arPane, "", r, id, takesLabel = true)
+    for li in 0 ..< n:
+      let lr = laneR(li)
+      accessBegin(arList, lanes[li].title & " (" & $lanes[li].cards.len & ")", lr,
+                  accessSubId(id, 50000 + li))
+      for ci, c in lanes[li].cards:
+        let cid = accessSubId(id, 100000 + li * 4096 + ci)
+        if accessPress != 0 and accessPress == cid:
+          accessPress = 0
+          sel = (li, ci)
+          ui.focus = id
+        var more = c.detail
+        if c.who.len > 0: more.add (if more.len > 0: ", " else: "") & c.who
+        if c.due.valid: more.add (if more.len > 0: ", " else: "") & $c.due
+        let k = accessNode(arListItem, c.title, id = cid, r = lr,
+                           states = (if sel == (li, ci): {asSelected} else: {}), help = more)
+        accessItem(k, ci + 1, lanes[li].cards.len)
+        if sel == (li, ci) and focused: accessFocus(k)
+      accessEnd()
+    accessEnd()
   if sel != oldSel: result.selChanged = true
   ui.lastId = id
   ui.lastRect = r
@@ -962,6 +985,22 @@ proc ganttView*(tasks: var seq[GanttTask]; sel: var int; scale: var GanttScale;
   st.scrollX = sx
   st.scrollY = sy
   state(id) = st
+  if accessOn:
+    # (the tasks as a tree: each at its depth, its days and how far along)
+    accessBegin(arTree, "", r, id, takesLabel = true)
+    for i in 0 ..< n:
+      let t = tasks[i]
+      let nid = accessSubId(id, i)
+      if accessPress != 0 and accessPress == nid:
+        accessPress = 0
+        sel = i
+        ui.focus = id
+      let k = accessNode(arTreeItem, t.name, id = nid, r = r,
+                         states = (if i == sel: {asSelected} else: {}),
+                         help = $t.start & " - " & $t.finish & ", " & $int(t.progress * 100 + 0.5) & "%")
+      accessItem(k, i + 1, n, t.level + 1)
+      if i == sel and focused: accessFocus(k)
+    accessEnd()
   if sel != oldSel: result.selChanged = true
   ui.lastId = id
   ui.lastRect = r
@@ -1442,6 +1481,31 @@ proc agendaView*(items: var seq[Appointment]; day: var Date; mode: var AgendaMod
     st.scrollY = sy
   fieldFrame(r)
   state(id) = st
+  if accessOn:
+    # (the entries of the days shown, as a list: a press opens one)
+    let a = case mode
+            of amDay: day
+            of amWeek: weekStart(day)
+            of amMonth: date(day.year, day.month, 1)
+    let b = case mode
+            of amDay: day
+            of amWeek: weekStart(day).addDays(6)
+            of amMonth: date(day.year, day.month, daysInMonth(day.year, day.month))
+    accessBegin(arList, periodTitle(day, mode), r, id, takesLabel = true)
+    var shownN = 0
+    for i, it in items:
+      if not it.day.valid or dayNumber(it.day) < dayNumber(a) or dayNumber(it.day) > dayNumber(b): continue
+      let iid = accessSubId(id, i)
+      if accessPress != 0 and accessPress == iid:
+        accessPress = 0
+        result.opened = true
+        result.item = i
+      inc shownN
+      let at = if it.allDay: "all day"
+               else: align($(it.start div 60), 2, '0') & ":" & align($(it.start mod 60), 2, '0') &
+                     " - " & align($(it.finish div 60), 2, '0') & ":" & align($(it.finish mod 60), 2, '0')
+      accessNode(arListItem, it.title, id = iid, r = r, help = $it.day & ", " & at)
+    accessEnd()
   if (day, mode) != before: result.navigated = true
   ui.lastId = id
   ui.lastRect = r
@@ -1550,6 +1614,11 @@ proc kpiTile*(label, value: string; delta = NaN; deltaNote = "";
     fill(b, th.face)
     fill(rect(b.x, b.y, int(float(b.w) * f), b.h), if target >= 1: good() else: accent)
     text(b.x + b.w + dp(6), y + (dp(16) - lineHeight(smallSt())) div 2, ps, th.gray, smallSt())
+  if accessOn:
+    var more = ""
+    if hasDelta: more = (if delta >= 0: "+" else: "") & formatFloat(delta * 100, ffDecimal, 1) & "%"
+    if deltaNote.len > 0: more.add (if more.len > 0: " " else: "") & deltaNote
+    accessNode(arButton, label & ": " & value, id = id, r = r, help = more)
   ui.lastId = id
   ui.lastRect = r
   hit.clicked
@@ -1581,6 +1650,7 @@ proc statCard*(glyph, label, value: string; detail = ""; color = Color();
   text(x, y + (lineHeight(big) - lineHeight(vs)), ellipsize(value, tw, vs), th.fieldText, vs)
   y += lineHeight(big)
   if detail.len > 0: text(x, y, ellipsize(detail, tw), th.gray)
+  if accessOn: accessNode(arButton, label & ": " & value, id = id, r = r, help = detail)
   ui.lastId = id
   ui.lastRect = r
   hit.clicked
@@ -1857,6 +1927,31 @@ proc orgChart*(nodes: var seq[OrgNode]; sel: var int; height = -1;
   st.scrollX = sx
   st.scrollY = sy
   state(id) = st
+  if accessOn:
+    # (a tree of the people: each under the one above, at its depth)
+    accessBegin(arTree, "", r, id, takesLabel = true)
+    for i in 0 ..< n:
+      let nid = accessSubId(id, i)
+      if accessPress != 0 and accessPress == nid:
+        accessPress = 0
+        sel = i
+        ui.focus = id
+      var kids = false
+      for j in 0 ..< n:
+        if nodes[j].parent == i: kids = true
+      let k = accessNode(arTreeItem, nodes[i].name, id = nid, r = r,
+                         states = (if i == sel: {asSelected} else: {}) +
+                                  (if kids: {asExpandable} else: {}) +
+                                  (if kids and not nodes[i].closed: {asExpanded} else: {}),
+                         help = nodes[i].title)
+      var depth = 0
+      var up = nodes[i].parent
+      while up >= 0 and up < n and depth < n:
+        inc depth
+        up = nodes[up].parent
+      accessItem(k, i + 1, n, depth + 1)
+      if i == sel and focused: accessFocus(k)
+    accessEnd()
   if sel != oldSel: result.selChanged = true
   ui.lastId = id
   ui.lastRect = r
