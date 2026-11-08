@@ -92,6 +92,25 @@ Android. To try them without a screen reader, in a clone:
 - `RETRO_SURFACE=0` draws without shared memory (MIT-SHM on X11, the DIB
   section on Windows), to compare.
 
+**Retro Designer** (`retrokit designer app.nim`, [docs/designer.md](docs/designer.md))
+builds itself the first time it runs, with the Nim and the C compiler you
+build your apps with, into the toolkit's cache folder
+(`retrodesigner` there; `--rebuild` builds it again). It reads files with
+Nim's own parser, so it is compiled against the compiler's sources: those
+beside the Nim that builds it (a Nim from nim-lang.org, choosenim, Homebrew
+or a Linux package has them), else nimble's `compiler` package, which
+`retrokit` installs when it has to. By hand, in a clone:
+
+```sh
+nim c -d:release -d:useMalloc --path:<nim>/ src/retrodesigner/retrodesigner.nim   # <nim>: the folder with compiler/ and lib/
+```
+
+On Windows it is built `--app:gui`; in Termux with Termux's clang (Android
+before 9 has no `glob()`, which the compiler's sources name: a stand-in in
+`src/retrodesigner/androidglob.c` is linked). Its tests:
+`nim c -r tests/test_designer.nim` (it finds the compiler's sources the same
+way, `tests/test_designer.nims`).
+
 ---
 
 ## Android

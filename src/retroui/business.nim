@@ -1474,6 +1474,7 @@ proc beginNode*(label: string; expanded: var bool; leaf = false;
     let a = tc.area
     let y = a.y + 1 + tc.pad + i * tc.rowH - tc.off
     tc.lastNode = rect(a.x, y, a.w, tc.rowH)
+    notePlaced(intersect(tc.lastNode, a))
     if accessOn:
       # (an item of the tree, its depth its level; a press selects it, and
       # opens or closes it when it is selected already)

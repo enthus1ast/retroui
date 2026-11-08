@@ -20,7 +20,7 @@ when (defined(linux) or defined(bsd)) and not defined(android):
 import gfx, busy
 export busy
 
-const RetroVersion* = "0.26.1"
+const RetroVersion* = "0.27.0"
   ## The toolkit's version (shown in About boxes' Credits).
 const
   RetroDeveloper* = "Sultan Al Isaiee"
@@ -382,6 +382,11 @@ type Ctx* = object
   barY*: int                     ## where the content starts under the bars at the top
   bottom*: int                   ## where it ends above the bars at the bottom
   prevBottom*: int               ## ... last frame
+  winX*, winY*: int              ## the window's top left: 0, 0, but a `windowBox`
+                                 ## moves it to its box (its bars, dialogs, menus)
+  inertDepth*: int               ## > 0 inside `inert`: what is drawn takes no input
+  measuring*: bool               ## `placed` is kept (a designer asks where widgets went)
+  placed*: Rect                  ## ... the cells laid out since it was cleared
   # layers
   inputLayer*: int               ## the layer that gets the input (the top one open)
   popup*: Id                     ## the open menu or drop-down (0: none)
@@ -511,6 +516,19 @@ proc makeId*(seed: uint32): Id =
     slot = (slot + 1) and 511
   result = if h == 0: 1 else: h
 
+proc peekId*(seed: uint32): Id =
+  ## The id `makeId(seed)` would give now, without taking it (the widget
+  ## drawn next with this seed gets it).
+  var h = mixId(seed, if ui.idStack.len > 0: ui.idStack[^1] else: 0)
+  var slot = int(h and 511)
+  for _ in 0 ..< 512:
+    if ui.occ[slot].gen != ui.gen: break
+    if ui.occ[slot].k == h:
+      h = mixId(h, uint32(ui.occ[slot].n + 1))
+      break
+    slot = (slot + 1) and 511
+  if h == 0: 1 else: h
+
 proc idOf*(label: string): Id = makeId(fnv(label))
   ## Id of a widget by its label (the same label twice in a frame: two ids).
 proc idOfLabel*(kind, label: string; more = ""): Id = makeId(fnv(more, fnv(label, fnv(kind))))
@@ -565,7 +583,7 @@ proc state*(id: Id): var WState =
 proc canInput*(): bool =
   ## Whether widgets drawn now receive mouse and keyboard input: only the
   ## topmost layer (an open menu, else the top dialog, else the window) does.
-  layer() == ui.inputLayer and
+  ui.inertDepth == 0 and layer() == ui.inputLayer and
     (ui.inputLayer != LayerDialog or ui.curDialog == ui.dialogTop)
 
 proc blocked(p: Point): bool {.inline.} =
@@ -577,7 +595,7 @@ proc mouseIn*(r: Rect): bool =
   ## drop-down or another window. (`hover` also asks that the widget's
   ## layer takes input.)
   let p = point(ui.mx, ui.my)
-  r.contains(p) and clipRect().contains(p) and
+  ui.inertDepth == 0 and r.contains(p) and clipRect().contains(p) and
     (ui.overlayOwner or layer() > ui.overlayLayer or ui.overlay.w == 0 or
      not ui.overlay.contains(p)) and
     (ui.blockers.len == 0 or layer() > 0 or not blocked(p))
@@ -1547,9 +1565,21 @@ proc beginCell*(w: int; fill = false): Rect =
     f.cx += ww + Gap
     inc f.idx
 
+proc notePlaced*(r: Rect) =
+  ## While `ui.measuring`: `r` added to `ui.placed` (what was drawn where:
+  ## the cells, and the bars, menus and dialogs that are not cells).
+  if not ui.measuring or r.w <= 0 or r.h <= 0: return
+  if ui.placed.w == 0: ui.placed = r
+  else:
+    let x0 = min(ui.placed.x, r.x)
+    let y0 = min(ui.placed.y, r.y)
+    ui.placed = rect(x0, y0, max(ui.placed.x + ui.placed.w, r.x + r.w) - x0,
+                     max(ui.placed.y + ui.placed.h, r.y + r.h) - y0)
+
 proc endCell*(r: Rect; h: int; natural = -1) =
   ## Finish a cell `h` pixels high; `natural` is the height its content
   ## needs when that is less (groups grow to the height of their row).
+  if ui.measuring: notePlaced(rect(r.x, r.y, max(1, r.w), max(1, h)))
   let f = top()
   case f.kind
   of lkCol, lkGroup:
@@ -1822,6 +1852,124 @@ proc popFrame*(): int =
 
 proc frameBottom*(): int = top().bottom
   ## The lowest point the current column or row has reached.
+
+# ---- a window in the window, controls without input --------------------------------------------
+
+type WindowBoxState* = object
+  ## What `beginWindowBox` put aside (for `endWindowBox`).
+  w, h, bottom, prevBottom, barY, contentTop, contentRight, winX, winY: int
+  safe: tuple[top, left, bottom, right: int]
+  frames: seq[LFrame]
+  screen: Rect
+
+var boxFrames: seq[LFrame]       # (the box's columns: kept, so a box takes no memory)
+
+proc beginWindowBox*(r: Rect): WindowBoxState =
+  ## Starts laying out a window of its own at `r` (see `windowBox`).
+  result = WindowBoxState(w: ui.w, h: ui.h, bottom: ui.bottom, prevBottom: ui.prevBottom,
+                          barY: ui.barY, contentTop: ui.contentTop,
+                          contentRight: ui.contentRight, winX: ui.winX, winY: ui.winY,
+                          safe: ui.safe,
+                          screen: screenClip())
+  swap(result.frames, ui.frames)
+  swap(ui.frames, boxFrames)
+  ui.frames.setLen(0)
+  ui.winX = r.x
+  ui.winY = r.y
+  ui.w = r.w
+  ui.h = r.y + r.h
+  ui.bottom = r.y + r.h
+  ui.prevBottom = ui.bottom
+  ui.barY = r.y
+  ui.safe = (0, 0, 0, 0)
+  let topY = r.y + Pad
+  ui.contentTop = topY
+  ui.contentRight = 0
+  ui.frames.add LFrame(kind: lkCol, x: r.x + Pad, y: topY, w: max(10, r.w - 2 * Pad),
+                       cx: r.x + Pad, cy: topY, bottom: topY)
+  pushClip(r)
+  setScreenClip(clipRect())      # (its pop-ups and bars stay in the box)
+
+proc endWindowBox*(s: var WindowBoxState) =
+  ## Ends a `beginWindowBox`: the window's own layout back.
+  setScreenClip(s.screen)
+  popClip()
+  swap(ui.frames, boxFrames)
+  swap(ui.frames, s.frames)
+  ui.w = s.w
+  ui.h = s.h
+  ui.bottom = s.bottom
+  ui.prevBottom = s.prevBottom
+  ui.barY = s.barY
+  ui.contentTop = s.contentTop
+  ui.contentRight = s.contentRight
+  ui.winX = s.winX
+  ui.winY = s.winY
+  ui.safe = s.safe
+
+template windowBox*(r: Rect; body: untyped) =
+  ## `body` laid out as a window of its own at `r`, inside this one: its
+  ## menu bar, tool bars and status bar along `r`'s edges, its content in
+  ## between, and `isCompact` and the size classes asking `r`'s width -- a
+  ## preview of a window (a designer's form, a guide's picture). Pair it with
+  ## `inert` when its controls should not take input.
+  block:
+    var wbState = beginWindowBox(r)
+    try:
+      body
+    finally:
+      endWindowBox(wbState)
+
+type InertState* = object
+  ## What `beginInert` put aside (for `endInert`).
+  key: KeyCode
+  mnemonic: char
+  altTapped, keyUsed, byBackNow: bool
+  typed: string
+  dialogTopNow: Id
+  popupRectNow, popupRect2Now, overlayNow: Rect
+  overlayLayerNow: int
+
+proc beginInert*(): InertState =
+  ## Starts drawing without input (see `inert`).
+  result = InertState(key: ui.key, mnemonic: ui.mnemonic, altTapped: ui.altTapped,
+                      keyUsed: ui.keyUsed, byBackNow: ui.byBackNow,
+                      dialogTopNow: ui.dialogTopNow, popupRectNow: ui.popupRectNow,
+                      popupRect2Now: ui.popupRect2Now, overlayNow: ui.overlayNow,
+                      overlayLayerNow: ui.overlayLayerNow)
+  inc ui.inertDepth
+  ui.key = KeyNone
+  ui.mnemonic = '\0'
+  ui.altTapped = false
+  ui.keyUsed = true
+  swap(result.typed, ui.typed)         # (what was typed put aside, not copied)
+
+proc endInert*(s: var InertState) =
+  ## Ends a `beginInert`: the keys back; what was drawn claimed nothing (a
+  ## dialog in it is not the window's dialog, a menu not its menu).
+  dec ui.inertDepth
+  ui.key = s.key
+  ui.mnemonic = s.mnemonic
+  ui.altTapped = s.altTapped
+  ui.keyUsed = s.keyUsed
+  swap(ui.typed, s.typed)
+  ui.byBackNow = s.byBackNow
+  ui.dialogTopNow = s.dialogTopNow
+  ui.popupRectNow = s.popupRectNow
+  ui.popupRect2Now = s.popupRect2Now
+  ui.overlayNow = s.overlayNow
+  ui.overlayLayerNow = s.overlayLayerNow
+
+template inert*(body: untyped) =
+  ## `body` drawn without input: its controls are shown as they are but the
+  ## mouse, fingers and keys do not reach them, and a dialog or menu in it
+  ## does not take the window's input (a preview, a designer's form).
+  block:
+    var inertState = beginInert()
+    try:
+      body
+    finally:
+      endInert(inertState)
 
 
 

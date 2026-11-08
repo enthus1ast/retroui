@@ -16,6 +16,11 @@ containers, dialogs, how it is built and why it is easy to follow.
 **Documentation: [docs/controls.md](docs/controls.md)** -- every control with
 pictures: getting started, layout, each control's example and API, the looks.
 
+**Design it: [Retro Designer](docs/designer.md)** -- `retrokit designer
+app.nim` shows your file's windows drawn with the real controls: drop
+controls, drag them, set their properties, add their events, and every
+change is written into the same `.nim` file.
+
 ![Retro Files, a file manager made with Retro Nim UI](docs/filemanager.png)
 
 ## Why Retro
@@ -87,7 +92,7 @@ every module is in `docs/api/` (open `docs/api/retro.html`).
 ## Contents
 
 [The syntax, studied](docs/syntax.md) · [Install](#install) · [Your first app](#your-first-app) ·
-[How it works](#how-it-works) · [Controls](#controls) · [Layout](#layout) ·
+[Retro Designer](#retro-designer) · [How it works](#how-it-works) · [Controls](#controls) · [Layout](#layout) ·
 [Text and icons](#text-and-icons) ·
 [Screen readers and input methods](#screen-readers-and-input-methods) · [Business apps](#business-apps) ·
 [Charts](#charts) · [Reports, PDF and printing](#reports-pdf-and-printing) ·
@@ -127,10 +132,11 @@ cd myapp && nimble run
 | Command | What it does |
 |---|---|
 | `retrokit new NAME --kind:K` | a folder with `NAME.nim`, `NAME.nimble` (tasks run, small, apk) and an icon |
-| `retrokit doctor` | checks Nim, the C compiler, the screen libraries, the Android tools, and says how to fix what is missing |
+| `retrokit doctor` | checks Nim, the C compiler, the screen libraries, the Android tools, what Retro Designer needs, and says how to fix what is missing |
 | `retrokit run app.nim` | builds in release mode and runs it |
 | `retrokit small app.nim` | the smallest build (optimized for size, stripped), and its size |
 | `retrokit apk app.nim` | an Android APK (the `retroapk` tool, below) |
+| `retrokit designer app.nim` | [Retro Designer](#retro-designer): the file's windows to design, every change written into the file (built once for this computer) |
 
 From a clone of this repository (the examples are built only when you ask,
 one at a time; `nimble install retroui` installs only the toolkit and its
@@ -364,6 +370,31 @@ $RETRO_SCALE makes the window larger with everything in it.
 $RETRO_WINDOW=1 opens the app as a window in its 3.1 frame, in the middle of
 a desktop the toolkit draws, where the screen has no window manager (see
 "Working on an app in Termux" below).
+
+## Retro Designer
+
+![Retro Designer: the invoice dialog of Ledger designed over its window](docs/designer/dialog.png)
+
+`retrokit designer app.nim` opens your `.nim` file in **Retro Designer**, the
+kit's visual designer, in the manner of Qt Designer: its windows drawn with
+the real controls, the Widget Box with every control of the kit, the Object
+Tree, the properties, events and variables of what you choose. Drop and drag
+controls, put them in rows and groups, set their properties, add their
+events -- each change is written into the same file as Nim, touching only
+the lines that changed: no form file, no generated code. It is purely a
+designer: **Edit Code** opens your editor at the control's code, and while
+one of them has the file the other leaves it alone (a lock beside it, the
+file read-only for the others). Dialogs and menus open over their window
+when you choose something in them; F5 shows the window working, in each
+look.
+
+It comes with the package and builds itself the first time you run it, for
+your computer and your Nim: Windows, macOS, Linux and BSD, and Termux on
+Android (Termux:X11). The whole guide: **[docs/designer.md](docs/designer.md)**.
+
+```sh
+retrokit designer app.nim       # app.nim's windows (a new file when there is none)
+```
 
 ## How it works
 
@@ -2013,6 +2044,7 @@ needed. `nimble test` runs them all; `nimble fuzz` runs the fuzzers.
 | `test_uia` | (Windows, also under Wine) the UI Automation provider: the tree a client reads, names, the patterns (invoke, value, toggle, range, selection) |
 | `test_scale` | fractional scales (125 % to 300 %): controls and text the size asked for, lines on whole pixels, a change of scale followed |
 | `test_shm` | the frame drawn into memory shared with the X server and what the window then shows, with and without it (`RETRO_SURFACE=0`) |
+| `test_designer` | Retro Designer: every example app read and drawn, each of their controls deleted and the file still Nim, every control of the Widget Box dropped into one app that compiles, moves, groups, events, properties, renames, undo, the lock on the file; `windowBox`, `inert`, `showMenu` |
 | `android_mock/run.sh` | the real Android driver against a fake Android (looper, input queue, window, JNI): frames, taps, keyboard, Arabic text, insets, cancelled touches, keys, rotation, Back, an input method composing |
 
 ## Examples

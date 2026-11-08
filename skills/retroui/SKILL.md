@@ -40,6 +40,17 @@ cd myapp && nimble run
 Needs Nim 2.0+ (2.2 or 2.4) and a C compiler. Build with
 `-d:release -d:useMalloc` (memory goes back to the system).
 
+The person may design the windows by hand in **Retro Designer**:
+`retrokit designer app.nim` draws the file's windows with the real controls
+and writes every change (controls dropped, moved, grouped, properties,
+events) into the same `.nim` file -- no form file, the code stays theirs
+(docs/designer.md). Write apps it can read: windows as `app` blocks or
+procs that draw controls, values written out in the calls, the code of an
+event under its control (`if button("&Save"): save()`), `var` lines at the
+top for what the controls bind. While the designer has a file it is
+read-only with a `.NAME.lock` beside it: do not write the file then (ask to
+close the designer, or use its Edit Code).
+
 ## 3. The shape of every app
 
 ```nim
@@ -128,7 +139,7 @@ or put several in a `row:` inside the `field`. `field("")` lines a control
 up under the others. When the row is narrower than the captions plus about
 200 pixels (a phone), each caption goes above its control.
 
-## 6. Controls (docs/controls.md has all 291, with pictures)
+## 6. Controls (docs/controls.md has all 294, with pictures)
 
 Text: `label`, `paragraph`, `heading`, `styledText`, `link`, `badge`, `icon`, `iconLabel`, `image`, `tooltip`.
 Buttons: `button`, `segmented`, `menuButton`, `splitButton`, `buttonRow`.
@@ -275,6 +286,13 @@ windows (a window manager, a desktop) gets every event first with
 `x11Window`, `x11Wake`): see Retro Desktop, github.com/foxoman/retrodesktop.
 On X11 the cursors are drawn at the screen's scale when it is 150% or more
 (`x11DrawnCursors`: 1 always, 0 never).
+
+A window drawn inside the window (a preview, a guide's picture, a
+designer): `windowBox(rect): body` lays `body` out as a window at that
+rectangle (its menu bar, bars and dialogs kept in it), `inert: body` draws
+without input (its dialogs and menus do not take the window's);
+`showMenu(["&File"])` / `hideMenu` open a menu bar's menu as if clicked;
+`ui.measuring` with `notePlaced` tells where things were drawn.
 
 `retroapk` needs only clang with lld (or Zig); without either it fetches
 the NDK. Keep `~/.retro/android` (the signing key) for updates. Details per

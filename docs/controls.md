@@ -31,7 +31,7 @@ reference of every module is made by `nimble docs` into `docs/api/`.
 - **[Containers](#containers)**: [expander](#expander) · [accordionHeader](#accordionheader) · [tabStrip (document tabs)](#tabstrip-document-tabs)
 - **[Menus and bars](#menus-and-bars)**: [menubar, menu, menuItem, submenu](#menubar-menu-menuitem-submenu) · [contextMenu](#contextmenu) · [popupMenu, openPopupMenu](#popupmenu-openpopupmenu) · [breadcrumb](#breadcrumb) · [pager, stepper](#pager-stepper) · [recordNav](#recordnav) · [findBar, findIn, replaceAllIn](#findbar-findin-replaceallin)
 - **[Dialogs](#dialogs)**: [msgBox](#msgbox) · [inputBox](#inputbox) · [dialog](#dialog) · [progressBox](#progressbox) · [wizard, stepDone](#wizard-stepdone) · [aboutBox](#aboutbox) · [splashBox](#splashbox) · [problemBox, reportProblem](#problembox-reportproblem) · [fileDialog (3.1)](#filedialog-31)
-- **[App parts](#app-parts)**: [toolbar, toolButton, toolSeparator](#toolbar-toolbutton-toolseparator) · [barButton, setToolbarLook](#barbutton-settoolbarlook) · [customizeToolbar](#customizetoolbar) · [mdiArea, mdiWindow, mdiWindowMenu](#mdiarea-mdiwindow-mdiwindowmenu) · [dockPanels: docked panels](#dockpanels-docked-panels) · [paletteTabs](#palettetabs) · [keymapEditor, keymapPressed](#keymapeditor-keymappressed) · [settingToggle, settingChoice, settingSlider, settingCombo, settingButtons, settingLink](#settingtoggle-settingchoice-settingslider-settingcombo-settingbuttons-settinglink) · [appearanceSettings](#appearancesettings) · [avatar, factList](#avatar-factlist) · [bottomNav, fab](#bottomnav-fab) · [captionBar](#captionbar)
+- **[App parts](#app-parts)**: [toolbar, toolButton, toolSeparator](#toolbar-toolbutton-toolseparator) · [windowBox, inert, showMenu, hideMenu](#windowbox-inert-showmenu-hidemenu) · [barButton, setToolbarLook](#barbutton-settoolbarlook) · [customizeToolbar](#customizetoolbar) · [mdiArea, mdiWindow, mdiWindowMenu](#mdiarea-mdiwindow-mdiwindowmenu) · [dockPanels: docked panels](#dockpanels-docked-panels) · [paletteTabs](#palettetabs) · [keymapEditor, keymapPressed](#keymapeditor-keymappressed) · [settingToggle, settingChoice, settingSlider, settingCombo, settingButtons, settingLink](#settingtoggle-settingchoice-settingslider-settingcombo-settingbuttons-settinglink) · [appearanceSettings](#appearancesettings) · [avatar, factList](#avatar-factlist) · [bottomNav, fab](#bottomnav-fab) · [captionBar](#captionbar)
 - **[Files](#files)**: [fileList](#filelist) · [fileList: large icons](#filelist-large-icons) · [folderTree](#foldertree) · [placesView](#placesview) · [filePreview](#filepreview) · [pathBar](#pathbar) · [driveBar](#drivebar) · [filePicker](#filepicker) · [trashList](#trashlist) · [propertiesDialog](#propertiesdialog) · [runJobDialog](#runjobdialog) · [textFileView, hexFileView](#textfileview-hexfileview) · [pictureBox](#picturebox) · [storageDialog](#storagedialog)
 - **[Charts](#charts)**: [chart](#chart) · [A combo chart](#a-combo-chart) · [gauge](#gauge) · [barChart, lineChart, pieChart](#barchart-linechart-piechart) · [The 21 kinds of chart](#the-21-kinds-of-chart)
 - **[Planning and dashboards](#planning-and-dashboards)**: [kpiTile, statCard, kpiRow](#kpitile-statcard-kpirow) · [kanbanBoard](#kanbanboard) · [ganttView](#ganttview) · [agendaView](#agendaview) · [orgChart](#orgchart)
@@ -3683,6 +3683,72 @@ proc toolSeparator*()
 ```
 
 A gap between groups of tool buttons.
+
+### windowBox, inert, showMenu, hideMenu
+
+A window drawn inside this one at a rectangle -- its menu bar, tool bar and status bar along the rectangle's edges, its dialogs and menus kept in it -- the way a designer or a guide shows a window. `inert` draws it without input (its dialogs do not take the window's); `showMenu` opens one of its menus as if it was clicked, `hideMenu` closes it again.
+
+| Normal | Dark scheme |
+|---|---|
+| ![windowBox, inert, showMenu, hideMenu, normal](controls/windowbox-normal.png) | ![windowBox, inert, showMenu, hideMenu, dark scheme](controls/windowbox-dark-scheme.png) |
+
+```nim
+let frame = place(available(), 180)
+windowFrame(frame, 4)
+let box = inset(frame, 4)
+inert:
+  windowBox(box):
+    let shown = showMenu(["&File"])
+    menubar:
+      menu "&File":
+        discard menuItem("&Open...", "Ctrl+O")
+        discard menuItem("E&xit")
+      menu "&Help":
+        discard menuItem("&Contents")
+        discard menuItem("&About")
+    hideMenu(shown)
+    row:
+      spring()
+      label "A window in the window"
+    discard button("OK")
+    statusbar("Ready")
+```
+
+**API**
+
+```nim
+template windowBox*(r: Rect; body: untyped)
+```
+
+`body` laid out as a window of its own at `r`, inside this one: its
+menu bar, tool bars and status bar along `r`'s edges, its content in
+between, and `isCompact` and the size classes asking `r`'s width -- a
+preview of a window (a designer's form, a guide's picture). Pair it with
+`inert` when its controls should not take input.
+
+```nim
+template inert*(body: untyped)
+```
+
+`body` drawn without input: its controls are shown as they are but the
+mouse, fingers and keys do not reach them, and a dialog or menu in it
+does not take the window's input (a preview, a designer's form).
+
+```nim
+proc showMenu*(path: openArray[string]): MenuShown
+```
+
+Opens the menu bar's menu `path[0]` -- and in it the submenu `path[1]`
+-- as if it had been clicked, for the menu bar drawn next: a designer
+showing the menu whose items are being set, a tour of an app. The
+titles are written as in `menu` and `submenu`; `hideMenu` puts back
+what was open.
+
+```nim
+proc hideMenu*(s: MenuShown)
+```
+
+What was open before `showMenu` open again.
 
 ### barButton, setToolbarLook
 

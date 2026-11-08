@@ -14,6 +14,8 @@
 ##       other options go to the Nim compiler
 ##   retrokit small app.nim           the smallest build (optimized for size, stripped)
 ##   retrokit apk app.nim [options]   an Android APK (the retroapk tool)
+##   retrokit designer [app.nim]      Retro Designer: the app's windows, designed
+##                                    (built once for this machine, then run)
 ##
 ## No dependencies but Nim and a C compiler.
 
@@ -43,6 +45,11 @@ retrokit -- start, check and build Retro Nim UI apps
       anything else goes to the Nim compiler (-d:..., --opt:...)
   retrokit small APP.nim       the smallest build: optimized for size, stripped
   retrokit apk APP.nim [...]   an Android APK (same options as retroapk)
+  retrokit designer [APP.nim] [--rebuild]
+      Retro Designer: the file's windows drawn with the real controls, to
+      design by dragging and setting properties; every change written into
+      the same file. Built once for this machine (it needs Nim's compiler
+      sources: a normal Nim has them; else `nimble install compiler`)
 """
 
 const templates = [
@@ -246,6 +253,8 @@ proc found(cmd: string): string =
   let p = findExe(cmd)
   if p.len > 0: p else: ""
 
+proc compilerSources(): string
+
 proc doctor() =
   var ok = true
   proc line(good: bool; what, detail: string; fix = "") =
@@ -333,6 +342,10 @@ proc doctor() =
        "optional: install adb to put the APK on a phone from here")
   when defined(macosx):
     line(found("xcrun").len > 0, "iOS", "xcrun", "install Xcode for retroios")
+  let cs = compilerSources()
+  line(cs.len > 0, "Retro Designer",
+       (if cs.len > 0: "Nim's compiler sources: " & cs else: "Nim's compiler sources not found"),
+       "optional: retrokit designer installs them the first time (nimble install compiler)")
   echo(if ok: "Ready to build Retro apps." else: "Fix what is missing above, then run retrokit doctor again.")
   if not ok: quit(1)
 
@@ -440,6 +453,97 @@ proc watchRun(app: string; extra: seq[string]): int =
       if exe.len > 0: start(exe)
       elif running != nil: echo "retrokit: the window keeps the code before; fix it and save"
 
+# ---- designer: Retro Designer, built for this machine and run ---------------------------------
+
+const RetroVersion = block:
+  # (read from the toolkit beside retrokit: one version for both)
+  let core = staticRead(currentSourcePath().parentDir / "retroui" / "core.nim")
+  let k = core.find("RetroVersion* = \"")
+  if k < 0: "0" else: core[k + 17 ..< core.find('"', k + 17)]
+
+proc designerSource(): string =
+  ## Retro Designer's sources: beside retrokit's (in the repository and where
+  ## nimble installs Retro Nim UI), else where nimble says retroui is.
+  let here = currentSourcePath().parentDir / "retrodesigner" / "retrodesigner.nim"
+  if fileExists(here): return here
+  try:
+    let (o, code) = execCmdEx("nimble path retroui")
+    if code == 0:
+      for l in o.splitLines:
+        let f = l.strip / "retrodesigner" / "retrodesigner.nim"
+        if l.strip.len > 0 and fileExists(f): return f
+  except OSError: discard
+  ""
+
+proc compilerSources(): string =
+  ## The folder to put on the path so that `import compiler/parser` finds
+  ## Nim's own parser: the Nim that builds (its `compiler` beside its `lib`),
+  ## else nimble's `compiler` package; "" when neither is there.
+  try:
+    let (o, code) = execCmdEx("nim dump --hints:off --dump.format:json dummy")
+    if code == 0:
+      let k = o.find("\"libpath\"")
+      if k >= 0:
+        let a = o.find('"', k + 10)
+        let b = o.find('"', a + 1)
+        if a > 0 and b > a:
+          let root = o[a + 1 ..< b].replace("\\\\", "\\").parentDir
+          if fileExists(root / "compiler" / "parser.nim"): return root
+  except OSError: discard
+  try:
+    let (o, code) = execCmdEx("nimble path compiler")
+    if code == 0:
+      for l in o.splitLines:
+        let d = l.strip
+        if d.len == 0: continue
+        if fileExists(d / "compiler" / "parser.nim"): return d
+        if fileExists(d / "parser.nim"): return d.parentDir
+  except OSError: discard
+  ""
+
+proc designer(args: seq[string]): int =
+  let src = designerSource()
+  if src.len == 0: quit "retrokit: Retro Designer's sources are not here (nimble install retroui)"
+  var nimSrc = compilerSources()
+  if nimSrc.len == 0:
+    echo "retrokit: Retro Designer reads your files with Nim's own parser; this Nim has no"
+    echo "          compiler sources, so the `compiler` package is installed (once):"
+    echo "          nimble install -y compiler"
+    let p = startProcess(findExe("nimble"), args = ["install", "-y", "compiler"],
+                         options = {poParentStreams})
+    discard p.waitForExit()
+    p.close()
+    nimSrc = compilerSources()
+    if nimSrc.len == 0: quit "retrokit: no compiler sources: install them (nimble install compiler)"
+  let nimVer = block:
+    try: execCmdEx("nim --version")[0].splitLines[0] except OSError: ""
+  var h = hash(nimVer & src)
+  for f in walkDirRec(src.parentDir.parentDir):    # (its sources and the toolkit's: a
+    if f.endsWith(".nim"):                         #  changed file is built again)
+      try: h = h !& hash(f) !& hash(getLastModificationTime(f).toUnixFloat)
+      except OSError: discard
+  let dir = getCacheDir("retroui") / ("designer-" & RetroVersion & "-" & $(!$h and 0xffffff))
+  let exe = dir / ("retrodesigner" & ExeExt)
+  let rebuild = "--rebuild" in args
+  if rebuild or not fileExists(exe):
+    createDir(dir)
+    echo "retrokit: building Retro Designer for this machine (once; a minute or two)..."
+    var b = @["c", "-d:release", "-d:useMalloc", "--hints:off", "--warnings:off",
+              "--path:" & nimSrc, "--path:" & src.parentDir.parentDir, "--nimcache:" & dir / "cache", "-o:" & exe]
+    when defined(windows): b.add "--app:gui"
+    b.add src
+    let p = startProcess(findExe("nim"), args = b, options = {poParentStreams})
+    let code = p.waitForExit()
+    p.close()
+    if code != 0: quit "retrokit: Retro Designer did not build (see above)"
+    removeDir(dir / "cache")
+  var files: seq[string]
+  for a in args:
+    if a != "--rebuild": files.add a
+  let p = startProcess(exe, args = files, workingDir = getCurrentDir(), options = {poParentStreams})
+  result = p.waitForExit()
+  p.close()
+
 proc runOptions(args: openArray[string]): seq[string] =
   ## `run`'s own options, put in the environment the app starts with; what
   ## is left goes to the compiler.
@@ -493,6 +597,8 @@ proc main() =
     if code == 0 and fileExists(exe):
       echo exe, ": ", getFileSize(exe) div 1024, " KB"
     quit code
+  of "designer":
+    quit designer(args[1 .. ^1])
   of "apk":
     let tool = findExe("retroapk")
     if tool.len == 0: quit "retrokit: retroapk is not installed (nimble install retroui)"

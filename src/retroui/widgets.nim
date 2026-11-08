@@ -1600,6 +1600,11 @@ proc listbox*(items: openArray[string]; sel: var int; rows = 6; w = 0;
   let bar = maxOff > 0
   let area = if bar: rect(r.x, r.y, r.w - SbW + 1, r.h) else: r
   var off = clamp(st.scrollY, 0, maxOff)
+  # (the selection set by the app since the last frame: shown at once, as
+  #  `tree` does)
+  if st.aux2 != 0 and st.aux2 - 1 != sel and sel >= 0 and sel < n:
+    scrollStop(id)
+    off = clamp(clamp(off, (sel + 1) * ItemH - viewH, sel * ItemH), 0, maxOff)
   if bar:
     scrollBarFor(id + 9, id, rect(r.x + r.w - SbW, r.y, SbW, r.h), true,
                  off, maxOff, max(ItemH, viewH - ItemH), ItemH, enabled)
@@ -1663,6 +1668,7 @@ proc listbox*(items: openArray[string]; sel: var int; rows = 6; w = 0;
   if nsel != sel and nsel >= 0 and nsel < n:
     sel = nsel
     result = true
+  st.aux2 = sel + 1
   if follow and sel >= 0:
     scrollShow(id, off, sel * ItemH, (sel + 1) * ItemH, viewH, maxOff)
   scrollTick(id, off, maxOff)
@@ -2829,10 +2835,11 @@ proc hiOf(level: int): var int =
 proc beginMenubar*() =
   ## Starts the menu bar (see `menubar`).
   pushLayer(LayerBase)              # above the scrolled content, unclipped
-  let r = rect(0, ui.barY, ui.w, MenuH)
+  let r = rect(ui.winX, ui.barY, ui.w, MenuH)
   fill(r, th.window)
-  hline(0, r.y + r.h, ui.w, th.edge)
-  barX = ui.safe.left
+  hline(ui.winX, r.y + r.h, ui.w, th.edge)
+  notePlaced(rect(r.x, r.y, r.w, r.h + 1))
+  barX = ui.winX + ui.safe.left
   barIds.setLen(0)
   menuSwitch = 0
   shiftContent(MenuH + 1)
@@ -2912,7 +2919,7 @@ proc beginPopupMenu(id: Id; x, y: int; level = 0; fixedTop = false): bool =
   m.cols = 1
   m.maxCy = m.cy
   let cols = menuCols(st, y, fixedTop)
-  if m.x + m.w * cols + 3 > ui.w: m.x = max(0, ui.w - m.w * cols - 3)
+  if m.x + m.w * cols + 3 > ui.winX + ui.w: m.x = max(ui.winX, ui.winX + ui.w - m.w * cols - 3)
   m.colX = m.x
   pushLayer(LayerPopup)
   m.mark = cmdMark()
@@ -2928,6 +2935,7 @@ proc endMenu*() =
   ## `beginPopupMenuFor`): draws its frame; Up, Down, Home, End, Esc.
   let m = pms.pop()
   let r = rect(m.x, m.y, m.w * m.cols, max(m.cy, m.maxCy) - m.y + 3)
+  notePlaced(r)
   if accessOn: accessEnd(r)
   patchFill(m.bg, r, th.window)
   box(r, th.edge)
@@ -3001,6 +3009,7 @@ proc beginMenu*(title: string): bool =
   ## items, then `endMenu`).
   let id = idOfLabel("menu:", title)
   let tr = rect(barX, ui.barY, labelWidth(title, boldMenus) + dp(16), MenuH)
+  notePlaced(tr)
   barX += tr.w
   barIds.add id
   let barLive = ui.inputLayer == LayerBase or
@@ -3057,6 +3066,36 @@ template menu*(title: string; body: untyped) =
     body
     endMenu()
 
+type MenuShown* = object
+  ## What `showMenu` put aside (for `hideMenu`).
+  popup, sub: Id
+  open: bool
+  hi, subHi: int
+
+proc showMenu*(path: openArray[string]): MenuShown =
+  ## Opens the menu bar's menu `path[0]` -- and in it the submenu `path[1]`
+  ## -- as if it had been clicked, for the menu bar drawn next: a designer
+  ## showing the menu whose items are being set, a tour of an app. The
+  ## titles are written as in `menu` and `submenu`; `hideMenu` puts back
+  ## what was open.
+  result = MenuShown(popup: ui.popup, open: ui.menuOpen, hi: ui.popupHi, sub: subId,
+                     subHi: subHi)
+  if path.len == 0: return
+  let id = peekId(fnv(path[0], fnv("menu:")))     # (the id its `menu` will take)
+  ui.popup = id
+  ui.menuOpen = true
+  ui.popupHi = -1
+  subId = if path.len > 1: mixId(id, fnv("sub:" & path[1])) else: Id(0)
+  subHi = -1
+
+proc hideMenu*(s: MenuShown) =
+  ## What was open before `showMenu` open again.
+  ui.popup = s.popup
+  ui.menuOpen = s.open
+  ui.popupHi = s.hi
+  subId = s.sub
+  subHi = s.subHi
+
 proc newMenuColumn() =
   ## (the open menu goes on in a column beside)
   pm.maxCy = max(pm.maxCy, pm.cy)
@@ -3076,6 +3115,7 @@ proc itemRow(label, shortcut: string; checked, enabled, arrowRight: bool;
   ## system's words: Cmd+S on a Mac for Ctrl+S).
   let shortcut = shortcutText(shortcut)
   result = menuSlot(MenuRowH)
+  notePlaced(result)
   pm.cy += result.h
   pm.natural += result.h
   let sw = if shortcut.len > 0: textWidth(shortcut, boldMenus) + dp(24) else: 0
@@ -3228,10 +3268,11 @@ proc beginSubmenu*(label: string; enabled = true): bool =
   let sw = max(st.aux, dp(120)) * menuCols(st, r.y - 3, false)
   let mw = pm.w * max(menuCols(state(pm.id), pm.y, pm.fixedTop), pm.cols)
   var x = pm.x + mw - 3
-  if x + sw + 3 > ui.w:
-    if pm.x - sw + 3 >= 0: x = pm.x - sw + 3
-    elif ui.w - (pm.x + mw) >= pm.x: x = max(0, ui.w - sw - 3)
-    else: x = 0
+  let right = ui.winX + ui.w
+  if x + sw + 3 > right:
+    if pm.x - sw + 3 >= ui.winX: x = pm.x - sw + 3
+    elif right - (pm.x + mw) >= pm.x - ui.winX: x = max(ui.winX, right - sw - 3)
+    else: x = ui.winX
   beginPopupMenu(id, x, r.y - 3, 1)
 
 template submenu*(label: string; body: untyped) =
@@ -3247,6 +3288,7 @@ proc menuSeparator*() =
     newMenuColumn()                      # (the next row starts a column: no line)
     return
   if pm.cy <= pm.y + 3 and pm.cols > 1: return
+  notePlaced(rect(pm.colX + 1, pm.cy, pm.w - 2, dp(9)))
   hline(pm.colX + 3, pm.cy + dp(4), pm.w - 6, th.shadow)
   pm.cy += dp(9)
 
@@ -3339,11 +3381,12 @@ proc beginToolbar*() =
   ## Starts the tool bar (see `toolbar`).
   pushLayer(LayerBase)
   tbar.h = ToolH
-  let r = rect(0, ui.barY, ui.w, tbar.h)
+  let r = rect(ui.winX, ui.barY, ui.w, tbar.h)
+  notePlaced(r)
   fill(r, th.face)
-  hline(0, r.y, ui.w, th.light)
-  hline(0, r.y + r.h - 1, ui.w, th.shadow)
-  pushRow(rect(ui.safe.left + 6, r.y + 3, ui.w - ui.safe.left - 12, tbar.h - 6),
+  hline(ui.winX, r.y, ui.w, th.light)
+  hline(ui.winX, r.y + r.h - 1, ui.w, th.shadow)
+  pushRow(rect(ui.winX + ui.safe.left + 6, r.y + 3, ui.w - ui.safe.left - 12, tbar.h - 6),
           tbar.h - 6)
   shiftContent(tbar.h)
   if accessOn: accessBegin(arToolBar, "", r)
@@ -3600,12 +3643,13 @@ proc statusbar*(parts: varargs[string]) =
   ## The status bar at the bottom of the window: the first part takes the
   ## spare room. Content above it can fill down to it (`rows = -1`).
   let h = FontH + 8
-  let r = rect(0, ui.bottom - h, ui.w, h)
+  let r = rect(ui.winX, ui.bottom - h, ui.w, h)
+  notePlaced(rect(ui.winX, r.y, ui.w, ui.h - r.y))
   pushLayer(LayerBase)
   defer: popLayer()
-  fill(rect(0, r.y, ui.w, ui.h - r.y), th.face)
-  hline(0, r.y, ui.w, th.shadow)
-  hline(0, r.y + 1, ui.w, th.light)
+  fill(rect(ui.winX, r.y, ui.w, ui.h - r.y), th.face)
+  hline(ui.winX, r.y, ui.w, th.shadow)
+  hline(ui.winX, r.y + 1, ui.w, th.light)
   ui.bottom = r.y
   # the parts, the first one taking the spare room, between etched lines
   # (the last one left of the frame's size grip, in the bar's corner)
@@ -3637,11 +3681,12 @@ proc beginStatusBar*(): Rect =
   ## Starts a status bar of your own at the bottom of the window (see
   ## `statusBar`); returns where it is.
   let h = max(FontH + 8, EditH + 4)
-  let r = rect(0, ui.bottom - h, ui.w, h)
+  let r = rect(ui.winX, ui.bottom - h, ui.w, h)
+  notePlaced(rect(ui.winX, r.y, ui.w, ui.h - r.y))
   pushLayer(LayerBase)
-  fill(rect(0, r.y, ui.w, ui.h - r.y), th.face)
-  hline(0, r.y, ui.w, th.shadow)
-  hline(0, r.y + 1, ui.w, th.light)
+  fill(rect(ui.winX, r.y, ui.w, ui.h - r.y), th.face)
+  hline(ui.winX, r.y, ui.w, th.shadow)
+  hline(ui.winX, r.y + 1, ui.w, th.light)
   ui.bottom = r.y
   if accessOn: accessBegin(arStatusBar, "", r)
   let grip = sizeGrip()
@@ -3685,14 +3730,16 @@ proc beginDialog*(open: var bool; title: string; width: int): bool =
   ui.dialogTopNow = id
   pushLayer(LayerDialog)
   let w = min(dp(width), ui.w - 8)
+  let room = ui.h - ui.winY             # (the window's height: a box's in a `windowBox`)
   var h = TitleH + 10 + st.aux + 2 * Pad
-  let tall = h > ui.h - 4               # taller than the screen: it scrolls
-  if tall: h = ui.h - 4
-  var x = (ui.w - w) div 2 + st.scrollX
-  var y = (ui.h - h) div 2 + st.scrollY
-  x = clamp(x, 0, max(0, ui.w - w))
-  y = clamp(y, 0, max(0, ui.h - h))
+  let tall = h > room - 4               # taller than the screen: it scrolls
+  if tall: h = room - 4
+  var x = ui.winX + (ui.w - w) div 2 + st.scrollX
+  var y = ui.winY + (room - h) div 2 + st.scrollY
+  x = clamp(x, ui.winX, ui.winX + max(0, ui.w - w))
+  y = clamp(y, ui.winY, ui.winY + max(0, room - h))
   let r = rect(x, y, w, h)
+  notePlaced(r)
   let bar = rect(x + 5, y + 5, w - 10, TitleH)
   let sysBox = rect(bar.x, bar.y, TitleH, TitleH)
   if canInput():

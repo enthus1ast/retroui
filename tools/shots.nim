@@ -1357,6 +1357,29 @@ example("toolbar", "toolbar, toolButton, toolSeparator",
     toolButton(pxCopy, "Copy")
     toolButton(pxPaste, "Paste", down = true)
 
+example("windowbox", "windowBox, inert, showMenu, hideMenu",
+        "A window drawn inside this one at a rectangle -- its menu bar, tool bar and status bar along the rectangle's edges, its dialogs and menus kept in it -- the way a designer or a guide shows a window. `inert` draws it without input (its dialogs do not take the window's); `showMenu` opens one of its menus as if it was clicked, `hideMenu` closes it again.",
+        380, 210, ["windowBox", "inert", "showMenu", "hideMenu"], @[ssNormal, ssDark]):
+  let frame = place(available(), 180)
+  windowFrame(frame, 4)
+  let box = inset(frame, 4)
+  inert:
+    windowBox(box):
+      let shown = showMenu(["&File"])
+      menubar:
+        menu "&File":
+          discard menuItem("&Open...", "Ctrl+O")
+          discard menuItem("E&xit")
+        menu "&Help":
+          discard menuItem("&Contents")
+          discard menuItem("&About")
+      hideMenu(shown)
+      row:
+        spring()
+        label "A window in the window"
+      discard button("OK")
+      statusbar("Ready")
+
 example("barbutton", "barButton, setToolbarLook",
         "Tool bar buttons with a picture and a label, shown as the bar's look says: icons only, or the text below or beside them (Explorer's \"Text Labels\"). An app can offer it as a setting.",
         380, 80, ["barButton", "setToolbarLook"], std3):

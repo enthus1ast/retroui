@@ -20,8 +20,23 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
   Release workflow (`.github/workflows/release.yml`, on a `v...` tag or by
   hand) builds Gallery, Files, Photo, Board and Mail for Linux, Windows,
   Android and macOS onto the release.
+- `src/retrodesigner/` -- Retro Designer, the visual designer
+  (`retrokit designer app.nim` builds it once per computer and runs it;
+  docs/designer.md). It reads and changes the user's own `.nim` file with
+  Nim's parser (`compiler/parser`), as edits of the text at the nodes'
+  places: a change keeps the user's comments, blank lines and style, and is
+  read again before it is kept. `registry.nim` is made by `python3
+  tools/gendesigner.py` (never by hand): run it after adding or changing a
+  control or an example of the guide. It stands on public parts of the kit
+  (`windowBox`, `inert`, `showMenu`/`hideMenu`, `ui.measuring`/`notePlaced`,
+  `peekId`); keep them generic -- they are for any preview, not the
+  designer's alone. It is purely a designer: it never runs or compiles the
+  user's app.
 - `tests/` -- headless tests on a fake screen driver (`tests/harness.nim`).
 - `docs/controls.md` -- every control with pictures, made by `tools/shots.nim`.
+  Pictures that change only with the day (the calendar, the agenda, the
+  Gantt chart, the About and splash boxes, the file pickers) are not
+  committed again unless their control changed.
 - Screen readers: `src/retroui/uirelays/access.nim` (the tree, its roles,
   states, requests: generic), `core.nim` builds it while one listens
   (`accessNode`, `accessBegin`/`accessEnd`, `accessPress`, `accessSet`);
@@ -82,7 +97,10 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
   kit), this file, `README.md`, `CHANGELOG.md` (the top section),
   `BUILDING.md` (builds), `docs/controls.md` (controls), `docs/syntax.md`
   (when the syntax or what a form draws changes: run
-  `sh tools/syntaxshots/make.sh`), `llms.txt`.
+  `sh tools/syntaxshots/make.sh`), `docs/designer.md` (Retro Designer),
+  `llms.txt`. A new or changed control: `python3 tools/gendesigner.py`
+  too, and `tests/test_designer.nim` must still pass (every control of the
+  Widget Box dropped into one app has to compile).
 - **Looks:** the Windows 3.1 look and FreeSans drawn in gray (its heights
   on whole pixels, its strokes as the font has them; "Sharp" text is an
   option). Check a change by looking at a screenshot.

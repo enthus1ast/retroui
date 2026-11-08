@@ -224,6 +224,11 @@ proc popLayer*() =
     curClip = t.clip
   else:
     curLayer = 0
+proc screenClip*(): Rect = screenRect
+  ## What a pushed layer starts clipped to: the whole screen, or the box of
+  ## a window drawn inside another (`windowBox`).
+proc setScreenClip*(r: Rect) = screenRect = r
+  ## The rectangle pushed layers are clipped to from now on (`screenClip`).
 proc layer*(): int = curLayer
   ## The layer drawing goes to now.
 proc clipRect*(): Rect = curClip

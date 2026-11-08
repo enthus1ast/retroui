@@ -1,5 +1,47 @@
 # Changes
 
+## 0.27.0
+
+- **Retro Designer.** `retrokit designer app.nim` opens your `.nim` file in
+  the kit's visual designer, in the manner of Qt Designer: the file's
+  windows drawn with the real controls; the Widget Box with every control of
+  the guide (dropped with the variables and the imports it needs); the
+  Object Tree; the chosen control's properties, its event, the file's
+  variables. Drop controls, drag them, put them in rows, columns, groups,
+  panels, cards and forms and take them out again, cut, copy, paste,
+  duplicate, delete, undo; set properties, add events, rename variables;
+  drag the window's corner to its size. Every change is written into the
+  same file as Nim, touching only the lines that changed -- no form file, no
+  generated code -- and the file is read again before a change is kept. The
+  windows are found by themselves: `app` blocks, `while beginFrame()`
+  windows, and every proc that draws (drawn where a window calls it);
+  dialogs are listed under their window and shown open over it, a menu opens
+  when one of its items is chosen, the tab or `case` arm of what is chosen is
+  shown. F5 previews the window working, in each look (touch, dark, right to
+  left). It is purely a designer: **Edit Code** gives the file to your editor
+  at the control's code and takes it back when the editor closes, and only
+  one of the two has the file at a time (a `.NAME.lock` beside it; the file
+  read-only for others on Linux, macOS, BSD and Termux, held on Windows; a
+  lock left by a designer that is gone is taken over). It builds itself the
+  first time, for your computer and your Nim (the compiler's sources, or
+  nimble's `compiler` package), on Windows, macOS, Linux/BSD and Termux.
+  docs/designer.md; `src/retrodesigner/`; `tools/gendesigner.py` makes its
+  registry from the API; `tests/test_designer.nim`.
+- **A window in the window.** `windowBox(rect): body` lays `body` out as a
+  window of its own at a rectangle -- its menu bar, tool bars and status bar
+  along the rectangle's edges, its dialogs centred in it and its menus kept
+  in it (`ui.winX`, `ui.winY`; `screenClip` / `setScreenClip` for what a
+  pushed layer is clipped to). `inert: body` draws without input: its
+  controls take no mouse, finger or key, and a dialog or menu in it does not
+  take the window's input. `showMenu(["&File", "Sub"])` / `hideMenu` open a
+  menu bar's menu (and a submenu) as if they were clicked: a tour, a guide's
+  picture. `ui.measuring` with `notePlaced` tells where things were drawn
+  (cells, bars, menus and their rows, dialogs, tree rows); `peekId` the id
+  a widget will take.
+- A list box scrolls to its selection when the app changes it, as the tree
+  does.
+- Retro Gallery and the small examples are 0.27.0.
+
 ## 0.26.1
 
 - The Cocoa driver's backend builds on its own again (the uirelays tests
