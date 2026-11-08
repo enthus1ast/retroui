@@ -29,10 +29,16 @@ once; after that it starts at once. A new version of Retro Nim UI, or a
 change to its sources, builds it again by itself.
 
 It reads your files with Nim's own parser, so it needs the Nim compiler's
-sources. A Nim installed from nim-lang.org, choosenim, Homebrew or a Linux
-package has them beside its `lib` folder; when yours does not, `retrokit`
-installs nimble's `compiler` package (`nimble install compiler`) and uses
-that.
+sources; `retrokit` checks that the parser builds from them before it builds
+the designer. A Nim installed from nim-lang.org, choosenim, Homebrew or a
+Linux package has them beside its `lib` folder; when yours does not,
+`retrokit` installs nimble's `compiler` package (`nimble install compiler`)
+and uses that. Since Nim 2.4 the compiler's sources also import two folders
+of Nim's `dist` (nimony and checksums), which some packages leave out --
+Termux's among them: `retrokit` then fetches them with git (`pkg install
+git` in Termux), at the commits your Nim's version pins, into a copy of the
+sources in its cache folder (`nim-2.4.1` there), once. `retrokit doctor`
+says which of these your Nim needs.
 
 It runs where Retro Nim UI runs on a desktop: Windows, macOS, Linux and BSD
 (X11), and Termux on Android with Termux:X11.

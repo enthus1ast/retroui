@@ -253,7 +253,9 @@ proc found(cmd: string): string =
   let p = findExe(cmd)
   if p.len > 0: p else: ""
 
-proc compilerSources(): string
+proc sourceRoots(): seq[string]
+proc parserBuilds(root: string; why: var string): bool
+proc distMissing(root: string): seq[string]
 
 proc doctor() =
   var ok = true
@@ -342,10 +344,24 @@ proc doctor() =
        "optional: install adb to put the APK on a phone from here")
   when defined(macosx):
     line(found("xcrun").len > 0, "iOS", "xcrun", "install Xcode for retroios")
-  let cs = compilerSources()
-  line(cs.len > 0, "Retro Designer",
-       (if cs.len > 0: "Nim's compiler sources: " & cs else: "Nim's compiler sources not found"),
-       "optional: retrokit designer installs them the first time (nimble install compiler)")
+  # Retro Designer: Nim's parser, from the compiler's sources
+  let roots = sourceRoots()
+  var why = ""
+  if roots.len == 0:
+    line(false, "Retro Designer", "Nim's compiler sources not found",
+         "optional: retrokit designer installs them the first time (nimble install compiler)")
+  elif parserBuilds(roots[0], why):
+    line(true, "Retro Designer", "Nim's compiler sources: " & roots[0])
+  elif distMissing(roots[0]).len > 0:
+    let what = distMissing(roots[0]).mapIt("dist/" & it).join(" and ")
+    line(found("git").len > 0, "Retro Designer",
+         "the compiler's sources come without " & what & (if found("git").len > 0:
+           ": retrokit designer fetches them with git the first time" else: ""),
+         "optional: install git (" & (if existsEnv("TERMUX_VERSION"): "pkg install git" else: "your package manager") &
+         "): retrokit designer fetches them with it")
+  else:
+    line(false, "Retro Designer", "Nim's parser does not build: " & why,
+         "optional: nimble install compiler")
   echo(if ok: "Ready to build Retro apps." else: "Fix what is missing above, then run retrokit doctor again.")
   if not ok: quit(1)
 
@@ -475,10 +491,124 @@ proc designerSource(): string =
   except OSError: discard
   ""
 
-proc compilerSources(): string =
-  ## The folder to put on the path so that `import compiler/parser` finds
-  ## Nim's own parser: the Nim that builds (its `compiler` beside its `lib`),
-  ## else nimble's `compiler` package; "" when neither is there.
+proc nimVersionNumber(): string =
+  ## The version of the Nim that builds ("2.4.1"), "" when it does not say.
+  try:
+    let l = execCmdEx("nim --version")[0].splitLines[0]
+    for w in l.splitWhitespace:
+      if w.len > 2 and w[0] in Digits and '.' in w: return w
+  except OSError: discard
+  ""
+
+proc parserBuilds(root: string; why: var string): bool =
+  ## Nim's parser builds from `root` (its `compiler` folder and what that
+  ## imports); else `why` has the compiler's first error.
+  let dir = getCacheDir("retroui") / "probe"
+  try:
+    createDir(dir)
+    writeFile(dir / "probe.nim",
+              "import compiler/[parser, ast, idents, options, lineinfos, llstream, pathutils]\n")
+    let (o, code) = execCmdEx(quoteShellCommand([findExe("nim"), "check", "--hints:off",
+                                                 "--warnings:off", "--path:" & root,
+                                                 dir / "probe.nim"]))
+    if code != 0:
+      why = ""
+      for l in o.splitLines:
+        if "Error:" in l:
+          why = l.strip
+          break
+    code == 0
+  except OSError, IOError:
+    false
+
+proc distMissing(root: string): seq[string] =
+  ## The folders of Nim's `dist` the compiler's sources import (nimony,
+  ## checksums) that are not beside them.
+  for f in walkDirRec(root / "compiler"):
+    if not f.endsWith(".nim"): continue
+    let t = try: readFile(f) except IOError: ""
+    var k = t.find("../dist/")
+    while k >= 0:
+      var b = k + 8
+      while b < t.len and t[b] in IdentChars: inc b
+      let name = t[k + 8 ..< b]
+      if name.len > 0 and name notin result and not dirExists(root / "dist" / name):
+        result.add name
+      k = t.find("../dist/", b)
+
+proc gitRun(args: varargs[string]): bool =
+  try: execCmdEx(quoteShellCommand(@[findExe("git")] & @args)).exitCode == 0
+  except OSError: false
+
+proc completeSources(root: string): string =
+  ## A copy of `root`'s compiler sources with the folders of `dist` they
+  ## import -- fetched with git at the commits this Nim's version pins (its
+  ## koch.nim) -- in the cache: Nim 2.4 and later as some systems package it
+  ## (Termux's) has the compiler's sources without them. "" when they cannot
+  ## be had.
+  let ver = nimVersionNumber()
+  let dest = getCacheDir("retroui") / ("nim-" & (if ver.len > 0: ver else: "sources"))
+  var why = ""
+  if dirExists(dest / "compiler") and parserBuilds(dest, why): return dest
+  let missing = distMissing(root)
+  if missing.len == 0: return ""
+  let what = missing.mapIt("dist/" & it).join(" and ")
+  if findExe("git").len == 0:
+    echo "retrokit: this Nim's compiler sources come without ", what, "; git fetches them:"
+    echo "          ", (if existsEnv("TERMUX_VERSION"): "pkg install git"
+                        else: "install git"), ", then retrokit designer again"
+    return ""
+  echo "retrokit: this Nim's compiler sources come without ", what, "; fetching them (once)..."
+  try:
+    removeDir(dest)
+    createDir(dest)
+    copyDir(root / "compiler", dest / "compiler")
+  except OSError, IOError:
+    echo "retrokit: could not copy the compiler's sources into ", dest
+    return ""
+  # the commits this Nim pins them at: its koch.nim, from its release
+  let tmp = dest / ".nim"
+  var koch = ""
+  let parts = ver.split('.')
+  var refs: seq[string]
+  if ver.len > 0: refs.add "v" & ver
+  if parts.len >= 2: refs.add "version-" & parts[0] & "-" & parts[1]
+  refs.add "devel"
+  for r in refs:
+    removeDir(tmp)
+    if gitRun("clone", "-q", "--depth", "1", "--filter=blob:none", "--no-checkout", "--branch", r,
+              "https://github.com/nim-lang/Nim", tmp):
+      try:
+        let (o, code) = execCmdEx(quoteShellCommand([findExe("git"), "-C", tmp, "show",
+                                                     "HEAD:koch.nim"]))
+        if code == 0:
+          koch = o
+          break
+      except OSError: discard
+  removeDir(tmp)
+  for name in missing:
+    var commit = "HEAD"
+    let key = name[0].toUpperAscii & name.substr(1) & "StableCommit"
+    let k = koch.find(key)
+    if k >= 0:
+      let a = koch.find('"', k)
+      let b = koch.find('"', a + 1)
+      if a > 0 and b > a: commit = koch[a + 1 ..< b]
+    let d = dest / "dist" / name
+    createDir(d)
+    if not (gitRun("init", "-q", d) and
+            gitRun("-C", d, "fetch", "-q", "--depth", "1", "https://github.com/nim-lang/" & name,
+                   commit) and
+            gitRun("-C", d, "checkout", "-q", "FETCH_HEAD")):
+      echo "retrokit: could not fetch ", name, " from github.com/nim-lang/", name
+      return ""
+  if parserBuilds(dest, why): return dest
+  echo "retrokit: Nim's parser does not build from the sources fetched: ", why
+  ""
+
+proc sourceRoots(): seq[string] =
+  ## Where Nim's compiler sources are: beside the `lib` of the Nim that
+  ## builds, and nimble's `compiler` package.
   try:
     let (o, code) = execCmdEx("nim dump --hints:off --dump.format:json dummy")
     if code == 0:
@@ -488,7 +618,7 @@ proc compilerSources(): string =
         let b = o.find('"', a + 1)
         if a > 0 and b > a:
           let root = o[a + 1 ..< b].replace("\\\\", "\\").parentDir
-          if fileExists(root / "compiler" / "parser.nim"): return root
+          if fileExists(root / "compiler" / "parser.nim"): result.add root
   except OSError: discard
   try:
     let (o, code) = execCmdEx("nimble path compiler")
@@ -496,25 +626,30 @@ proc compilerSources(): string =
       for l in o.splitLines:
         let d = l.strip
         if d.len == 0: continue
-        if fileExists(d / "compiler" / "parser.nim"): return d
-        if fileExists(d / "parser.nim"): return d.parentDir
+        if fileExists(d / "compiler" / "parser.nim"): result.add d
+        elif fileExists(d / "parser.nim"): result.add d.parentDir
   except OSError: discard
+
+proc compilerSources(): string =
+  ## The folder to put on the path so that `import compiler/parser` finds
+  ## Nim's own parser, checked by building it: the Nim that builds (its
+  ## `compiler` beside its `lib`), else nimble's `compiler` package -- each
+  ## completed with the folders of `dist` it imports when they are not
+  ## there; "" when there is none.
+  let roots = sourceRoots()
+  var why = ""
+  for root in roots:
+    if parserBuilds(root, why): return root
+    if distMissing(root).len > 0:
+      let done = completeSources(root)
+      if done.len > 0: return done
+  if roots.len > 0 and why.len > 0:
+    echo "retrokit: Nim's parser does not build from ", roots[0], ": ", why
   ""
 
 proc designer(args: seq[string]): int =
   let src = designerSource()
   if src.len == 0: quit "retrokit: Retro Designer's sources are not here (nimble install retroui)"
-  var nimSrc = compilerSources()
-  if nimSrc.len == 0:
-    echo "retrokit: Retro Designer reads your files with Nim's own parser; this Nim has no"
-    echo "          compiler sources, so the `compiler` package is installed (once):"
-    echo "          nimble install -y compiler"
-    let p = startProcess(findExe("nimble"), args = ["install", "-y", "compiler"],
-                         options = {poParentStreams})
-    discard p.waitForExit()
-    p.close()
-    nimSrc = compilerSources()
-    if nimSrc.len == 0: quit "retrokit: no compiler sources: install them (nimble install compiler)"
   let nimVer = block:
     try: execCmdEx("nim --version")[0].splitLines[0] except OSError: ""
   var h = hash(nimVer & src)
@@ -526,6 +661,21 @@ proc designer(args: seq[string]): int =
   let exe = dir / ("retrodesigner" & ExeExt)
   let rebuild = "--rebuild" in args
   if rebuild or not fileExists(exe):
+    # (Nim's parser, which it reads your files with: the compiler's sources)
+    var nimSrc = compilerSources()
+    if nimSrc.len == 0 and sourceRoots().len == 0:
+      echo "retrokit: Retro Designer reads your files with Nim's own parser; this Nim has no"
+      echo "          compiler sources, so the `compiler` package is installed (once):"
+      echo "          nimble install -y compiler"
+      try:
+        let p = startProcess(findExe("nimble"), args = ["install", "-y", "compiler"],
+                             options = {poParentStreams})
+        discard p.waitForExit()
+        p.close()
+      except OSError: discard
+      nimSrc = compilerSources()
+    if nimSrc.len == 0:
+      quit "retrokit: Retro Designer needs Nim's compiler sources (see above; docs/designer.md)"
     createDir(dir)
     echo "retrokit: building Retro Designer for this machine (once; a minute or two)..."
     var b = @["c", "-d:release", "-d:useMalloc", "--hints:off", "--warnings:off",

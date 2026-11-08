@@ -1,5 +1,19 @@
 # Changes
 
+## 0.27.1
+
+- **Retro Designer builds with Nim 2.4 as Termux packages it.** Nim 2.4's
+  compiler sources import two folders of its `dist` (nimony and checksums)
+  that Termux's `nim` leaves out, so `retrokit designer` stopped at
+  `cannot open file: ../dist/nimony/src/lib/nifpools`. `retrokit` now checks
+  that Nim's parser builds from the sources it found before it builds the
+  designer; when those folders are missing it copies the sources into its
+  cache and fetches them with git at the commits that Nim version pins
+  (its `koch.nim`), once. It looks for the sources only when it builds, so
+  the designer starts as quickly as before. `retrokit doctor` says what the
+  designer needs; `tests/test_designer.nims` finds the completed sources too.
+- Retro Gallery and the small examples are 0.27.1.
+
 ## 0.27.0
 
 - **Retro Designer.** `retrokit designer app.nim` opens your `.nim` file in

@@ -99,7 +99,12 @@ build your apps with, into the toolkit's cache folder
 Nim's own parser, so it is compiled against the compiler's sources: those
 beside the Nim that builds it (a Nim from nim-lang.org, choosenim, Homebrew
 or a Linux package has them), else nimble's `compiler` package, which
-`retrokit` installs when it has to. By hand, in a clone:
+`retrokit` installs when it has to. `retrokit` first checks that the parser
+builds from them. Nim 2.4's compiler sources import `dist/nimony` and
+`dist/checksums`, which Termux's package (and nimble's `compiler` package)
+leave out: `retrokit` copies the sources into its cache (`nim-VERSION`) and
+fetches the two with git, at the commits that Nim version's `koch.nim` pins.
+By hand, in a clone:
 
 ```sh
 nim c -d:release -d:useMalloc --path:<nim>/ src/retrodesigner/retrodesigner.nim   # <nim>: the folder with compiler/ and lib/
