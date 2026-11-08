@@ -1,6 +1,6 @@
 # Retro Nim UI: a study of its syntax
 
-By Sultan Al Isaiee ([@foxoman](https://github.com/foxoman)), for Retro Nim UI 0.27.1.
+By Sultan Al Isaiee ([@foxoman](https://github.com/foxoman)), for Retro Nim UI 0.28.0.
 
 The syntax is immediate mode written as plain Nim: a window is a block that runs every frame, a control is a proc call, its result is the event, and your own variables are the state. That one choice removes callbacks, widget objects and data binding, the three things that make most UI code hard to follow.
 
@@ -468,11 +468,32 @@ app "Clock", 220, 70:
 
 A frame runs only on input, so a clock asks for the next one: `wakeIn(1000)` runs the block again in a second. Without it the time would stop at the last key or click.
 
+### A web page, and its scripts
+
+```nim
+import retroui
+
+var said = "nothing yet"
+
+app "Web page", 340, 200:
+  row:
+    if button("&Greet"): webPost("order", "Hello")   # a retro event in the page
+    label "The page said: " & said
+  let page = webView("html:<h3>Order 1042</h3><p>Ready to <b>ship</b>.</p>" &
+                     "<script>retro.post('loaded')</script>",
+                     key = "order", engine = weSystem)   # the room left
+  for m in page.messages: said = m              # retro.post(text) in the page
+```
+
+![A Greet button, the text The page said: nothing yet, and under them a page with the heading Order 1042](syntax/f-web.png)
+
+A web page is one more event object: `webView` returns a `WebEvent` (its address, title, loading, Back and Forward), and what the page's scripts posted since the last frame is in its `messages`. Going the other way is an action: `webPost` sends a `retro` event to the page, `webRun` runs a script and its answer comes in a later frame's `results` with the number it returned. No callback, no bridge object: you read the page where you draw it. `engine = weSystem` asks for the system's browser (WebView2, WKWebView, WebKitGTK; an Android app has it unless you ask for `weKit`); the picture is the kit's own engine, which draws the page but runs no scripts, so the label still says "nothing yet". With the system's, it says "loaded".
+
 ### Sizes, and your own loop
 
 Every size in the code is design pixels: `row([80, -1])`, `dp(16)` for your own drawing, a dialog's width (see Widths in a row). An app that runs its own loop calls `openApp`, `while beginFrame(): ...`, `endFrame()` and `closeApp()` itself; How it is built shows the five calls, and they draw the same window as `app`.
 
-A new control almost never adds a shape: it is an action, a binding or an event object, so learning one control teaches the others. The reference documents 291 controls in [docs/controls.md](controls.md), each with its pictures; they all follow these forms.
+A new control almost never adds a shape: it is an action, a binding or an event object, so learning one control teaches the others. The reference documents 303 controls in [docs/controls.md](controls.md), each with its pictures; they all follow these forms.
 
 ## How it is built
 
@@ -562,7 +583,7 @@ The reasons, in the order they matter while reading someone else's app:
 - **Plain Nim does the rest.** Showing something only sometimes is an `if`; a list is a `for`; reuse is a `proc` that draws controls. There is no special syntax for any of them.
 - **Blocks instead of Begin/End pairs.** Nim templates close every container by indentation, so a forgotten `End()` cannot happen. Ids come from labels and variables, so `##` suffixes are rarely needed.
 - **Names over positions.** Options and parameters go by name, and a misspelled one is a compile error rather than a silent default.
-- **A small surface that does not grow.** Four shapes of call cover 291 controls, from Hello (16 lines) to Notepad (206 lines, with menus, dialogs and Print to PDF), Retro Communicator (1,640 lines) and Retro Photo (nearly 30,000 lines across its files).
+- **A small surface that does not grow.** Four shapes of call cover 303 controls, from Hello (16 lines) to Notepad (206 lines, with menus, dialogs and Print to PDF), Retro Communicator (1,640 lines) and Retro Photo (nearly 30,000 lines across its files).
 - **One code base, every screen.** The same lines run on Windows, macOS, Linux, Android and iOS; design pixels keep the sizes right on each.
 - **Testable without a screen.** A frame depends only on the input and your variables, so the fake driver can click, type and read pixels in a test.
 

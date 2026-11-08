@@ -36,7 +36,7 @@ reference of every module is made by `nimble docs` into `docs/api/`.
 - **[Charts](#charts)**: [chart](#chart) · [A combo chart](#a-combo-chart) · [gauge](#gauge) · [barChart, lineChart, pieChart](#barchart-linechart-piechart) · [The 21 kinds of chart](#the-21-kinds-of-chart)
 - **[Planning and dashboards](#planning-and-dashboards)**: [kpiTile, statCard, kpiRow](#kpitile-statcard-kpirow) · [kanbanBoard](#kanbanboard) · [ganttView](#ganttview) · [agendaView](#agendaview) · [orgChart](#orgchart)
 - **[Maps and 3D](#maps-and-3d)**: [mapView](#mapview) · [view3d](#view3d) · [bars3d](#bars3d)
-- **[HTML, Markdown and rich text](#html-markdown-and-rich-text)**: [htmlView, htmlBlock](#htmlview-htmlblock) · [markdownView, markdown](#markdownview-markdown) · [richEdit, richToolbar](#richedit-richtoolbar)
+- **[HTML, Markdown and rich text](#html-markdown-and-rich-text)**: [htmlView, htmlBlock](#htmlview-htmlblock) · [webView, webRun, webPost](#webview-webrun-webpost) · [markdownView, markdown](#markdownview-markdown) · [richEdit, richToolbar](#richedit-richtoolbar)
 - **[Canvas and reports](#canvas-and-reports)**: [canvas: your own drawing](#canvas-your-own-drawing) · [canvas2d (the HTML5 Canvas 2D API)](#canvas2d-the-html5-canvas-2d-api) · [reportView (an HTML template: PDF, printing)](#reportview-an-html-template-pdf-printing) · [pdfView](#pdfview) · [QR codes](#qr-codes)
 - **[Sound and video](#sound-and-video)**: [animation (animated GIFs)](#animation-animated-gifs) · [videoView](#videoview) · [audioView](#audioview)
 - **[Looks](#looks)**: [Themes](#themes) · [Dark mode](#dark-mode) · [Size and text size](#size-and-text-size) · [Fonts](#fonts) · [The window's frame](#the-windows-frame)
@@ -5484,9 +5484,12 @@ Negative values go down. Pair it with `fitView`.
 ## HTML, Markdown and rich text
 
 `htmlView` draws a safe subset of HTML and CSS itself: no browser engine, no
-scripts. `webView` shows a real web page in the system's own web view (a
-window of its own on desktops); it cannot be drawn here, so it has no
-picture.
+scripts. `webView` shows a web page with the system's own browser engine
+when you choose it (`engine = weSystem`, or `RETRO_WEB=system`): WebView2 on
+Windows, WKWebView on macOS and iOS, WebKitGTK on Linux and BSD, and always
+in an Android app its WebView. Its scripts run and talk to your app. With
+the kit's own engine local pages are drawn by the kit and a page on the web
+gets a button that opens it in the browser.
 
 ### htmlView, htmlBlock
 
@@ -5562,25 +5565,131 @@ proc htmlToMarkdown*(html: string): string
 tags `markdown` understands). Scripts, styles, frames and forms are
 left out.
 
+### webView, webRun, webPost
+
+A web page in the window. With the system's engine (`engine = weSystem`; the default in an Android app) the page is the system's browser placed over the widget: scripts, forms, video, its own Back and Forward. Its scripts talk to the app: `retro.post(text)` in the page comes in `messages`, `webPost` sends a `retro` event to the page, `webRun` runs a script and its answer comes in `results`. `webAllow` keeps it to the hosts you trust, `webZoom` sizes it. The picture is the kit's own engine (the system's view is drawn by the system, not here).
+
+| Normal | Touch screen | Dark scheme |
+|---|---|---|
+| ![webView, webRun, webPost, normal](controls/webview-normal.png) | ![webView, webRun, webPost, touch screen](controls/webview-touch-screen.png) | ![webView, webRun, webPost, dark scheme](controls/webview-dark-scheme.png) |
+
 ```nim
-proc webView*(url: string; height = -1; key = ""): WebEvent {.discardable.}
+let ev = webView("html:<title>Order 1042</title><h3>Order 1042</h3>" &
+    "<p>Ready to <b>ship</b> on Sunday.</p><ul><li>12 chairs<li>2 tables</ul>",
+                 height = 150, key = "order", engine = weSystem)
+row([70, 70, -1]):
+  if button("&Back", enabled = ev.canGoBack):
+    webGoBack("order")
+  if button("&Ask"):
+    webRun("order", "document.title")
+  label ev.title
+```
+
+**API**
+
+```nim
+proc webView*(url: string; height = -1; key = ""; engine = webEngine): WebEvent {.discardable.}
 ```
 
 A web page in the window, `height` pixels high (-1: the room left).
 `url` is "https://...", a "file://" address or a path, or "html:" and
-the HTML itself; giving another address shows that page.
+the HTML itself; giving another address shows that page. `engine`
+chooses who shows it (`webEngine`, $RETRO_WEB: the kit's own on
+desktops, the system's in an Android app).
 
-On Android the page is the system's WebView (the phone's browser
-engine: scripts, forms, video), placed over the widget: links are
-followed in it, Back (`webGoBack`) returns, other kinds of links (mail,
-phone, maps) open their apps. It is hidden while a menu or a dialog of
-the app is over it, and when the widget is not drawn. The app needs
-the INTERNET permission (`retroapk --permission:INTERNET`).
+The system's engine (`weSystem`; the default in an Android app) is the
+browser the system has -- Android's WebView, WebView2 on Windows,
+WKWebView on macOS and iOS, WebKitGTK on Linux and BSD when it is
+installed -- placed over the widget: scripts, forms, video; links are
+followed in it, Back and Forward (`webGoBack`, `webGoForward`) go through
+its history. Its scripts talk to the app: `retro.post(text)` comes in
+`messages`; `webPost` sends one to them (a `retro` event on `window`),
+`webRun` runs a script and its answer comes in `results`. `webAllow`
+keeps it to some hosts, `webZoom` sizes it. It is hidden while a menu or a
+dialog of the app is over it, and when the widget is not drawn; while it
+has the keyboard, keys go to it (a click on the app takes them back).
+Android apps need the INTERNET permission (`retroapk
+--permission:INTERNET`). Where there is no engine it is the kit's own.
+While you make the app, $RETRO_WEB_TOOLS=1 offers the engine's
+developer tools (Inspect Element; Safari's Web Inspector for WKWebView).
 
-Elsewhere local pages are shown by the kit itself (`htmlView`: no
-scripts, no network; links to other local pages are followed, others
-open in the browser), and pages on the web get a button that opens them
-in the browser.
+The kit's own engine shows local pages itself (`htmlView`: no scripts,
+no network; links to other local pages are followed, others open in
+the browser), and pages on the web get a button that opens them in the
+browser.
+
+```nim
+proc webGoBack*(key = ""): bool {.discardable.}
+```
+
+The page before in the `webView` with `key`; false when there is none.
+
+```nim
+proc webGoForward*(key = ""): bool {.discardable.}
+```
+
+The page after (one Back left) in the `webView` with `key`, when the
+system's engine shows it; false when there is none.
+
+```nim
+proc webReload*(key = "")
+```
+
+Loads the page of the `webView` with `key` again.
+
+```nim
+proc webStop*(key = "")
+```
+
+Stops loading the page of the `webView` with `key` (the system's engine).
+
+```nim
+proc webRun*(key: string; js: string): int {.discardable.}
+```
+
+Runs `js` in the page of the `webView` with `key` when the system's
+engine shows it, and returns a number: its answer comes in a later
+frame's `WebEvent.results` with that `id` -- its value as JSON, or the
+error it raised. With the kit's own engine nothing runs (no answer).
+
+```nim
+let ask = webRun("docs", "document.querySelectorAll('h2').length")
+for r in ev.results:
+  if r.id == ask: echo "headings: ", r.value
+```
+
+```nim
+proc webPost*(key: string; message: string)
+```
+
+Sends `message` to the page of the `webView` with `key` (the system's
+engine): its scripts get it as a `retro` event on `window`
+(`window.addEventListener("retro", e => use(e.detail))`).
+
+```nim
+proc webAllow*(key: string; hosts: openArray[string])
+```
+
+The hosts the page of the `webView` with `key` may open, and those under
+them ("nim-lang.org" lets "forum.nim-lang.org" in); none: any. Others are
+kept from it and come in `WebEvent.blocked` (the app may `openUrl` them).
+Local pages always may. The system's engine; the kit's own opens only
+local pages anyway. Called every frame, it is sent again only when the
+hosts change.
+
+```nim
+proc webZoom*(key: string; zoom: float)
+```
+
+The size of the page of the `webView` with `key`, text and pictures:
+1.0 as it is (0.5 .. 3.0); the system's engine.
+
+```nim
+proc webClose*(key = "")
+```
+
+Lets the `webView` with `key` go (the system's view is freed; drawing
+it again starts afresh).
 
 ### markdownView, markdown
 

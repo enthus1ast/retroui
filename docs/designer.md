@@ -35,9 +35,10 @@ Linux package has them beside its `lib` folder; when yours does not,
 `retrokit` installs nimble's `compiler` package (`nimble install compiler`)
 and uses that. Since Nim 2.4 the compiler's sources also import two folders
 of Nim's `dist` (nimony and checksums), which some packages leave out --
-Termux's among them: `retrokit` then fetches them with git (`pkg install
-git` in Termux), at the commits your Nim's version pins, into a copy of the
-sources in its cache folder (`nim-2.4.1` there), once. `retrokit doctor`
+Termux's among them: `retrokit` then makes a copy of the sources in its
+cache folder (`nim-2.4.0` there) with what your Nim has of those folders, and
+fetches the rest with git (`pkg install git` in Termux), at the commits your
+Nim's version pins, once. `retrokit doctor`
 says which of these your Nim needs.
 
 It runs where Retro Nim UI runs on a desktop: Windows, macOS, Linux and BSD
@@ -201,6 +202,11 @@ with what is written there:
   and as large as it will be;
 - a control drawn as nothing (a label of an empty text) is shown as a
   dotted place, so that you see it and can choose it (not in the preview);
+- a `webView` is drawn by the kit's own engine, whatever its `engine` or
+  `RETRO_WEB` say: local pages and `html:` text as the kit draws them, a
+  page on the web as its address (the system's browser would be a window
+  of its own over the designer), and the web view's commands (`webRun`,
+  `webPost`, `webGoBack`...) do nothing;
 - what is not a control -- your code between them -- stays as it is and is
   never changed.
 

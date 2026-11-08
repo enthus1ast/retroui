@@ -2,9 +2,9 @@
 ## on the desktop, the system's WebView on Android (here through a fake
 ## `systemRelays.call` that records what the app asks of it).
 
-import std/[os, strutils, times, monotimes]
+import std/[sequtils, os, strutils, times, monotimes]
 import retroui
-import retroui/htmlview
+import retroui/[htmlview, webnative]
 import retroui/uirelays/[input, services]
 import harness
 
@@ -219,13 +219,17 @@ block webOnTheDesktop:
 
 var calls: seq[string]
 var info = "https://a.example/\tA page\t40\t1\t0"
+var notesOnce = ""          # (what the page posted: told once)
 var backOk = "1"
 systemRelays.call = proc (name, arg: string): string {.gcsafe, nimcall.} =
   {.cast(gcsafe).}:
     if name != "web.info": calls.add name & " " & arg
     case name
-    of "web.info": info
-    of "web.back": backOk
+    of "web.info":
+      let n = notesOnce
+      notesOnce = ""
+      if n.len > 0: info & "\t" & n else: info
+    of "web.back", "web.forward": backOk
     else: ""
 
 block webOnAndroid:
@@ -287,5 +291,87 @@ block webOnAndroid:
   webClose("and")
   doAssert calls[^1] == "web.close and"
   useSystemWebView = false
+
+block webTalksToThePage:
+  # the page's scripts and the app: messages, a script's answer, an address
+  # kept from it, the hosts it may open, its zoom, Forward
+  useSystemWebView = true
+  var messages: seq[string]
+  var results: seq[WebResult]
+  var blocked: seq[string]
+  var fwd = false
+  view = proc () =
+    let ev = webView("https://a.example/", height = 200, key = "talk")
+    messages.add ev.messages
+    results.add ev.results
+    blocked.add ev.blocked
+    fwd = ev.canGoForward
+  calls.setLen(0)
+  webAllow("talk", ["a.example"])
+  let id = webRun("talk", "1+2")
+  webPost("talk", "hi \"there\"")
+  webZoom("talk", 1.5)
+  info = "https://a.example/\tA\t100\t1\t0\t1"
+  notesOnce = "mready\2m\1" & $id & "\1{\"ok\":3}\2m\1" & $(id + 99) &
+              "\1{\"error\":\"ReferenceError: x\"}\2bhttps://b.example/\2"
+  harness.ticks += 1000
+  run(3)
+  doAssert calls.anyIt(it.startsWith("web.show talk\t")), $calls
+  doAssert "web.zoom talk\t150" in calls, $calls
+  doAssert "web.allow talk\ta.example" in calls, $calls
+  let runs = calls.filterIt(it.startsWith("web.run talk\t"))
+  doAssert runs.len == 2 and "eval" in runs[0] and "1+2" in runs[0] and
+           "CustomEvent('retro'" in runs[1] and "hi \\\"there\\\"" in runs[1], $runs
+  doAssert messages == @["ready"], $messages
+  doAssert results.len == 2 and results[0].id == id and results[0].value == "3" and
+           results[0].error == "" and results[1].error == "ReferenceError: x", $results
+  doAssert blocked == @["https://b.example/"], $blocked
+  backOk = "1"
+  doAssert fwd and webGoForward("talk") and calls[^1] == "web.forward talk"
+  # the same hosts asked every frame are sent once; others again
+  calls.setLen(0)
+  for _ in 0 ..< 3:
+    webAllow("talk", ["a.example"])
+    harness.ticks += 200
+    run(1)
+  doAssert calls.filterIt(it.startsWith("web.allow")).len == 0, $calls
+  webAllow("talk", ["a.example", "c.example"])
+  run(1)
+  doAssert "web.allow talk\ta.example\tc.example" in calls, $calls
+  webClose("talk")
+  useSystemWebView = false
+  # a local path is given to the system's view whole
+  useSystemWebView = true
+  view = proc () = discard webView("./help/index.html", height = 100, key = "path")
+  calls.setLen(0)
+  run(2)
+  let shows = calls.filterIt(it.startsWith("web.show path\t"))
+  doAssert shows.len >= 1 and shows[0].endsWith("\t" & absolutePath("help/index.html")), $shows
+  webClose("path")
+  useSystemWebView = false
+  # back to the kit's engine: the page asked, not the address the system's
+  # engine went on to
+  useSystemWebView = true
+  var shownUrl = ""
+  view = proc () = shownUrl = webView("html:<p>Hi</p>", height = 100, key = "swap").url
+  info = "about:blank\t\t100\t0\t0\t0"
+  harness.ticks += 1000
+  run(3)
+  doAssert shownUrl == "about:blank", shownUrl
+  useSystemWebView = false
+  run(2)
+  doAssert shownUrl == "html:<p>Hi</p>", shownUrl
+  webClose("swap")
+
+block webNativeAllowedHosts:
+  # which addresses a page that is allowed some hosts may open
+  doAssert allowedBy([], "https://any.example/")
+  doAssert allowedBy(["nim-lang.org"], "https://forum.nim-lang.org/t/1")
+  doAssert allowedBy(["nim-lang.org"], "https://nim-lang.org/")
+  doAssert not allowedBy(["nim-lang.org"], "https://evilnim-lang.org/")
+  doAssert not allowedBy(["nim-lang.org"], "https://example.com/")
+  doAssert allowedBy(["nim-lang.org"], "file:///home/a.html")
+  doAssert fileUrl("/tmp/a b.html") == "file:///tmp/a%20b.html"
+  doAssert fileUrl("C:\\x\\y.html") == "file:///C:/x/y.html"
 
 echo "html view tests passed"

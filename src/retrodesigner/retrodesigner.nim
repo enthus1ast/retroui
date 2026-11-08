@@ -1393,6 +1393,9 @@ proc chooseView(v: View) =
 
 proc main() =
   initRegistry()
+  # (a web view in the design is drawn the kit's way: the system's engine
+  #  would be a window of its own over the designer)
+  webEngine = weKit
   settings = loadSettings(SettingsName)
   editorCmd = settings.getOrDefault("editor")
   # (the panes as they were left)

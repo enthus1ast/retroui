@@ -1,5 +1,54 @@
 # Changes
 
+## 0.28.0
+
+- **`webView` with the system's browser engine, on every system.** Give a
+  view `engine = weSystem` (or set `RETRO_WEB=system` for all of them) and
+  the page is the system's own browser placed over the widget: WebView2 on
+  Windows 10 and 11, WKWebView on macOS and iOS, WebKitGTK on Linux and BSD
+  (and Termux:X11), Android's WebView in an APK, as before. Nothing is
+  linked: the engine is loaded when the first page is shown, and where
+  there is none the kit's own engine shows the page. `WebEngine` (`weAuto`,
+  `weSystem`, `weKit`) and `webEngine` choose; `weAuto` stays the kit's on
+  desktops and the system's in an Android app. `src/retroui/webnative.nim`
+  and one file per system.
+- **The page and the app talk both ways**, as Qt's web view does through its
+  web channel, without a bridge object: `retro.post(text)` in the page's
+  scripts comes in `WebEvent.messages`; `webPost(key, text)` sends a
+  `retro` event to the page (`addEventListener("retro", e => e.detail)`);
+  `webRun(key, js)` runs a script and its answer, as JSON, or the error it
+  raised, comes in `WebEvent.results` with the number `webRun` returned.
+  Also new: `webGoForward`, `webStop`, `webAllow(key, hosts)` (other hosts
+  are kept from the page and listed in `WebEvent.blocked`, for the app to
+  open in the browser if it wants), `webZoom(key, zoom)`, and
+  `WebEvent.canGoForward` and `native`. Android's web view does all of it
+  too (`tools/android/RetroWeb.java`). The engines' developer tools are off
+  unless `RETRO_WEB_TOOLS=1`.
+- The system's view hides under the app's menus and dialogs and shows again
+  after them; the widget shows the page's title meanwhile. It is no longer
+  loaded again when it only moves or is zoomed (Android's too). Relative,
+  `./` and `~` paths are given to the engines as whole paths.
+- **The keyboard comes back to the app** when its window is clicked while a
+  window put inside it (the web view) has it: the X11 and WinAPI drivers,
+  and UIKit, which no longer takes the keys back from such a view on every
+  frame (uirelays; `winWindow` gives the WinAPI driver's window).
+- **Retro Designer builds in Termux.** Termux's Nim 2.4 has `dist/checksums`
+  but not `dist/nimony`; 0.27.1 fetched nimony into its copy of the
+  compiler's sources but left checksums out of it, and stopped at
+  `ast2nif.nim: cannot open file: ../dist/checksums/src/checksums/sha1`. Now
+  the copy takes the `dist` folders the system has, fetches the ones it has
+  not, and fetches a folder again when the parser still misses a file of it.
+  A copy left by 0.27.1 is made again by itself. Retro Designer draws a web
+  view the kit's way, whatever `RETRO_WEB` says.
+- Docs: the controls guide had `webView` as a window of its own on
+  desktops; it now has a `webView` section with all its commands and a
+  picture. The syntax study has a new form, "A web page, and its scripts",
+  and counts 303 controls. README "Web and HTML", BUILDING.md (what each
+  system needs for the web view), the skill and llms.txt follow.
+- Retro Gallery and the small examples are 0.28.0. The Gallery's HTML page
+  has a System engine box, and its web page a button whose script says
+  hello to the app.
+
 ## 0.27.1
 
 - **Retro Designer builds with Nim 2.4 as Termux packages it.** Nim 2.4's

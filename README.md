@@ -1685,8 +1685,9 @@ set (Preferences > Tools) the menus are 1994's.
 let ev = htmlView(readFile("help/index.html"), baseDir = "help")   # framed, scrolls
 if ev.link.len > 0: discard openUrl(ev.link)
 htmlBlock "<b>Bold</b> and <span style='color:red'>red</span> in a card"
-let w = webView("https://nim-lang.org", key = "docs")   # a real browser page on Android
+let w = webView("https://nim-lang.org", key = "docs", engine = weSystem)  # the system's browser
 if button("Back"): webGoBack("docs")
+for m in w.messages: echo "the page says ", m     # retro.post(text) in its scripts
 ```
 
 `htmlView` shows a safe subset of HTML — headings, paragraphs, bold,
@@ -1696,11 +1697,47 @@ lists — read by a forgiving parser. Scripts, styles, frames and forms are
 left out, so no page can run code or reach the network. `htmlToMarkdown`
 converts a page.
 
-`webView` is a web page: on Android the system's WebView (the phone's
-browser engine) placed over the widget, with `webGoBack`, `webReload`,
-`webClose`; elsewhere local pages (`file://`, paths, `html:` text) are
-shown with `htmlView` and pages on the web get a button that opens them in
-the browser — the kit carries no browser engine.
+`webView` is a web page, shown by one of two engines:
+
+- **The system's** (`engine = weSystem`, or `RETRO_WEB=system` for every
+  view; the default in an Android app): the browser the system already has,
+  placed over the widget — WebView2 on Windows 10 and 11, WKWebView on
+  macOS and iOS, WebKitGTK on Linux and BSD (`libwebkit2gtk-4.1`, or 4.0,
+  when it is installed), Android's WebView. Nothing is linked: it is loaded
+  when the first page is shown, and without it the kit's engine stands in.
+  Scripts, forms and video work; links are followed in it, with
+  `webGoBack`, `webGoForward`, `webReload`, `webStop` and `webClose`.
+- **The kit's own** (`weKit`, and the default on desktops): local pages
+  (`file://`, paths, `html:` text) drawn with `htmlView`, and pages on the
+  web get a button that opens them in the browser.
+
+The system's engine talks to your app both ways, as Qt's web view does with
+its web channel, without a bridge object to set up:
+
+```nim
+var ask = 0                                  # (beside your other state)
+
+# in the frame:
+webAllow("help", ["nim-lang.org"])           # other hosts: kept out, in page.blocked
+let page = webView("help/index.html", key = "help", engine = weSystem)
+for m in page.messages: handle(m)            # the page called retro.post(text)
+if button("&Dark"): webPost("help", "dark")  # the page gets a "retro" event
+if button("&Count"): ask = webRun("help", "document.querySelectorAll('h2').length")
+for r in page.results:                       # a later frame: its answer, as JSON
+  if r.id == ask: echo "headings: ", r.value, r.error
+if button("&Larger"): webZoom("help", 1.25)  # text and pictures 125 %
+```
+
+In the page: `retro.post("text")` to the app, and
+`window.addEventListener("retro", e => use(e.detail))` from it. The
+`WebEvent` also says the address, the title, how much is loaded, and
+whether Back and Forward can go. The view hides itself while a menu or a
+dialog of the app is over it (the widget shows the page's title then), and
+a click in the app takes the keyboard back from it. An Android app needs
+the INTERNET permission for pages on the web (`retroapk
+--permission:INTERNET`). While you make the app, `RETRO_WEB_TOOLS=1` offers
+the engine's developer tools (Inspect Element in the page's menu, F12 in
+WebView2, Safari's Web Inspector for WKWebView); without it they are off.
 
 ### Markdown
 
@@ -2029,7 +2066,7 @@ needed. `nimble test` runs them all; `nimble fuzz` runs the fuzzers.
 | `test_planning` | the kanban board, Gantt, agenda and org chart by mouse, keys and finger; KPI tiles |
 | `test_mapview` | the built-in countries, lookups, values, markers, routes, zoom and pan, hits |
 | `test_view3d` | meshes, OBJ and STL (text and binary), the camera, picking, rendering |
-| `test_htmlview` | the HTML parser, entities, nesting, tables, pictures, links, `htmlToMarkdown`, the web view's fallbacks |
+| `test_htmlview` | the HTML parser, entities, nesting, tables, pictures, links, `htmlToMarkdown`, the web view's fallbacks, its talk with the page (messages, scripts' answers, allowed hosts, zoom, Forward) through a fake system |
 | `test_media` | WAV decoding and encoding, tones, GIF frames, the video and animation widgets without a device |
 | `test_native` | loading libraries and functions, the cross-platform calls, neutral answers where there is no such thing |
 | `test_photo` | the image engine: blend modes, layers, undo and cancelled steps, the selection and channels, Quick Mask, paths, every painting tool, transforms, color modes, every filter and adjustment, .rpd / PNG / JPEG / BMP files |
@@ -2222,9 +2259,15 @@ says how.
   platform's text where it has one. A font file is drawn with its Arabic
   only when it has the joined forms (presentation forms) in its character
   map; else FreeSerif's Arabic stands in.
-- `webView` is a real browser only on Android (elsewhere it shows local
-  HTML and opens web pages in the browser); `htmlView` is a subset of HTML
-  without CSS layout or scripts.
+- `webView`'s system engine is a window of the system's over the app's:
+  it hides (it is not drawn under) the app's menus and dialogs, and has no
+  picture in the app's screenshots. It is used with the X11 driver (and
+  Termux:X11), WinAPI, Cocoa and UIKit; SDL, GTK 4 and Siwin use the kit's
+  engine. WebKitGTK was run end to end on X11; WebView2 builds for Windows
+  and WKWebView for macOS and iOS, but neither has run yet: on Windows,
+  `WebView2Loader.dll` beside the program is the surest start (without it
+  the kit finds the runtime where Windows keeps it). `htmlView` is a subset
+  of HTML without CSS layout or scripts.
 - Video plays in the window on Linux (with GStreamer) and Android; on
   Windows and macOS it opens in the system's player.
 - One window per app (dialogs and MDI windows are inside it).

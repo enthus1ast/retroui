@@ -40,7 +40,10 @@ NEVER = {"quitApp", "openApp", "beginFrame", "endFrame", "appFrameDone", "closeA
          "messageBox", "msgBox", "inputBox", "fileDialog", "openFileDialog",
          "saveFileDialog", "folderDialog", "printDialog", "colorDialog", "fontDialog",
          "alert", "confirm", "ask", "askText", "toast", "notify", "beep", "openUrl",
-         "share", "startDrag", "requestClose", "cancelClose"}
+         "share", "startDrag", "requestClose", "cancelClose",
+         # (a web view's commands: what they do is the page's, not drawing)
+         "webGoBack", "webGoForward", "webReload", "webStop", "webClose", "webRun",
+         "webPost", "webAllow", "webZoom"}
 # Parts of the guide that are not controls to drop.
 SKIP_PARTS = {"Getting started", "Looks", "Screen readers and input methods"}
 # Names only the screenshot tool has: an example using one is not offered.

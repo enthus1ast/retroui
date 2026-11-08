@@ -139,7 +139,7 @@ or put several in a `row:` inside the `field`. `field("")` lines a control
 up under the others. When the row is narrower than the captions plus about
 200 pixels (a phone), each caption goes above its control.
 
-## 6. Controls (docs/controls.md has all 294, with pictures)
+## 6. Controls (docs/controls.md has all 303, with pictures)
 
 Text: `label`, `paragraph`, `heading`, `styledText`, `link`, `badge`, `icon`, `iconLabel`, `image`, `tooltip`.
 Buttons: `button`, `segmented`, `menuButton`, `splitButton`, `buttonRow`.
@@ -149,8 +149,35 @@ Numbers, dates, colors: `spin`, `intEdit`, `numberEdit`, `slider`, `progress`, `
 Lists and data: `listbox`, `combo`, `grid` (the data grid with editing, sorting, totals), `tree`.
 Files: `fileDialog`, `fileList`, `folderTree`, `filePicker`, `filePreview`, `placesView`.
 Charts and more: `chart` (21 kinds, from your numbers or a CSV table), `barChart`, `lineChart`, `pieChart`, maps (`retroui/mapview`), 3D (`retroui/view3d`),
-HTML and Markdown (`htmlView`), canvas (`canvas`, `retroui/canvas2d`), reports and PDF (`retroui/report`),
+HTML and Markdown (`htmlView`), web pages (`webView`), canvas (`canvas`, `retroui/canvas2d`), reports and PDF (`retroui/report`),
 sound and video (`retroui/media`), spreadsheets (`retroui/xlsx`).
+
+**A web page with scripts** (help pages, a map or chart made in JavaScript,
+a sign-in page): `webView(url, key = "k", engine = weSystem)` shows it in
+the system's browser (WebView2, WKWebView, WebKitGTK, Android's WebView),
+placed over the widget; without that engine on the system, or with `weKit`,
+the kit draws local pages itself and offers web pages to the browser. The
+page and the app talk without callbacks:
+
+```nim
+var ask = 0
+var title = ""
+
+# in the frame:
+webAllow("help", ["nim-lang.org"])           # others kept out: page.blocked
+let page = webView("help/index.html", key = "help", engine = weSystem)
+for m in page.messages: handle(m)            # retro.post(text) in the page
+if button("&Dark"): webPost("help", "dark")  # window "retro" event: e.detail
+if button("&Title"): ask = webRun("help", "document.title")
+for r in page.results:                       # a later frame: r.id, r.value (JSON), r.error
+  if r.id == ask: title = r.value
+```
+
+Keep the `key` the same every frame; draw the view every frame it should
+show (a view not drawn is hidden). `webRun` and `webPost` are actions:
+call them on an event (a button, a message), not on every frame. `webGoBack`, `webGoForward`,
+`webReload`, `webStop`, `webZoom`, `webClose` take the key. Pages on the
+web need `retroapk --permission:INTERNET` in an APK.
 
 **Grid sorting:** the grid does not reorder your data. Keep the order in
 your own variables, pass it in for the header's arrow, and sort a list of

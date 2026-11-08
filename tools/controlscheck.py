@@ -132,7 +132,7 @@ NOT_CONTROLS = {
     },
     "htmlview": {
         "htmlTitle", "htmlImagesChanged", "htmlZoomStep", "htmlToText",
-        "htmlPageInfo", "webGoBack", "webReload", "webClose",
+        "htmlPageInfo",
     },
     "markdown": {
         "parseMarkdown", "cssColor", "toggleTask",
