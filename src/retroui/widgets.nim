@@ -1345,6 +1345,9 @@ proc editAt*(id: Id; s: var string; r: Rect; multi, pass, enabled: bool;
       of KeyBackspace:
         ui.keyUsed = true
         if a0 != b0: replaceSel("")
+        elif ctrl and st.caret > 0:
+          st.anchor = wordLeft(s, st.caret)
+          replaceSel("")
         elif st.caret > 0:
           st.anchor = runeBefore(s, st.caret)
           replaceSel("")
