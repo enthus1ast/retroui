@@ -323,7 +323,7 @@ proc datePicker*(d: var Date; w = 0; enabled = true): bool {.discardable.} =
       ui.focus = editId
       ui.redraw = true
     if ui.focus == editId and not ui.keyUsed and
-       ((ui.key == KeyDown and AltPressed in ui.mods) or ui.key == KeyF4):
+       ((ui.key == KeyDown and AltPressed in ui.mods) or ui.key == KeyF4 or ui.key == KeyEnter):
       ui.keyUsed = true
       ui.popup = popId
       ui.redraw = true
@@ -368,6 +368,8 @@ proc datePicker*(d: var Date; w = 0; enabled = true): bool {.discardable.} =
     if picked:
       ui.popup = 0
       ui.redraw = true
+      st.buf = $d
+      state(id) = st
     if canInput() and keyHit(KeyEsc):
       ui.popup = 0
     popLayer()
@@ -710,6 +712,7 @@ proc gridImpl(colsIn: var seq[Column]; rows: int; cell: proc (row, col: int): st
     if cols.len > 0 and sel >= 0 and sel < rows:
       st.anchor = 1
       st.buf = initial
+      state(id) = st
       editing = true
       ui.focus = editId
       var es = state(editId)
@@ -1284,6 +1287,7 @@ proc gridImpl(colsIn: var seq[Column]; rows: int; cell: proc (row, col: int): st
                    right = cols[curCol].align == alRight)
     popClip()
     st.buf = buf
+    state(id) = st
     if gone or (canInput() and ui.focus == editId and keyHit(KeyEnter)):
       commit()
       if not gone: ui.focus = id
@@ -1600,6 +1604,7 @@ proc endTree*() =
     let byUser = tc.newSel != tc.sel[]
     tc.sel[] = tc.newSel
     st.buf = tc.newSel
+    state(tc.id) = st
     ui.redraw = true
     let at = tc.order.find(tc.newSel)
     if at >= 0:
@@ -2441,6 +2446,7 @@ proc numberAt(id: Id; v: var float; decimals, w: int; lo, hi: float;
     var x: float
     if parseNumber(st.buf, x) and x >= lo and x <= hi and x != v:
       st.buf = formatNumber(v, decimals, false)
+      state(id) = st
       st.aux = 2                              # (selected: typing replaces it)
   var buf = st.buf
   if editAt(editId, buf, r, false, false, enabled,
@@ -2506,6 +2512,12 @@ proc comboEdit*(text: var string; items: openArray[string]; w = 0;
     st.aux2 = 1
     st.caret = -1
     ui.focus = editId
+  elif enabled and ui.focus == editId and not ui.keyUsed and ui.key == KeyEnter and st.aux == 0:
+    st.aux = 1 - st.aux
+    st.aux2 = 1
+    st.caret = -1
+    ui.focus = editId
+    ui.keyUsed = true
   if editAt(editId, text, field, false, false, enabled):
     result = true
     st.aux = 1

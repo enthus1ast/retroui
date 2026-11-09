@@ -1821,7 +1821,7 @@ proc combo*(items: openArray[string]; sel: var int; w = 0;
       ui.popupHi = sel
       ui.redraw = true
     if hit.focused and canInput() and not open:
-      if (ui.key == KeyDown and AltPressed in ui.mods) or ui.key == KeyF4:
+      if (ui.key == KeyDown and AltPressed in ui.mods) or ui.key == KeyF4 or ui.key == KeyEnter:
         ui.popup = id
         ui.popupHi = sel
         ui.keyUsed = true
