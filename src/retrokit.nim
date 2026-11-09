@@ -521,9 +521,9 @@ proc parserBuilds(root: string; why: var string): bool =
   except OSError, IOError:
     false
 
-proc distMissing(root: string): seq[string] =
+proc distImports(root: string): seq[string] =
   ## The folders of Nim's `dist` the compiler's sources import (nimony,
-  ## checksums) that are not beside them.
+  ## checksums).
   for f in walkDirRec(root / "compiler"):
     if not f.endsWith(".nim"): continue
     let t = try: readFile(f) except IOError: ""
@@ -532,43 +532,23 @@ proc distMissing(root: string): seq[string] =
       var b = k + 8
       while b < t.len and t[b] in IdentChars: inc b
       let name = t[k + 8 ..< b]
-      if name.len > 0 and name notin result and not dirExists(root / "dist" / name):
-        result.add name
+      if name.len > 0 and name notin result: result.add name
       k = t.find("../dist/", b)
+
+proc distMissing(root: string): seq[string] =
+  ## The folders of Nim's `dist` the compiler's sources import that are not
+  ## beside them.
+  for name in distImports(root):
+    if not dirExists(root / "dist" / name): result.add name
 
 proc gitRun(args: varargs[string]): bool =
   try: execCmdEx(quoteShellCommand(@[findExe("git")] & @args)).exitCode == 0
   except OSError: false
 
-proc completeSources(root: string): string =
-  ## A copy of `root`'s compiler sources with the folders of `dist` they
-  ## import -- fetched with git at the commits this Nim's version pins (its
-  ## koch.nim) -- in the cache: Nim 2.4 and later as some systems package it
-  ## (Termux's) has the compiler's sources without them. "" when they cannot
-  ## be had.
-  let ver = nimVersionNumber()
-  let dest = getCacheDir("retroui") / ("nim-" & (if ver.len > 0: ver else: "sources"))
-  var why = ""
-  if dirExists(dest / "compiler") and parserBuilds(dest, why): return dest
-  let missing = distMissing(root)
-  if missing.len == 0: return ""
-  let what = missing.mapIt("dist/" & it).join(" and ")
-  if findExe("git").len == 0:
-    echo "retrokit: this Nim's compiler sources come without ", what, "; git fetches them:"
-    echo "          ", (if existsEnv("TERMUX_VERSION"): "pkg install git"
-                        else: "install git"), ", then retrokit designer again"
-    return ""
-  echo "retrokit: this Nim's compiler sources come without ", what, "; fetching them (once)..."
-  try:
-    removeDir(dest)
-    createDir(dest)
-    copyDir(root / "compiler", dest / "compiler")
-  except OSError, IOError:
-    echo "retrokit: could not copy the compiler's sources into ", dest
-    return ""
-  # the commits this Nim pins them at: its koch.nim, from its release
-  let tmp = dest / ".nim"
-  var koch = ""
+proc kochOf(ver: string): string =
+  ## The koch.nim of Nim `ver` (its release on GitHub, else its branch, else
+  ## devel): the commits of `dist` that version pins. "" when it cannot be had.
+  let tmp = getCacheDir("retroui") / ".nim-koch"
   let parts = ver.split('.')
   var refs: seq[string]
   if ver.len > 0: refs.add "v" & ver
@@ -582,27 +562,77 @@ proc completeSources(root: string): string =
         let (o, code) = execCmdEx(quoteShellCommand([findExe("git"), "-C", tmp, "show",
                                                      "HEAD:koch.nim"]))
         if code == 0:
-          koch = o
+          result = o
           break
       except OSError: discard
   removeDir(tmp)
+
+proc fetchDist(dest, name, koch: string): bool =
+  ## `dist/name` fetched into `dest` with git, at the commit `koch` pins
+  ## (`NameStableCommit`), else at its newest.
+  var commit = "HEAD"
+  let key = name[0].toUpperAscii & name.substr(1) & "StableCommit"
+  let k = koch.find(key)
+  if k >= 0:
+    let a = koch.find('"', k)
+    let b = koch.find('"', a + 1)
+    if a > 0 and b > a: commit = koch[a + 1 ..< b]
+  let d = dest / "dist" / name
+  removeDir(d)
+  createDir(d)
+  result = gitRun("init", "-q", d) and
+           gitRun("-C", d, "fetch", "-q", "--depth", "1", "https://github.com/nim-lang/" & name,
+                  commit) and
+           gitRun("-C", d, "checkout", "-q", "FETCH_HEAD")
+  if not result: echo "retrokit: could not fetch ", name, " from github.com/nim-lang/", name
+
+proc completeSources(root: string): string =
+  ## A copy of `root`'s compiler sources with the folders of `dist` they
+  ## import, in the cache: what the system has of them copied, what it has
+  ## not fetched with git at the commits this Nim's version pins (its
+  ## koch.nim). Nim 2.4 and later as some systems package it (Termux's) has
+  ## the compiler's sources without them, or without some. "" when they
+  ## cannot be had.
+  let ver = nimVersionNumber()
+  let dest = getCacheDir("retroui") / ("nim-" & (if ver.len > 0: ver else: "sources"))
+  var why = ""
+  if dirExists(dest / "compiler") and parserBuilds(dest, why): return dest
+  let wanted = distImports(root)
+  if wanted.len == 0: return ""
+  let missing = distMissing(root)
+  let what = (if missing.len > 0: missing else: wanted).mapIt("dist/" & it).join(" and ")
+  if findExe("git").len == 0:
+    echo "retrokit: this Nim's compiler sources come without ", what, "; git fetches them:"
+    echo "          ", (if existsEnv("TERMUX_VERSION"): "pkg install git"
+                        else: "install git"), ", then retrokit designer again"
+    return ""
+  echo "retrokit: this Nim's compiler sources come without ", what, "; fetching them (once)..."
+  try:
+    removeDir(dest)
+    createDir(dest)
+    copyDir(root / "compiler", dest / "compiler")
+    for name in wanted:
+      if dirExists(root / "dist" / name): copyDir(root / "dist" / name, dest / "dist" / name)
+  except OSError, IOError:
+    echo "retrokit: could not copy the compiler's sources into ", dest
+    return ""
+  let koch = kochOf(ver)
+  var fetched: seq[string]
   for name in missing:
-    var commit = "HEAD"
-    let key = name[0].toUpperAscii & name.substr(1) & "StableCommit"
-    let k = koch.find(key)
-    if k >= 0:
-      let a = koch.find('"', k)
-      let b = koch.find('"', a + 1)
-      if a > 0 and b > a: commit = koch[a + 1 ..< b]
-    let d = dest / "dist" / name
-    createDir(d)
-    if not (gitRun("init", "-q", d) and
-            gitRun("-C", d, "fetch", "-q", "--depth", "1", "https://github.com/nim-lang/" & name,
-                   commit) and
-            gitRun("-C", d, "checkout", "-q", "FETCH_HEAD")):
-      echo "retrokit: could not fetch ", name, " from github.com/nim-lang/", name
-      return ""
-  if parserBuilds(dest, why): return dest
+    if not fetchDist(dest, name, koch): return ""
+    fetched.add name
+  # (a folder the system has only part of: the file the parser misses names it)
+  for round in 0 ..< wanted.len + 1:
+    if parserBuilds(dest, why): return dest
+    let k = why.find("../dist/")
+    if k < 0: break
+    var b = k + 8
+    while b < why.len and why[b] in IdentChars: inc b
+    let name = why[k + 8 ..< b]
+    if name.len == 0 or name in fetched: break
+    echo "retrokit: its dist/", name, " is not whole; fetching it too..."
+    if not fetchDist(dest, name, koch): return ""
+    fetched.add name
   echo "retrokit: Nim's parser does not build from the sources fetched: ", why
   ""
 

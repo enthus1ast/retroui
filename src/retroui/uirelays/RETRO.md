@@ -79,6 +79,11 @@ is in `docs/uirelays-pr.md`.
   the changed rectangles painted, Cocoa redrawing only those; a program
   that does not lock it draws through `putRGBA` as before. X11 also takes the scale of the monitor
   the window is on (RandR).
+- Windows of another program's put inside the app's (a web view): a click
+  in the app's window takes the keyboard back from them (X11, WinAPI;
+  UIKit lets such a view keep it until its own view is touched);
+  `winWindow` gives the WinAPI driver's window, as `x11Window` the X11
+  driver's.
 - `drivers/penaxes.nim` -- a pen's pressure, lean and turn from what each
   system reports.
 - `input.nim`, `screen.nim`: more keys, the mouse's side buttons,

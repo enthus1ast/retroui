@@ -19,10 +19,13 @@
 ##   (`images`): what is not there is listed in `HtmlEvent.wantedImages`
 ##   for the app to fetch (then `htmlImagesChanged`).
 ## - `htmlToText`: the plain text of a mail; `htmlToMarkdown`, `htmlTitle`.
-## - `webView`: a web page. On Android it is the system's WebView (the
-##   browser engine of the phone) placed over the widget; elsewhere local
-##   pages (`file://`, paths, `html:` text) are shown with `htmlView`, and
-##   pages on the web get a button that opens them in the browser.
+## - `webView`: a web page. With the system's engine (`engine = weSystem`,
+##   $RETRO_WEB=system; the default in an Android app) it is the system's own
+##   browser placed over the widget -- WebView2, WKWebView, WebKitGTK,
+##   Android's WebView (`webnative`) -- whose scripts talk to the app
+##   (`retro.post`, `webPost`, `webRun`). With the kit's own, local pages
+##   (`file://`, paths, `html:` text) are shown with `htmlView`, and pages
+##   on the web get a button that opens them in the browser.
 ##
 ## .. code-block:: nim
 ##   let ev = htmlView(readFile("help/index.html"), baseDir = "help")
@@ -36,7 +39,8 @@
 ##   # a mail the reader zooms (the app keeps the size in its settings)
 ##   discard htmlView(body, settings.mailZoom, key = "mail")
 ##
-##   let w = webView("https://nim-lang.org", key = "docs")
+##   let w = webView("https://nim-lang.org", key = "docs", engine = weSystem)
+##   for m in w.messages: echo "the page says ", m   # retro.post(text) in its scripts
 ##   if w.back: requestClose()      # Back with no page before (Android)
 
 import std/[strutils, unicode, tables, os, hashes, times, base64, math]
@@ -44,6 +48,7 @@ import uirelays/target   # (androidApp: an APK, not a program in Termux)
 import core, widgets, markdown, pixelicons, nerdicons, imaging, htmldom, htmllayout, htmlcss
 import webp, gifanim
 import uirelays/[services, input]
+import webnative
 
 export htmldom.decodeEntities, htmldom.htmlEscape
 
@@ -1367,6 +1372,18 @@ proc htmlPageInfo*(html: string; width: int; baseDir = ""; images: HtmlImageSour
 # ---- web pages ----------------------------------------------------------------------------------
 
 type
+  WebEngine* = enum
+    ## Which engine shows a `webView`'s pages.
+    weAuto     ## the system's in an Android app, the kit's own elsewhere
+    weSystem   ## the system's where it has one (WebKitGTK, WebView2, WKWebView,
+               ## Android's WebView), else the kit's own
+    weKit      ## the kit's own everywhere: local pages drawn by it, pages on
+               ## the web opened in the browser
+  WebResult* = object
+    ## The answer of a script run with `webRun`.
+    id*: int             ## what `webRun` returned
+    value*: string       ## its value as JSON ("" for undefined)
+    error*: string       ## the error it raised ("" when none)
   WebEvent* = object
     ## What a `webView` shows and what happened in it this frame.
     url*: string         ## the page shown now (after links followed in it)
@@ -1374,42 +1391,142 @@ type
     progress*: int       ## how much of it is loaded, 0..100
     loading*: bool       ## the page is still loading
     canGoBack*: bool     ## there is a page before (`webGoBack`)
+    canGoForward*: bool  ## there is one after (`webGoForward`; the system's engine)
     link*: string        ## a link clicked in a page the kit shows itself
     opened*: bool        ## the page was handed to the browser
     back*: bool          ## (Android) Back pressed in the page with no page before
+    native*: bool        ## the system's engine shows it
+    messages*: seq[string]   ## what the page posted (`retro.post(text)` in its scripts)
+    results*: seq[WebResult] ## the answers of `webRun`
+    blocked*: seq[string]    ## addresses it was kept from (`webAllow`); the app may
+                             ## `openUrl` them
+  WebMode = enum wmKit, wmRelay, wmNative
   WebState = ref object
     asked: string        ## the address the app gave last
     cur: string          ## shown now
     history: seq[string]
     drawn: int           ## the frame it was last drawn in
-    shown: bool          ## (Android) the system's view is on screen
+    mode: WebMode        ## who shows it
+    shown: bool          ## the system's view is on screen
     sent: string         ## ... with this address
     rect: Rect           ## ... at this place, in screen pixels
+    zoomSent: float      ## ... at this zoom
     polledAt: int
     title: string
     progress: int
-    canBack, backOut: bool
+    canBack, canForward, backOut: bool
+    zoom: float          ## `webZoom` (1: as it is)
+    hosts: seq[string]   ## `webAllow`
+    hostsSent: bool
+    pending: seq[string] ## scripts asked before the page was shown
+    messages: seq[string]
+    results: seq[WebResult]
+    blocked: seq[string]
     file: tuple[path, text: string; stamp: Time]
+
+proc engineFromEnv(): WebEngine =
+  case getEnv("RETRO_WEB").toLowerAscii
+  of "system", "native": weSystem
+  of "kit": weKit
+  else: weAuto
 
 var
   useSystemWebView* = androidApp
-    ## Pages are the system's WebView (Android; tests can turn it on with a
-    ## fake `systemRelays.call`).
+    ## Pages are the system's WebView through `systemCall` ("web.show"...), as
+    ## on Android (tests turn it on with a fake `systemRelays.call`).
+  webEngine* = engineFromEnv()
+    ## The engine of every `webView` not given one ($RETRO_WEB: "system",
+    ## "kit", "auto").
   webs: Table[string, WebState]
   hooked = false
+  webRunIds = 0
+
+proc relayTake(key: string): WebNativeState =
+  ## (the Android protocol: "web.info" -- url, title, progress, can go back,
+  ## Back with no page before, can go forward, then the notes)
+  let info = systemCall("web.info", key)
+  if info == "\0": return
+  let p = info.split('\t', 6)
+  if p.len >= 5:
+    result.url = p[0]
+    result.title = p[1]
+    result.progress = (try: clamp(parseInt(p[2]), 0, 100) except ValueError: 100)
+    result.canBack = p[3] == "1"
+    result.backOut = p[4] == "1"
+  if p.len >= 6: result.canForward = p[5] == "1"
+  if p.len >= 7:
+    for n in p[6].split('\2'):
+      if n.len == 0: continue
+      if n[0] == 'b': result.blocked.add n[1 .. ^1]
+      else: result.notes.add n[1 .. ^1]
+
+proc localPath(u: string): string
+
+proc engShow(w: WebState; key: string; r: Rect; asked: string) =
+  let zoom = if w.zoom > 0: w.zoom else: 1.0
+  # (a path, "file://" address, "./" or "~" path as the whole path the
+  #  engines take)
+  let path = if asked.toLowerAscii.startsWith("html:"): "" else: localPath(asked)
+  let url = if path.len > 0: path.absolutePath.normalizedPath else: asked
+  case w.mode
+  of wmRelay:
+    discard systemCall("web.show", key & "\t" & $r.x & "\t" & $r.y & "\t" & $r.w &
+                       "\t" & $r.h & "\t" & url)
+    if zoom != w.zoomSent and (w.zoomSent != 0 or zoom != 1.0):
+      discard systemCall("web.zoom", key & "\t" & $int(zoom * 100))
+  of wmNative:
+    # (the page's pixels as the kit's: its size times the zoom asked)
+    webNativeShow(key, r, url, zoom * ui.k * float(pxScale))
+  of wmKit: discard
+  w.zoomSent = zoom
+
+proc engHide(w: WebState; key: string) =
+  case w.mode
+  of wmRelay: discard systemCall("web.hide", key)
+  of wmNative: webNativeHide(key)
+  of wmKit: discard
+
+proc engNav(w: WebState; key: string; what: WebNav): bool =
+  case w.mode
+  of wmRelay:
+    let r = systemCall("web." & ($what)[2 .. ^1].toLowerAscii, key)
+    r == "1" or (what notin {wnBack, wnForward} and r != "\0")
+  of wmNative:
+    webNativeNav(key, what)
+    true
+  of wmKit: false
+
+proc engRun(w: WebState; key, js: string) =
+  case w.mode
+  of wmRelay: discard systemCall("web.run", key & "\t" & js)
+  of wmNative: webNativeRun(key, js)
+  of wmKit: discard
+
+proc engAllow(w: WebState; key: string) =
+  case w.mode
+  of wmRelay: discard systemCall("web.allow", key & "\t" & w.hosts.join("\t"))
+  of wmNative: webNativeAllow(key, w.hosts)
+  of wmKit: discard
+  w.hostsSent = true
+
+proc engTake(w: WebState; key: string): WebNativeState =
+  case w.mode
+  of wmRelay: relayTake(key)
+  of wmNative: webNativeTake(key)
+  of wmKit: WebNativeState(progress: 100)
 
 proc webFrameHook() {.nimcall.} =
   ## Views not drawn in the frame before go away (the system's view is
   ## not part of the kit's drawing: it would stay over the window).
   for k, w in webs:
     if w.shown and w.drawn < ui.frameNo - 1:
-      discard systemCall("web.hide", k)
+      w.engHide(k)
       w.shown = false
 
 proc webOf(key: string): WebState =
   result = webs.getOrDefault(key, nil)
   if result == nil:
-    result = WebState(progress: 100)
+    result = WebState(progress: 100, zoom: 1.0)
     webs[key] = result
   if not hooked:
     hooked = true
@@ -1458,31 +1575,119 @@ proc webGoBack*(key = ""): bool {.discardable.} =
   ## The page before in the `webView` with `key`; false when there is none.
   let w = webs.getOrDefault(key, nil)
   if w == nil: return false
-  if useSystemWebView:
-    if w.shown and systemCall("web.back", key) == "1":
-      return true
-    return false
+  if w.mode != wmKit:
+    if not w.shown or not w.canBack and w.mode == wmNative: return false
+    return w.engNav(key, wnBack)
   if w.history.len == 0: return false
   w.cur = w.history.pop()
   ui.redraw = true
   true
 
+proc webGoForward*(key = ""): bool {.discardable.} =
+  ## The page after (one Back left) in the `webView` with `key`, when the
+  ## system's engine shows it; false when there is none.
+  let w = webs.getOrDefault(key, nil)
+  if w == nil or w.mode == wmKit or not w.shown or not w.canForward: return false
+  w.engNav(key, wnForward)
+
 proc webReload*(key = "") =
   ## Loads the page of the `webView` with `key` again.
   let w = webs.getOrDefault(key, nil)
   if w == nil: return
-  if useSystemWebView: discard systemCall("web.reload", key)
+  if w.mode != wmKit: discard w.engNav(key, wnReload)
   else:
     w.file.path = ""
     ui.redraw = true
 
+proc webStop*(key = "") =
+  ## Stops loading the page of the `webView` with `key` (the system's engine).
+  let w = webs.getOrDefault(key, nil)
+  if w != nil and w.mode != wmKit: discard w.engNav(key, wnStop)
+
 proc webClose*(key = "") =
-  ## Lets the `webView` with `key` go (on Android its WebView is freed;
-  ## drawing it again starts afresh).
+  ## Lets the `webView` with `key` go (the system's view is freed; drawing
+  ## it again starts afresh).
   let w = webs.getOrDefault(key, nil)
   if w == nil: return
-  if useSystemWebView: discard systemCall("web.close", key)
+  case w.mode
+  of wmRelay: discard systemCall("web.close", key)
+  of wmNative: webNativeClose(key)
+  of wmKit: discard
   webs.del key
+
+proc jsString(s: string): string =
+  ## `s` as a JavaScript string literal.
+  result = "\""
+  for c in s:
+    case c
+    of '"': result.add "\\\""
+    of '\\': result.add "\\\\"
+    of '\n': result.add "\\n"
+    of '\r': result.add "\\r"
+    of '\t': result.add "\\t"
+    of '<': result.add "\\x3c"            # (no </script> in it)
+    of '\0' .. '\x08', '\x0b', '\x0c', '\x0e' .. '\x1f':
+      result.add "\\x" & toHex(ord(c), 2).toLowerAscii
+    else: result.add c
+  result.add "\""
+
+proc queue(w: WebState; js: string) =
+  ## A script for when the page is shown (the last 64: a page never shown
+  ## does not keep them all).
+  if w.pending.len >= 64: w.pending.delete(0)
+  w.pending.add js
+
+proc webRun*(key: string; js: string): int {.discardable.} =
+  ## Runs `js` in the page of the `webView` with `key` when the system's
+  ## engine shows it, and returns a number: its answer comes in a later
+  ## frame's `WebEvent.results` with that `id` -- its value as JSON, or the
+  ## error it raised. With the kit's own engine nothing runs (no answer).
+  ##
+  ## .. code-block:: nim
+  ##   let ask = webRun("docs", "document.querySelectorAll('h2').length")
+  ##   for r in ev.results:
+  ##     if r.id == ask: echo "headings: ", r.value
+  inc webRunIds
+  result = webRunIds
+  let w = webOf(key)
+  # (its answer posted back as a note: "\1id\1" and JSON)
+  let wrapped = "(function(){var r;try{var v=(0,eval)(" & jsString(js) & ");" &
+    "r=JSON.stringify({ok:v===undefined?null:v});}catch(e){r=JSON.stringify({error:String(e)});}" &
+    "if(window.retro&&window.retro.post)window.retro.post('\\u0001" & $result & "\\u0001'+r);})();"
+  if w.shown: w.engRun(key, wrapped) else: w.queue wrapped
+
+proc webPost*(key: string; message: string) =
+  ## Sends `message` to the page of the `webView` with `key` (the system's
+  ## engine): its scripts get it as a `retro` event on `window`
+  ## (`window.addEventListener("retro", e => use(e.detail))`).
+  let w = webOf(key)
+  let js = "window.dispatchEvent(new CustomEvent('retro',{detail:" & jsString(message) & "}));"
+  if w.shown: w.engRun(key, js) else: w.queue js
+
+proc webAllow*(key: string; hosts: openArray[string]) =
+  ## The hosts the page of the `webView` with `key` may open, and those under
+  ## them ("nim-lang.org" lets "forum.nim-lang.org" in); none: any. Others are
+  ## kept from it and come in `WebEvent.blocked` (the app may `openUrl` them).
+  ## Local pages always may. The system's engine; the kit's own opens only
+  ## local pages anyway. Called every frame, it is sent again only when the
+  ## hosts change.
+  let w = webOf(key)
+  # (the same hosts every frame are sent once)
+  var same = w.hosts.len == hosts.len
+  if same:
+    for i in 0 ..< hosts.len:
+      if w.hosts[i] != hosts[i]:
+        same = false
+        break
+  if not same:
+    w.hosts = @hosts
+    w.hostsSent = false
+
+proc webZoom*(key: string; zoom: float) =
+  ## The size of the page of the `webView` with `key`, text and pictures:
+  ## 1.0 as it is (0.5 .. 3.0); the system's engine.
+  let w = webOf(key)
+  w.zoom = clamp(if zoom <= 0: 1.0 else: zoom, 0.5, 3.0)
 
 proc follow(w: WebState; link: string; ev: var WebEvent) =
   ## A link clicked in a page the kit shows: another local page is shown
@@ -1555,74 +1760,129 @@ proc webFallback(r: Rect; url: string; ev: var WebEvent) =
       if openUrl(url): ev.opened = true
     discard popFrame()
 
-proc webView*(url: string; height = -1; key = ""): WebEvent {.discardable.} =
+proc webView*(url: string; height = -1; key = ""; engine = webEngine): WebEvent {.discardable.} =
   ## A web page in the window, `height` pixels high (-1: the room left).
   ## `url` is "https://...", a "file://" address or a path, or "html:" and
-  ## the HTML itself; giving another address shows that page.
+  ## the HTML itself; giving another address shows that page. `engine`
+  ## chooses who shows it (`webEngine`, $RETRO_WEB: the kit's own on
+  ## desktops, the system's in an Android app).
   ##
-  ## On Android the page is the system's WebView (the phone's browser
-  ## engine: scripts, forms, video), placed over the widget: links are
-  ## followed in it, Back (`webGoBack`) returns, other kinds of links (mail,
-  ## phone, maps) open their apps. It is hidden while a menu or a dialog of
-  ## the app is over it, and when the widget is not drawn. The app needs
-  ## the INTERNET permission (`retroapk --permission:INTERNET`).
+  ## The system's engine (`weSystem`; the default in an Android app) is the
+  ## browser the system has -- Android's WebView, WebView2 on Windows,
+  ## WKWebView on macOS and iOS, WebKitGTK on Linux and BSD when it is
+  ## installed -- placed over the widget: scripts, forms, video; links are
+  ## followed in it, Back and Forward (`webGoBack`, `webGoForward`) go through
+  ## its history. Its scripts talk to the app: `retro.post(text)` comes in
+  ## `messages`; `webPost` sends one to them (a `retro` event on `window`),
+  ## `webRun` runs a script and its answer comes in `results`. `webAllow`
+  ## keeps it to some hosts, `webZoom` sizes it. It is hidden while a menu or a
+  ## dialog of the app is over it, and when the widget is not drawn; while it
+  ## has the keyboard, keys go to it (a click on the app takes them back).
+  ## Android apps need the INTERNET permission (`retroapk
+  ## --permission:INTERNET`). Where there is no engine it is the kit's own.
+  ## While you make the app, $RETRO_WEB_TOOLS=1 offers the engine's
+  ## developer tools (Inspect Element; Safari's Web Inspector for WKWebView).
   ##
-  ## Elsewhere local pages are shown by the kit itself (`htmlView`: no
-  ## scripts, no network; links to other local pages are followed, others
-  ## open in the browser), and pages on the web get a button that opens them
-  ## in the browser.
+  ## The kit's own engine shows local pages itself (`htmlView`: no scripts,
+  ## no network; links to other local pages are followed, others open in
+  ## the browser), and pages on the web get a button that opens them in the
+  ## browser.
   let r = place(0, if height < 0: remainingH() else: height, fill = true)
   let w = webOf(key)
+  # who shows it
+  let mode = if useSystemWebView and engine != weKit: wmRelay
+             elif engine == weSystem and webNativeAvailable(): wmNative
+             else: wmKit
+  if mode != w.mode:
+    if w.shown: w.engHide(key)
+    w.shown = false
+    w.mode = mode
+    w.sent = ""
+    w.hostsSent = false
+    # (the page asked, afresh: not the address the other engine went on to)
+    w.cur = w.asked
+    w.history.setLen(0)
+    w.title = ""
+    w.progress = if mode != wmKit: 0 else: 100
   if url != w.asked:
     w.asked = url
     w.cur = url
     w.history.setLen(0)
     w.title = ""
-    w.progress = if useSystemWebView: 0 else: 100
+    w.progress = if w.mode != wmKit: 0 else: 100
   w.drawn = ui.frameNo
-  if useSystemWebView:
+  if w.mode != wmKit:
     webPlaceholder(r, w)
     # only the part of it on screen; hidden under the app's menus and dialogs
     let vis = intersect(r, clipRect())
-    let covered = vis.w <= 0 or vis.h <= 0 or
+    let covered = vis.w <= 0 or vis.h <= 0 or ui.inertDepth > 0 or
                   (ui.dialogTop != 0 and ui.curDialog != ui.dialogTop) or
                   (ui.popup != 0 and intersect(ui.popupRect, vis).w > 0)
     if covered:
       if w.shown:
-        discard systemCall("web.hide", key)
+        w.engHide(key)
         w.shown = false
     else:
       let dr = rect(vis.x * pxScale, vis.y * pxScale, vis.w * pxScale, vis.h * pxScale)
-      if not w.shown or dr != w.rect or w.sent != w.cur:
-        discard systemCall("web.show", key & "\t" & $dr.x & "\t" & $dr.y & "\t" & $dr.w &
-                           "\t" & $dr.h & "\t" & w.cur)
+      let zoom = if w.zoom > 0: w.zoom else: 1.0
+      # (the address the app asked: a page the engine went on to is not loaded
+      #  again when the view only moves)
+      if not w.shown or dr != w.rect or w.sent != w.asked or zoom != w.zoomSent:
+        w.engShow(key, dr, w.asked)
         w.shown = true
         w.rect = dr
-        w.sent = w.cur
-      # what the page does by itself (links followed, its title, loading)
-      if ui.now - w.polledAt >= 250 or ui.now < w.polledAt:
+        w.sent = w.asked
+      if not w.hostsSent and (w.hosts.len > 0 or w.mode == wmNative): w.engAllow(key)
+      if w.pending.len > 0:
+        for js in w.pending: w.engRun(key, js)
+        w.pending.setLen(0)
+      # what the page does by itself (links followed, its title, loading,
+      # what its scripts post)
+      if ui.now - w.polledAt >= 100 or ui.now < w.polledAt:
         w.polledAt = ui.now
-        let info = systemCall("web.info", key)
-        if info != "\0":
-          let p = info.split('\t')
-          if p.len >= 5:
-            if p[0].len > 0: w.cur = p[0]
-            w.sent = w.cur
-            w.title = p[1]
-            w.progress = (try: clamp(parseInt(p[2]), 0, 100) except ValueError: 100)
-            w.canBack = p[3] == "1"
-            if p[4] == "1": w.backOut = true
-      wakeIn(if w.progress < 100: 250 else: 500)
+        let st = w.engTake(key)
+        if st.url.len > 0: w.cur = st.url
+        w.title = st.title
+        w.progress = st.progress
+        w.canBack = st.canBack
+        w.canForward = st.canForward
+        if st.backOut: w.backOut = true
+        for n in st.notes:
+          if n.len > 2 and n[0] == '\1':
+            # (a script's answer: "\1id\1" and {"ok": value} or {"error": text})
+            let k = n.find('\1', 1)
+            if k > 1:
+              var res = WebResult(id: (try: parseInt(n[1 ..< k]) except ValueError: 0))
+              let body = n[k + 1 .. ^1]
+              if body.startsWith("{\"error\":"):
+                let a = body.find(':')
+                res.error = body[a + 1 .. ^2].strip(chars = {'"'})
+              elif body.startsWith("{\"ok\":"):
+                res.value = body[6 .. ^2]
+              w.results.add res
+              continue
+          w.messages.add n
+        for b in st.blocked:
+          let l = b.toLowerAscii
+          if l.startsWith("http:") or l.startsWith("https:"): w.blocked.add b
+          elif openUrl(b): discard          # (mail, phone, maps: their apps)
+      wakeIn(if w.progress < 100 or w.mode == wmNative: 100 else: 500)
     result.url = w.cur
     result.title = w.title
     result.progress = w.progress
     result.loading = w.progress < 100
     result.canGoBack = w.canBack
+    result.canGoForward = w.canForward
     result.back = w.backOut
+    result.native = true
+    swap(result.messages, w.messages)
+    swap(result.results, w.results)
+    swap(result.blocked, w.blocked)
     w.backOut = false
     ui.lastRect = r
     return
-  # the kit shows it itself
+  # the kit shows it itself (it runs no scripts)
+  w.pending.setLen(0)
   result.progress = 100
   let cur = w.cur
   if cur.startsWith("html:"):

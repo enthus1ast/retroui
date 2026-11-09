@@ -12,17 +12,21 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import java.util.ArrayList;
 import java.util.HashMap;
 
 /** Web pages: the system's WebView over a part of the window (webView in
- *  src/retro/htmlview.nim), reached as "web.show", "web.hide",
- *  "web.close", "web.back", "web.reload" and "web.info" through
- *  RetroActivity.uirelaysCall.
+ *  src/retroui/htmlview.nim), reached as "web.show", "web.hide",
+ *  "web.close", "web.back", "web.forward", "web.reload", "web.stop",
+ *  "web.run", "web.allow", "web.zoom" and "web.info" through
+ *  RetroActivity.uirelaysCall. The page's scripts post to the app with
+ *  retro.post(text); what they post comes with "web.info".
  *
  *  NativeActivity reads the window's input itself: a WebView inside the
  *  window would never get a touch. So each page lives in a small panel
@@ -43,7 +47,34 @@ public final class RetroWeb {
     String loaded = "";
     volatile String url = "", title = "";
     volatile int progress = 100;
-    volatile boolean canBack, backOut;
+    volatile boolean canBack, canForward, backOut;
+    volatile String[] hosts = new String[0];
+    final ArrayList<String> notes = new ArrayList<String>();   // "m" text, "b" address
+  }
+
+  /** retro.post(text) in the page's scripts. */
+  static final class Bridge {
+    final Web web;
+    Bridge(Web w) { web = w; }
+    @JavascriptInterface
+    public void post(String m) {
+      synchronized (web.notes) { web.notes.add("m" + (m == null ? "" : m)); }
+    }
+  }
+
+  /** May the page open `url` (its host one of the allowed, or under one)? */
+  static boolean allowed(Web w, String url) {
+    String[] hs = w.hosts;
+    if (hs.length == 0) return true;
+    String host;
+    try { host = Uri.parse(url).getHost(); } catch (Throwable t) { host = null; }
+    if (host == null) return true;
+    host = host.toLowerCase();
+    for (String h : hs) {
+      String x = h.trim().toLowerCase();
+      if (x.length() > 0 && (host.equals(x) || host.endsWith("." + x))) return true;
+    }
+    return false;
   }
 
   static final HashMap<String, Web> webs = new HashMap<String, Web>();
@@ -154,8 +185,12 @@ public final class RetroWeb {
       @Override
       public boolean shouldOverrideUrlLoading(WebView view, String url) {
         String l = url.toLowerCase();
-        if (l.startsWith("http:") || l.startsWith("https:") || l.startsWith("file:")
-            || l.startsWith("about:") || l.startsWith("data:")) return false;
+        if (l.startsWith("http:") || l.startsWith("https:")) {
+          if (allowed(nw, url)) return false;
+          synchronized (nw.notes) { nw.notes.add("b" + url); }   // the app is told
+          return true;
+        }
+        if (l.startsWith("file:") || l.startsWith("about:") || l.startsWith("data:")) return false;
         try {                       // mail, phone, maps, stores: their apps
           Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
           i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -173,11 +208,13 @@ public final class RetroWeb {
         nw.url = url == null ? "" : url;
         nw.progress = 100;
         nw.canBack = view.canGoBack();
+        nw.canForward = view.canGoForward();
       }
       @Override
       public void doUpdateVisitedHistory(WebView view, String url, boolean reload) {
         nw.url = url == null ? "" : url;
         nw.canBack = view.canGoBack();
+        nw.canForward = view.canGoForward();
       }
     });
     v.setWebChromeClient(new WebChromeClient() {
@@ -186,6 +223,7 @@ public final class RetroWeb {
       @Override
       public void onReceivedTitle(WebView view, String t) { nw.title = t == null ? "" : t; }
     });
+    v.addJavascriptInterface(new Bridge(nw), "retro");
     nw.view = v;
     nw.root = new Root(a, nw);
     nw.root.addView(v, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
@@ -217,9 +255,11 @@ public final class RetroWeb {
     w.added = false;
   }
 
-  /** show (key, x, y, w, h, url), hide, close, back, reload (key) and
-   *  info (key: url, title, progress, can go back, Back pressed with no
-   *  page before) -- from the native thread. */
+  /** show (key, x, y, w, h, url), hide, close, back, forward, reload, stop
+   *  (key), run (key, script), allow (key, hosts...), zoom (key, percent) and
+   *  info (key: url, title, progress, can go back, Back pressed with no page
+   *  before, can go forward, then the notes: "m" text or "b" address, each
+   *  ending with \2) -- from the native thread. */
   public static String call(final Activity act, String what, String[] a) {
     final String key = a.length > 0 ? a[0] : "";
     if (what.equals("show")) {
@@ -256,8 +296,14 @@ public final class RetroWeb {
       if (wb == null) return null;
       boolean out = wb.backOut;
       wb.backOut = false;
+      StringBuilder notes = new StringBuilder();
+      synchronized (wb.notes) {
+        for (String n : wb.notes) notes.append(n).append('\u0002');
+        wb.notes.clear();
+      }
       return wb.url + "\t" + wb.title.replace('\t', ' ') + "\t" + wb.progress + "\t"
-          + (wb.canBack ? "1" : "0") + "\t" + (out ? "1" : "0");
+          + (wb.canBack ? "1" : "0") + "\t" + (out ? "1" : "0") + "\t"
+          + (wb.canForward ? "1" : "0") + "\t" + notes;
     }
     if (wb == null) return what.equals("back") ? "0" : "";
     if (what.equals("back")) {
@@ -266,6 +312,35 @@ public final class RetroWeb {
         public void run() { if (wb.view.canGoBack()) wb.view.goBack(); }
       });
       return "1";
+    }
+    if (what.equals("forward")) {
+      if (!wb.canForward) return "0";
+      act.runOnUiThread(new Runnable() {
+        public void run() { if (wb.view.canGoForward()) wb.view.goForward(); }
+      });
+      return "1";
+    }
+    if (what.equals("allow")) {
+      String[] hs = new String[Math.max(0, a.length - 1)];
+      for (int i = 1; i < a.length; i++) hs[i - 1] = a[i];
+      wb.hosts = hs;
+      return "";
+    }
+    if (what.equals("run") || what.equals("zoom") || what.equals("stop")) {
+      StringBuilder j = new StringBuilder(a.length > 1 ? a[1] : "");
+      for (int i = 2; i < a.length; i++) j.append('\t').append(a[i]);
+      final String arg = j.toString();
+      final String op = what;
+      act.runOnUiThread(new Runnable() {
+        public void run() {
+          try {
+            if (op.equals("run")) wb.view.evaluateJavascript(arg, null);
+            else if (op.equals("stop")) wb.view.stopLoading();
+            else wb.view.getSettings().setTextZoom(Math.max(50, Math.min(300, Integer.parseInt(arg.trim()))));
+          } catch (Throwable t) { }
+        }
+      });
+      return "";
     }
     if (what.equals("hide") || what.equals("close") || what.equals("reload")) {
       final boolean close = what.equals("close");

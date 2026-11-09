@@ -656,9 +656,12 @@ proc mapTab() =
 
 # ---- the HTML page ---------------------------------------------------------------------------------
 
-var webUrl = "html:<h2>Web view</h2><p>On Android this is the phone's <b>browser engine</b>; " &
-             "on the desktop local pages are read by the kit.</p>" &
-             "<p><a href=\"https://nim-lang.org\">nim-lang.org</a></p>"
+var webUrl = "html:<h2>Web view</h2><p>With the system's engine this is the system's own " &
+             "<b>browser</b> (the phone's on Android); with the kit's, local pages are read by " &
+             "the kit.</p><p><button onclick=\"retro.post('Hello from the page')\">Say hello" &
+             "</button></p><p><a href=\"https://nim-lang.org\">nim-lang.org</a></p>"
+var webSystem = false       # the system's engine on the desktop too
+var webSaid = ""            # what the page's script posted last
 const reportHtml = "<h3>Sales <u>report</u></h3><p>Up <b>12%</b>, costs " &
   "<span style=\"color:#c00\">down</span>, <mark>new store</mark> open.</p>" &
   "<table><tr><th>Month</th><th align=right>Sales</th></tr>" &
@@ -677,11 +680,14 @@ proc htmlTab() =
     col:
       label "A web view:", bold = true
       let w = webView(webUrl, key = "gallery", height = if isCompact(): 220
-                      else: max(220, remainingH() - CtrlH - Gap))
+                      else: max(220, remainingH() - 2 * (CtrlH + Gap)),
+                      engine = if webSystem: weSystem else: weAuto)
+      for m in w.messages: webSaid = "The page said: " & m
       row:
         if button("&Back", enabled = w.canGoBack): discard webGoBack("gallery")
         if button("nim-lang.org"): webUrl = "https://nim-lang.org"
-        label w.title
+        checkbox("System engine", webSystem)
+      label(if webSaid.len > 0: webSaid else: w.title)
 
 
 # ---- the Canvas page: the HTML5 Canvas 2D API ------------------------------------------------------

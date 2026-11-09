@@ -92,6 +92,32 @@ Android. To try them without a screen reader, in a clone:
 - `RETRO_SURFACE=0` draws without shared memory (MIT-SHM on X11, the DIB
   section on Windows), to compare.
 
+**The system's web view needs nothing at build time either**
+(`webView(url, engine = weSystem)`, README "Web and HTML"): the engine is
+loaded when the first page is shown, and without it the kit's own engine
+shows the page.
+
+- Linux and BSD (the X11 driver): WebKitGTK for GTK 3 -- `apt install
+  libwebkit2gtk-4.1-0` (Debian, Ubuntu), `dnf install webkit2gtk4.1`
+  (Fedora), `pacman -S webkit2gtk-4.1` (Arch), the BSDs' `webkit2-gtk`
+  package; 4.0 does too. GTK runs in a thread of its own, its window put
+  inside the app's.
+- Termux, on Termux:X11: `pkg install x11-repo && pkg install
+  webkit2gtk-4.1`.
+- Windows 10 and 11: WebView2, the Edge engine Windows keeps up to date.
+  `WebView2Loader.dll` beside the `.exe` (from Microsoft's
+  `Microsoft.Web.WebView2` package, `build/native/x64`) is the surest
+  start; without it the kit finds the engine where Windows keeps it. A
+  page's data (cookies, storage) is kept in
+  `%LOCALAPPDATA%\<program>\WebView2`.
+- macOS and iOS: WKWebView, part of the system.
+- Android: the APK's own (`tools/android/RetroWeb.java`, in every APK);
+  pages on the web need `retroapk --permission:INTERNET`.
+
+`RETRO_WEB=system` makes every `webView` that does not name its engine use
+the system's (`kit` the kit's), to try an app both ways; `RETRO_WEB_TOOLS=1`
+turns on the engine's developer tools.
+
 **Retro Designer** (`retrokit designer app.nim`, [docs/designer.md](docs/designer.md))
 builds itself the first time it runs, with the Nim and the C compiler you
 build your apps with, into the toolkit's cache folder
@@ -102,8 +128,9 @@ or a Linux package has them), else nimble's `compiler` package, which
 `retrokit` installs when it has to. `retrokit` first checks that the parser
 builds from them. Nim 2.4's compiler sources import `dist/nimony` and
 `dist/checksums`, which Termux's package (and nimble's `compiler` package)
-leave out: `retrokit` copies the sources into its cache (`nim-VERSION`) and
-fetches the two with git, at the commits that Nim version's `koch.nim` pins.
+leave out: `retrokit` copies the sources into its cache (`nim-VERSION`) with
+what the system has of `dist`, and fetches the rest with git, at the commits
+that Nim version's `koch.nim` pins.
 By hand, in a clone:
 
 ```sh

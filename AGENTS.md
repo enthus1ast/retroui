@@ -52,6 +52,17 @@ alike. To build an app *with* the kit, read `skills/retroui/SKILL.md`.
   `src/retroui/androiddex.nim` by `sh tools/android/build_dex.sh` (javac,
   an android.jar of API 23, dx or dalvik-exchange): run it after changing
   one, and use only calls API 23 has (the APKs start on Android 7).
+- The web view (`webView`, in `htmlview.nim`): the system's engines are
+  `webnative.nim` and the file it includes for each system --
+  `webnative_gtk.nim` (WebKitGTK, in a GTK thread of its own, its window
+  put inside the X11 driver's), `webnative_win.nim` (WebView2 through COM),
+  `webnative_wk.nim` (WKWebView through the Objective-C runtime) -- all
+  loaded at run time, never linked. An APK's is `tools/android/RetroWeb.java`
+  through `systemCall("web.show")`, `"web.info"`..., the protocol
+  `tests/test_htmlview.nim` fakes. A new command goes into every one of
+  them (the same `webNative*` proc, a `web.` call in the Java) and into the
+  fake. The page's side is `retro.post(text)` and a `retro` event on
+  `window`, the same everywhere.
 - `tools/compare/` -- Hello in egui, iced and Slint, and `compare.sh`
   measuring them and the kit the same way (memory, size, CPU).
 - `docs/syntax.md` -- the study of the syntax: every form as a whole program

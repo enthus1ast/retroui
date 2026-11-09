@@ -1844,20 +1844,35 @@ example("bars3d", "bars3d",
 
 part("HTML, Markdown and rich text", """
 `htmlView` draws a safe subset of HTML and CSS itself: no browser engine, no
-scripts. `webView` shows a real web page in the system's own web view (a
-window of its own on desktops); it cannot be drawn here, so it has no
-picture.
+scripts. `webView` shows a web page with the system's own browser engine
+when you choose it (`engine = weSystem`, or `RETRO_WEB=system`): WebView2 on
+Windows, WKWebView on macOS and iOS, WebKitGTK on Linux and BSD, and always
+in an Android app its WebView. Its scripts run and talk to your app. With
+the kit's own engine local pages are drawn by the kit and a page on the web
+gets a button that opens it in the browser.
 """)
 
 example("htmlview", "htmlView, htmlBlock",
         "HTML: headings, paragraphs, bold, colors, tables, lists, pictures and links (reported when clicked). `htmlBlock` is the same without its own scroll bar, as a part of a page.",
-        420, 230, ["htmlView", "htmlBlock", "htmlToMarkdown", "webView"], focus4):
+        420, 230, ["htmlView", "htmlBlock", "htmlToMarkdown"], focus4):
   htmlView("<h3>Sales <u>report</u></h3><p>Up <b>12%</b>, costs " &
            "<span style=\"color:#c00\">down</span>, <mark>new store</mark> open.</p>" &
            "<table><tr><th>Month</th><th align=right>Sales</th></tr>" &
            "<tr><td>August</td><td align=right>1,020</td></tr>" &
            "<tr><td>September</td><td align=right>980</td></tr></table>" &
            "<ul><li>North<li>South</ul>", height = 210)
+
+example("webview", "webView, webRun, webPost",
+        "A web page in the window. With the system's engine (`engine = weSystem`; the default in an Android app) the page is the system's browser placed over the widget: scripts, forms, video, its own Back and Forward. Its scripts talk to the app: `retro.post(text)` in the page comes in `messages`, `webPost` sends a `retro` event to the page, `webRun` runs a script and its answer comes in `results`. `webAllow` keeps it to the hosts you trust, `webZoom` sizes it. The picture is the kit's own engine (the system's view is drawn by the system, not here).",
+        420, 220, ["webView", "webGoBack", "webGoForward", "webReload", "webStop", "webRun",
+                   "webPost", "webAllow", "webZoom", "webClose"], std3):
+  let ev = webView("html:<title>Order 1042</title><h3>Order 1042</h3>" &
+                   "<p>Ready to <b>ship</b> on Sunday.</p><ul><li>12 chairs<li>2 tables</ul>",
+                   height = 150, key = "order", engine = weSystem)
+  row([70, 70, -1]):
+    if button("&Back", enabled = ev.canGoBack): webGoBack("order")
+    if button("&Ask"): webRun("order", "document.title")
+    label ev.title                # (an answer of webRun: ev.results)
 
 example("markdownview", "markdownView, markdown",
         "Markdown: headings, emphasis, code, lists, task lists (a click ticks them: `toggleTask`), tables, quotes and links -- right to left where they are in Arabic. Screen readers read its words (`mdPlainText`).",
